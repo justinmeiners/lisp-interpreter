@@ -1,3 +1,4 @@
+*.out
 # Xcode
 .DS_Store
 build/
