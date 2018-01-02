@@ -1,4 +1,6 @@
 *.out
+lisp_i
+
 # Xcode
 .DS_Store
 build/

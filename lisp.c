@@ -37,7 +37,7 @@ LispCell lisp_null()
     return cell;
 }
 
-LispCell lisp_cell_CreateStringView(const char* string, int length)
+static LispCell lisp_create_stringView(const char* string, int length)
 { 
     Block* block = malloc(sizeof(BlockHeader) + length + 1);
     block->header.length = length + 1;
@@ -50,9 +50,9 @@ LispCell lisp_cell_CreateStringView(const char* string, int length)
     return cell;
 }
 
-LispCell lisp_cell_CreateSymbolView(const char* string, int length)
+static LispCell lisp_create_symbolView(const char* string, int length)
 {
-    LispCell cell = lisp_cell_CreateStringView(string, length);
+    LispCell cell = lisp_create_stringView(string, length);
     cell.type = LISP_CELL_SYMBOL;
 
     Block* block = cell.val; 
@@ -67,15 +67,7 @@ LispCell lisp_cell_CreateSymbolView(const char* string, int length)
     return cell;
 }
 
-LispCell lisp_cell_create_proc(LispCell (*func)(LispCell))
-{
-    LispCell cell;
-    cell.type = LISP_CELL_PROC;
-    cell.val = func;
-    return cell;
-}
-
-LispCell lisp_cell_CreateInt(int n)
+LispCell lisp_create_int(int n)
 {
     LispCell cell;
     cell.type = LISP_CELL_INT;
@@ -83,7 +75,7 @@ LispCell lisp_cell_CreateInt(int n)
     return cell;
 }
 
-LispCell lisp_cell_CreateFloat(float x)
+LispCell lisp_create_float(float x)
 {
     LispCell cell;
     cell.type = LISP_CELL_FLOAT;
@@ -91,7 +83,7 @@ LispCell lisp_cell_CreateFloat(float x)
     return cell;
 }
 
-LispCell lisp_cell_CreateString(const char* string)
+LispCell lisp_create_string(const char* string)
 {
     int length = strlen(string);
     Block* block = malloc(sizeof(BlockHeader) + length + 1);
@@ -104,9 +96,9 @@ LispCell lisp_cell_CreateString(const char* string)
     return cell;
 }
 
-LispCell lisp_cell_CreateSymbol(const char* string)
+LispCell lisp_create_symbol(const char* string)
 {
-    LispCell cell = lisp_cell_CreateString(string);
+    LispCell cell = lisp_create_string(string);
     cell.type = LISP_CELL_SYMBOL;
 
     Block* block = cell.val;
@@ -118,6 +110,14 @@ LispCell lisp_cell_CreateSymbol(const char* string)
         ++c;
     }
 
+    return cell;
+}
+
+LispCell lisp_create_proc(LispCell (*func)(LispCell))
+{
+    LispCell cell;
+    cell.type = LISP_CELL_PROC;
+    cell.val = func;
     return cell;
 }
 
@@ -173,7 +173,8 @@ typedef enum
     TOKEN_FLOAT,
 } TokenType;
 
-static const char* TokenType_name_table[] = {
+// for debug purposes
+static const char* token_type_name[] = {
     "NONE", 
     "L_PAREN", 
     "R_PAREN", 
@@ -366,18 +367,18 @@ static LispCell lisp_read_atom(const Token** pointer)
         case TOKEN_INT:
             memcpy(scratch, token->start, token->length);
             scratch[token->length] = '\0';
-            cell = lisp_cell_CreateInt(atoi(scratch));
+            cell = lisp_create_int(atoi(scratch));
             break;
         case TOKEN_FLOAT:
             memcpy(scratch, token->start, token->length);
             scratch[token->length] = '\0';
-            cell = lisp_cell_CreateFloat(atof(scratch));
+            cell = lisp_create_float(atof(scratch));
             break;
         case TOKEN_STRING:
-            cell = lisp_cell_CreateStringView(token->start + 1, token->length - 2);
+            cell = lisp_create_stringView(token->start + 1, token->length - 2);
             break;
         case TOKEN_SYMBOL:
-            cell = lisp_cell_CreateSymbolView(token->start, token->length);
+            cell = lisp_create_symbolView(token->start, token->length);
             break;
         default: 
             fprintf(stderr, "read error - unknown cell: %s\n", token->start);
@@ -426,7 +427,7 @@ static LispCell lisp_read_list_r(const Token** pointer)
     {
          ++token;
          LispCell cell = lisp_cons(lisp_read_list_r(&token), lisp_null());
-         start = lisp_cons(lisp_cell_CreateSymbol("quote"), cell);
+         start = lisp_cons(lisp_create_symbol("quote"), cell);
     }
     else
     {
@@ -678,23 +679,21 @@ void lisp_env_print(LispEnv* env)
     printf("}");
 }
 
-LispCell add(LispCell args)
+static LispCell proc_add(LispCell args)
 {
-    return lisp_cell_CreateInt(lisp_car(args).int_val + lisp_car(lisp_cdr(args)).int_val);
+    return lisp_create_int(lisp_car(args).int_val + lisp_car(lisp_cdr(args)).int_val);
 }
 
-LispCell mult(LispCell args)
+static LispCell proc_mult(LispCell args)
 {
-    return lisp_cell_CreateInt(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
+    return lisp_create_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
 }
-
-
 
 void lisp_env_init_default(LispEnv* env)
 {
     lisp_env_init(env, NULL, 512);
-    lisp_env_set(env, "+", lisp_cell_create_proc(add));
-    lisp_env_set(env, "*", lisp_cell_create_proc(mult));
+    lisp_env_set(env, "+", lisp_create_proc(proc_add));
+    lisp_env_set(env, "*", lisp_create_proc(proc_mult));
 }
 
 static LispCell lisp_apply(LispCell proc, LispCell args)

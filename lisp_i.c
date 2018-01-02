@@ -17,7 +17,7 @@ int main(int argc, const char* argv[])
 
         LispCell contents = lisp_read(line);
         lisp_print(stdout, lisp_eval(lisp_car(contents), &global));
-        puts("");
+        printf("\n");
     }
 
     return 1;

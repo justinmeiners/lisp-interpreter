@@ -50,12 +50,12 @@ typedef struct
 // open addressing with dynamic resizing
 typedef struct LispEnv
 {
-    LispEnvEntry* table;
     struct LispEnv* parent;
 
+    int retain_count;
     int count;
     int capacity;
-    int retain_count;
+    LispEnvEntry* table;
 } LispEnv;
 
 // Cell utilities
@@ -63,6 +63,12 @@ typedef struct LispEnv
 #define lisp_cdr(cell) ( ((LispCell*)(((Block*)(cell).val)->data))[1] )
 LispCell lisp_cons(LispCell car, LispCell cdr);
 LispCell lisp_null();
+
+LispCell lisp_create_int(int n);
+LispCell lisp_create_float(float x);
+LispCell lisp_create_string(const char* string);
+LispCell lisp_create_symbol(const char* string);
+LispCell lisp_create_proc(LispCell (*func)(LispCell));
 
 // evaluation environments
 void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity);
