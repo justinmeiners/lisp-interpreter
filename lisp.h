@@ -67,11 +67,13 @@ LispCell lisp_null();
 LispCell lisp_create_int(int n);
 LispCell lisp_create_float(float x);
 LispCell lisp_create_string(const char* string);
-LispCell lisp_create_symbol(const char* string);
+LispCell lisp_create_symbol(const char* symbol);
 LispCell lisp_create_proc(LispCell (*func)(LispCell));
 
 // evaluation environments
 void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity);
+// reference counting memory managmeent
+void lisp_env_retain(LispEnv* env);
 void lisp_env_release(LispEnv* env);
 void lisp_env_set(LispEnv* env, const char* key, LispCell value);
 void lisp_env_print(LispEnv* env);
@@ -85,16 +87,5 @@ void lisp_env_init_default(LispEnv* env);
 LispCell lisp_read(const char* program);
 LispCell lisp_eval(LispCell cell, LispEnv* env);
 void lisp_print(FILE* file, LispCell cell);
-
-
-/* TODO:
- * - eval/apply combo
- * - naming conventions
- * - cell cleanup
- * - commenting
- * - env cleanup
- * - arg checking  
- *
- */
 
 #endif

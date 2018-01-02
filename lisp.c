@@ -4,163 +4,6 @@
 #include <memory.h>
 #include <assert.h>
 
-LispCell lisp_cons(LispCell car, LispCell cdr)
-{  
-    int length = sizeof(LispCell) * 2;
-    Block* block = malloc(sizeof(BlockHeader) + length);
-    block->header.length = length;
-
-    LispCell cell;
-    cell.type = LISP_CELL_PAIR;
-    cell.val = block;
-
-    lisp_car(cell) = car;
-    lisp_cdr(cell) = cdr;      
-    return cell;
-}       
-
-LispCell lisp_cell_at_index(LispCell list, int i)
-{
-    while (i > 0)
-    {
-        list = lisp_cdr(list);
-        --i;
-    }
-
-    return lisp_car(list);
-}
-
-LispCell lisp_null()
-{
-    LispCell cell;
-    cell.type = LISP_CELL_NULL;
-    return cell;
-}
-
-static LispCell lisp_create_stringView(const char* string, int length)
-{ 
-    Block* block = malloc(sizeof(BlockHeader) + length + 1);
-    block->header.length = length + 1;
-    memcpy(block->data, string, length);
-    block->data[length] = '\0';
-
-    LispCell cell;
-    cell.type = LISP_CELL_STRING;
-    cell.val = block; 
-    return cell;
-}
-
-static LispCell lisp_create_symbolView(const char* string, int length)
-{
-    LispCell cell = lisp_create_stringView(string, length);
-    cell.type = LISP_CELL_SYMBOL;
-
-    Block* block = cell.val; 
-    char* c = block->data;
-
-    while (*c)
-    {
-        *c = toupper(*c);
-        ++c;
-    }
-
-    return cell;
-}
-
-LispCell lisp_create_int(int n)
-{
-    LispCell cell;
-    cell.type = LISP_CELL_INT;
-    cell.int_val = n;
-    return cell;
-}
-
-LispCell lisp_create_float(float x)
-{
-    LispCell cell;
-    cell.type = LISP_CELL_FLOAT;
-    cell.float_val = x;
-    return cell;
-}
-
-LispCell lisp_create_string(const char* string)
-{
-    int length = strlen(string);
-    Block* block = malloc(sizeof(BlockHeader) + length + 1);
-    block->header.length = length + 1;
-    memcpy(block->data, string, length + 1);
-
-    LispCell cell;
-    cell.type = LISP_CELL_STRING;
-    cell.val = block; 
-    return cell;
-}
-
-LispCell lisp_create_symbol(const char* string)
-{
-    LispCell cell = lisp_create_string(string);
-    cell.type = LISP_CELL_SYMBOL;
-
-    Block* block = cell.val;
-    char* c = block->data;
-
-    while (*c)
-    {
-        *c = toupper(*c);
-        ++c;
-    }
-
-    return cell;
-}
-
-LispCell lisp_create_proc(LispCell (*func)(LispCell))
-{
-    LispCell cell;
-    cell.type = LISP_CELL_PROC;
-    cell.val = func;
-    return cell;
-}
-
-const char* lisp_cell_GetString(LispCell cell)
-{
-    Block* block = cell.val;
-    return block->data;
-}
-
-typedef struct
-{
-    int identifier;
-    LispCell args;
-    LispCell body;
-    LispEnv* env;
-} Lambda;
-
-static int lambda_identifier = 0;
-
-LispCell lisp_cell_CreateLambda(LispCell args, LispCell body, LispEnv* env)
-{
-    Block* block = malloc(sizeof(BlockHeader) + sizeof(Lambda));
-    block->header.length = sizeof(Lambda);
-
-    Lambda data;
-    data.identifier = lambda_identifier++;
-    data.args = args;
-    data.body = body;
-    data.env = env;
-    memcpy(block->data, &data, sizeof(Lambda));
-
-    LispCell cell;
-    cell.type = LISP_CELL_LAMBDA; 
-    cell.val = block;
-    return cell;
-}
-
-Lambda lisp_cell_GetLambda(LispCell lambda)
-{
-    Block* block = lambda.val;
-    return *(const Lambda*)block->data;
-}
-
 typedef enum
 {
     TOKEN_NONE = 0,
@@ -352,6 +195,165 @@ static Token* tokenize(const char* program, int* count)
     *count = token_count;
     return tokens;
 }
+
+LispCell lisp_cons(LispCell car, LispCell cdr)
+{  
+    int length = sizeof(LispCell) * 2;
+    Block* block = malloc(sizeof(BlockHeader) + length);
+    block->header.length = length;
+
+    LispCell cell;
+    cell.type = LISP_CELL_PAIR;
+    cell.val = block;
+
+    lisp_car(cell) = car;
+    lisp_cdr(cell) = cdr;      
+    return cell;
+}       
+
+LispCell lisp_cell_at_index(LispCell list, int i)
+{
+    while (i > 0)
+    {
+        list = lisp_cdr(list);
+        --i;
+    }
+
+    return lisp_car(list);
+}
+
+LispCell lisp_null()
+{
+    LispCell cell;
+    cell.type = LISP_CELL_NULL;
+    return cell;
+}
+
+static LispCell lisp_create_stringView(const char* string, int length)
+{ 
+    Block* block = malloc(sizeof(BlockHeader) + length + 1);
+    block->header.length = length + 1;
+    memcpy(block->data, string, length);
+    block->data[length] = '\0';
+
+    LispCell cell;
+    cell.type = LISP_CELL_STRING;
+    cell.val = block; 
+    return cell;
+}
+
+static LispCell lisp_create_symbolView(const char* string, int length)
+{
+    LispCell cell = lisp_create_stringView(string, length);
+    cell.type = LISP_CELL_SYMBOL;
+
+    Block* block = cell.val; 
+    char* c = block->data;
+
+    while (*c)
+    {
+        *c = toupper(*c);
+        ++c;
+    }
+
+    return cell;
+}
+
+LispCell lisp_create_int(int n)
+{
+    LispCell cell;
+    cell.type = LISP_CELL_INT;
+    cell.int_val = n;
+    return cell;
+}
+
+LispCell lisp_create_float(float x)
+{
+    LispCell cell;
+    cell.type = LISP_CELL_FLOAT;
+    cell.float_val = x;
+    return cell;
+}
+
+LispCell lisp_create_string(const char* string)
+{
+    int length = strlen(string);
+    Block* block = malloc(sizeof(BlockHeader) + length + 1);
+    block->header.length = length + 1;
+    memcpy(block->data, string, length + 1);
+
+    LispCell cell;
+    cell.type = LISP_CELL_STRING;
+    cell.val = block; 
+    return cell;
+}
+
+LispCell lisp_create_symbol(const char* symbol)
+{
+    LispCell cell = lisp_create_string(symbol);
+    cell.type = LISP_CELL_SYMBOL;
+
+    // always convert to uppercase for symbols
+    Block* block = cell.val;
+    char* c = block->data;
+
+    while (*c)
+    {
+        *c = toupper(*c);
+        ++c;
+    }
+
+    return cell;
+}
+
+LispCell lisp_create_proc(LispCell (*func)(LispCell))
+{
+    LispCell cell;
+    cell.type = LISP_CELL_PROC;
+    cell.val = func;
+    return cell;
+}
+
+const char* lisp_cell_GetString(LispCell cell)
+{
+    Block* block = cell.val;
+    return block->data;
+}
+
+typedef struct
+{
+    int identifier;
+    LispCell args;
+    LispCell body;
+    LispEnv* env;
+} Lambda;
+
+static int lambda_identifier = 0;
+
+LispCell lisp_cell_CreateLambda(LispCell args, LispCell body, LispEnv* env)
+{
+    Block* block = malloc(sizeof(BlockHeader) + sizeof(Lambda));
+    block->header.length = sizeof(Lambda);
+
+    Lambda data;
+    data.identifier = lambda_identifier++;
+    data.args = args;
+    data.body = body;
+    data.env = env;
+    memcpy(block->data, &data, sizeof(Lambda));
+
+    LispCell cell;
+    cell.type = LISP_CELL_LAMBDA; 
+    cell.val = block;
+    return cell;
+}
+
+Lambda lisp_cell_GetLambda(LispCell lambda)
+{
+    Block* block = lambda.val;
+    return *(const Lambda*)block->data;
+}
+
 
 #define SCRATCH_MAX 128
 
@@ -548,6 +550,11 @@ void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity)
     // clear the keys
     for (int i = 0; i < capacity; ++i)
         env->table[i].key[0] = '\0';
+}
+
+void lisp_env_retain(LispEnv* env)
+{
+    ++env->retain_count;
 }
 
 void lisp_env_release(LispEnv* env)
