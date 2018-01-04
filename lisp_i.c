@@ -2,6 +2,9 @@
 
 int main(int argc, const char* argv[])
 {   
+    LispHeap heap;
+    lisp_heap_init(&heap);
+
     LispEnv global;
     lisp_env_init_default(&global);
 
@@ -15,8 +18,8 @@ int main(int argc, const char* argv[])
         char line[LINE_MAX];
         fgets(line, LINE_MAX, stdin);
 
-        LispWord contents = lisp_read(line);
-        lisp_print(stdout, lisp_eval(lisp_car(contents), &global));
+        LispWord contents = lisp_read(line, &heap);
+        lisp_print(stdout, lisp_eval(lisp_car(contents), &global, &heap));
         printf("\n");
     }
 
