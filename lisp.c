@@ -1,8 +1,20 @@
-#include "lisp.h"
+/*
+
+  References:
+ Looks just like how mine ended up :) - http://piumarta.com/software/lysp/
+  
+  Eval - http://norvig.com/lispy.html
+  Enviornments - https://mitpress.mit.edu/sicp/full-text/book/book-Z-H-21.html#%_sec_3.2
+  Cons Representation - http://www.more-magic.net/posts/internals-data-representation.html
+  GC - http://www.more-magic.net/posts/internals-gc.html
+  http://home.pipeline.com/~hbaker1/CheneyMTA.html
+*/
+
 #include <stdlib.h>
 #include <ctype.h>
 #include <memory.h>
 #include <assert.h>
+#include "lisp.h"
 
 typedef enum
 {
@@ -196,22 +208,39 @@ static Token* tokenize(const char* program, int* count)
     return tokens;
 }
 
-LispCell lisp_cons(LispCell car, LispCell cdr)
+
+void lisp_heap_init(LispHeap* heap)
+{
+    heap->capacity = 1024;
+    heap->size = 0;
+    heap->buffer = malloc(heap->capacity);
+}
+
+static LispBlock* heap_alloc_block(size_t data_size, LispHeap* heap)
+{
+    LispBlock* block = (LispBlock*)(heap->buffer + heap->size);
+    block->data_size = data_size;
+    heap->size += sizeof(LispBlock) + data_size;
+    return block;
+}
+
+
+LispWord lisp_cons(LispWord car, LispWord cdr)
 {  
-    int length = sizeof(LispCell) * 2;
-    Block* block = malloc(sizeof(BlockHeader) + length);
-    block->header.length = length;
+    int length = sizeof(LispWord) * 2;
+    LispBlock* block = malloc(sizeof(LispBlock) + length);
+    block->data_size = length;
 
-    LispCell cell;
-    cell.type = LISP_CELL_PAIR;
-    cell.val = block;
+    LispWord word;
+    word.type = LISP_WORD_PAIR;
+    word.val = block;
 
-    lisp_car(cell) = car;
-    lisp_cdr(cell) = cdr;      
-    return cell;
+    lisp_car(word) = car;
+    lisp_cdr(word) = cdr;      
+    return word;
 }       
 
-LispCell lisp_cell_at_index(LispCell list, int i)
+LispWord lisp_word_at_index(LispWord list, int i)
 {
     while (i > 0)
     {
@@ -222,32 +251,32 @@ LispCell lisp_cell_at_index(LispCell list, int i)
     return lisp_car(list);
 }
 
-LispCell lisp_null()
+LispWord lisp_null()
 {
-    LispCell cell;
-    cell.type = LISP_CELL_NULL;
-    return cell;
+    LispWord word;
+    word.type = LISP_WORD_NULL;
+    return word;
 }
 
-static LispCell lisp_create_stringView(const char* string, int length)
+static LispWord lisp_create_stringView(const char* string, int length)
 { 
-    Block* block = malloc(sizeof(BlockHeader) + length + 1);
-    block->header.length = length + 1;
+    LispBlock* block = malloc(sizeof(LispBlock) + length + 1);
+    block->data_size = length + 1;
     memcpy(block->data, string, length);
     block->data[length] = '\0';
 
-    LispCell cell;
-    cell.type = LISP_CELL_STRING;
-    cell.val = block; 
-    return cell;
+    LispWord word;
+    word.type = LISP_WORD_STRING;
+    word.val = block; 
+    return word;
 }
 
-static LispCell lisp_create_symbolView(const char* string, int length)
+static LispWord lisp_create_symbolView(const char* string, int length)
 {
-    LispCell cell = lisp_create_stringView(string, length);
-    cell.type = LISP_CELL_SYMBOL;
+    LispWord word = lisp_create_stringView(string, length);
+    word.type = LISP_WORD_SYMBOL;
 
-    Block* block = cell.val; 
+    LispBlock* block = word.val; 
     char* c = block->data;
 
     while (*c)
@@ -256,45 +285,45 @@ static LispCell lisp_create_symbolView(const char* string, int length)
         ++c;
     }
 
-    return cell;
+    return word;
 }
 
-LispCell lisp_create_int(int n)
+LispWord lisp_create_int(int n)
 {
-    LispCell cell;
-    cell.type = LISP_CELL_INT;
-    cell.int_val = n;
-    return cell;
+    LispWord word;
+    word.type = LISP_WORD_INT;
+    word.int_val = n;
+    return word;
 }
 
-LispCell lisp_create_float(float x)
+LispWord lisp_create_float(float x)
 {
-    LispCell cell;
-    cell.type = LISP_CELL_FLOAT;
-    cell.float_val = x;
-    return cell;
+    LispWord word;
+    word.type = LISP_WORD_FLOAT;
+    word.float_val = x;
+    return word;
 }
 
-LispCell lisp_create_string(const char* string)
+LispWord lisp_create_string(const char* string)
 {
-    int length = strlen(string);
-    Block* block = malloc(sizeof(BlockHeader) + length + 1);
-    block->header.length = length + 1;
-    memcpy(block->data, string, length + 1);
+    int length = strlen(string) + 1;
+    LispBlock* block = malloc(sizeof(LispBlock) + length);
+    block->data_size = length;
+    memcpy(block->data, string, length);
 
-    LispCell cell;
-    cell.type = LISP_CELL_STRING;
-    cell.val = block; 
-    return cell;
+    LispWord word;
+    word.type = LISP_WORD_STRING;
+    word.val = block; 
+    return word;
 }
 
-LispCell lisp_create_symbol(const char* symbol)
+LispWord lisp_create_symbol(const char* symbol)
 {
-    LispCell cell = lisp_create_string(symbol);
-    cell.type = LISP_CELL_SYMBOL;
+    LispWord word = lisp_create_string(symbol);
+    word.type = LISP_WORD_SYMBOL;
 
     // always convert to uppercase for symbols
-    Block* block = cell.val;
+    LispBlock* block = word.val;
     char* c = block->data;
 
     while (*c)
@@ -303,37 +332,37 @@ LispCell lisp_create_symbol(const char* symbol)
         ++c;
     }
 
-    return cell;
+    return word;
 }
 
-LispCell lisp_create_proc(LispCell (*func)(LispCell))
+LispWord lisp_create_proc(LispWord (*func)(LispWord))
 {
-    LispCell cell;
-    cell.type = LISP_CELL_PROC;
-    cell.val = func;
-    return cell;
+    LispWord word;
+    word.type = LISP_WORD_PROC;
+    word.val = func;
+    return word;
 }
 
-const char* lisp_cell_GetString(LispCell cell)
+const char* lisp_word_GetString(LispWord word)
 {
-    Block* block = cell.val;
+    LispBlock* block = word.val;
     return block->data;
 }
 
 typedef struct
 {
     int identifier;
-    LispCell args;
-    LispCell body;
+    LispWord args;
+    LispWord body;
     LispEnv* env;
 } Lambda;
 
 static int lambda_identifier = 0;
 
-LispCell lisp_cell_CreateLambda(LispCell args, LispCell body, LispEnv* env)
+LispWord lisp_create_lambda(LispWord args, LispWord body, LispEnv* env)
 {
-    Block* block = malloc(sizeof(BlockHeader) + sizeof(Lambda));
-    block->header.length = sizeof(Lambda);
+    LispBlock* block = malloc(sizeof(LispBlock) + sizeof(Lambda));
+    block->data_size = sizeof(Lambda);
 
     Lambda data;
     data.identifier = lambda_identifier++;
@@ -342,81 +371,81 @@ LispCell lisp_cell_CreateLambda(LispCell args, LispCell body, LispEnv* env)
     data.env = env;
     memcpy(block->data, &data, sizeof(Lambda));
 
-    LispCell cell;
-    cell.type = LISP_CELL_LAMBDA; 
-    cell.val = block;
-    return cell;
+    LispWord word;
+    word.type = LISP_WORD_LAMBDA; 
+    word.val = block;
+    return word;
 }
 
-Lambda lisp_cell_GetLambda(LispCell lambda)
+Lambda lisp_word_GetLambda(LispWord lambda)
 {
-    Block* block = lambda.val;
+    LispBlock* block = lambda.val;
     return *(const Lambda*)block->data;
 }
 
 
 #define SCRATCH_MAX 128
 
-static LispCell lisp_read_atom(const Token** pointer) 
+static LispWord lisp_read_atom(const Token** pointer) 
 {
     const Token* token = *pointer;
     
     char scratch[SCRATCH_MAX];
-    LispCell cell = lisp_null();
+    LispWord word = lisp_null();
 
     switch (token->type)
     {
         case TOKEN_INT:
             memcpy(scratch, token->start, token->length);
             scratch[token->length] = '\0';
-            cell = lisp_create_int(atoi(scratch));
+            word = lisp_create_int(atoi(scratch));
             break;
         case TOKEN_FLOAT:
             memcpy(scratch, token->start, token->length);
             scratch[token->length] = '\0';
-            cell = lisp_create_float(atof(scratch));
+            word = lisp_create_float(atof(scratch));
             break;
         case TOKEN_STRING:
-            cell = lisp_create_stringView(token->start + 1, token->length - 2);
+            word = lisp_create_stringView(token->start + 1, token->length - 2);
             break;
         case TOKEN_SYMBOL:
-            cell = lisp_create_symbolView(token->start, token->length);
+            word = lisp_create_symbolView(token->start, token->length);
             break;
         default: 
-            fprintf(stderr, "read error - unknown cell: %s\n", token->start);
+            fprintf(stderr, "read error - unknown word: %s\n", token->start);
             break;
     }
 
     *pointer = (token + 1); 
-    return cell;
+    return word;
 }
 
 // read tokens and construct S-expresions
-static LispCell lisp_read_list_r(const Token** pointer)
+static LispWord lisp_read_list_r(const Token** pointer)
 { 
     const Token* token = *pointer;
 
-    LispCell start = lisp_null();
+    LispWord start = lisp_null();
 
     if (token->type == TOKEN_L_PAREN)
     {
         ++token;
-        LispCell previous = lisp_null();
+        LispWord previous = lisp_null();
 
         while (token->type != TOKEN_R_PAREN)
         {
-            LispCell cell = lisp_cons(lisp_read_list_r(&token), lisp_null());
+            LispWord word = lisp_cons(lisp_read_list_r(&token), lisp_null());
 
-            if (previous.type != LISP_CELL_NULL) 
+            if (previous.type != LISP_WORD_NULL) 
             {
-                lisp_cdr(previous) = cell;
+                lisp_cdr(previous) = word;
             }
             else
             {
-                start = cell;
+                start = word;
             }
  
-            previous = cell;
+            previous = word;
         }
 
         ++token;
@@ -428,8 +457,8 @@ static LispCell lisp_read_list_r(const Token** pointer)
     else if (token->type == TOKEN_QUOTE)
     {
          ++token;
-         LispCell cell = lisp_cons(lisp_read_list_r(&token), lisp_null());
-         start = lisp_cons(lisp_create_symbol("quote"), cell);
+         LispWord word = lisp_cons(lisp_read_list_r(&token), lisp_null());
+         start = lisp_cons(lisp_create_symbol("quote"), word);
     }
     else
     {
@@ -440,30 +469,30 @@ static LispCell lisp_read_list_r(const Token** pointer)
     return start;
 }
 
-LispCell lisp_read(const char* program)
+LispWord lisp_read(const char* program)
 {
     int token_count;
 
     Token* tokens = tokenize(program, &token_count);
     const Token* pointer = tokens;
 
-    LispCell previous = lisp_null();
-    LispCell start = previous;
+    LispWord previous = lisp_null();
+    LispWord start = previous;
 
     while (pointer < tokens + token_count)
     {
-        LispCell cell = lisp_cons(lisp_read_list_r(&pointer), lisp_null());
+        LispWord word = lisp_cons(lisp_read_list_r(&pointer), lisp_null());
 
-        if (previous.type != LISP_CELL_NULL) 
+        if (previous.type != LISP_WORD_NULL) 
         {
-            lisp_cdr(previous) = cell;
+            lisp_cdr(previous) = word;
         }
         else
         {
-            start = cell;
+            start = word;
         }
 
-        previous = cell;
+        previous = word;
     }
 
     free(tokens);     
@@ -471,41 +500,41 @@ LispCell lisp_read(const char* program)
     return start;
 }
 
-static void lisp_print_r(FILE* file, LispCell cell, int is_cdr)
+static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
 {
-    switch (cell.type)
+    switch (word.type)
     {
-        case LISP_CELL_INT:
-            fprintf(file, "%i", cell.int_val);
+        case LISP_WORD_INT:
+            fprintf(file, "%i", word.int_val);
             break;
-        case LISP_CELL_FLOAT:
-            fprintf(file, "%f", cell.float_val);
+        case LISP_WORD_FLOAT:
+            fprintf(file, "%f", word.float_val);
             break;
-        case LISP_CELL_NULL:
+        case LISP_WORD_NULL:
             fprintf(file, "nil");
             break;
-        case LISP_CELL_SYMBOL:
-            fprintf(file, "%s", lisp_cell_GetString(cell));
+        case LISP_WORD_SYMBOL:
+            fprintf(file, "%s", lisp_word_GetString(word));
             break;
-        case LISP_CELL_STRING:
-            fprintf(file, "\"%s\"", lisp_cell_GetString(cell));
+        case LISP_WORD_STRING:
+            fprintf(file, "\"%s\"", lisp_word_GetString(word));
             break;
-        case LISP_CELL_LAMBDA:
+        case LISP_WORD_LAMBDA:
             fprintf(file, "lambda #");
             break;
-        case LISP_CELL_PROC:
-            fprintf(file, "procedure #%x", (unsigned int)cell.val); 
+        case LISP_WORD_PROC:
+            fprintf(file, "procedure #%x", (unsigned int)word.val); 
             break;
-        case LISP_CELL_PAIR:
+        case LISP_WORD_PAIR:
             if (!is_cdr) fprintf(file, "(");
-            lisp_print_r(file, lisp_car(cell), 0);
+            lisp_print_r(file, lisp_car(word), 0);
 
-            if (lisp_cdr(cell).type != LISP_CELL_PAIR)
+            if (lisp_cdr(word).type != LISP_WORD_PAIR)
             {
-                if (lisp_cdr(cell).type != LISP_CELL_NULL)
+                if (lisp_cdr(word).type != LISP_WORD_NULL)
                 { 
                     fprintf(file, " . ");
-                    lisp_print_r(file, lisp_cdr(cell), 0);
+                    lisp_print_r(file, lisp_cdr(word), 0);
                 }
 
                 fprintf(file, ")");
@@ -513,15 +542,15 @@ static void lisp_print_r(FILE* file, LispCell cell, int is_cdr)
             else
             {
                 fprintf(file, " ");
-                lisp_print_r(file, lisp_cdr(cell), 1);
+                lisp_print_r(file, lisp_cdr(word), 1);
             } 
             break; 
     }
 }
 
-void lisp_print(FILE* file, LispCell cell)
+void lisp_print(FILE* file, LispWord word)
 {
-    lisp_print_r(file, cell, 0); 
+    lisp_print_r(file, word, 0); 
 }
 
 static int hash(const char *buffer, int length) 
@@ -595,7 +624,7 @@ static int lisp_env_search(LispEnv* env, const char* key, int* out_index)
     return found;
 }
 
-void lisp_env_set(LispEnv* env, const char* key, LispCell value)
+void lisp_env_set(LispEnv* env, const char* key, LispWord value)
 {
     int index;
     if (!lisp_env_search(env, key, &index))
@@ -636,7 +665,7 @@ void lisp_env_set(LispEnv* env, const char* key, LispCell value)
     strcpy(env->table[index].key, key);
 }
 
-LispCell lisp_env_get(LispEnv* env, const char* key)
+LispWord lisp_env_get(LispEnv* env, const char* key)
 {
     LispEnv* current = env;
     while (current)
@@ -686,12 +715,12 @@ void lisp_env_print(LispEnv* env)
     printf("}");
 }
 
-static LispCell proc_add(LispCell args)
+static LispWord proc_add(LispWord args)
 {
     return lisp_create_int(lisp_car(args).int_val + lisp_car(lisp_cdr(args)).int_val);
 }
 
-static LispCell proc_mult(LispCell args)
+static LispWord proc_mult(LispWord args)
 {
     return lisp_create_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
 }
@@ -703,40 +732,40 @@ void lisp_env_init_default(LispEnv* env)
     lisp_env_set(env, "*", lisp_create_proc(proc_mult));
 }
 
-static LispCell lisp_apply(LispCell proc, LispCell args)
+static LispWord lisp_apply(LispWord proc, LispWord args)
 {
-    if (proc.type == LISP_CELL_LAMBDA)
+    if (proc.type == LISP_WORD_LAMBDA)
     {  
         // lambda call (compound procedure)
         // construct a new environment
-        Lambda lambda = lisp_cell_GetLambda(proc);
+        Lambda lambda = lisp_word_GetLambda(proc);
 
         LispEnv new_env;
         lisp_env_init(&new_env, lambda.env, 64); 
 
         // bind parameters to arguments
         // to pass into function call
-        LispCell keyIt = lambda.args;
-        LispCell valIt = args;
+        LispWord keyIt = lambda.args;
+        LispWord valIt = args;
 
-        while (keyIt.type != LISP_CELL_NULL)
+        while (keyIt.type != LISP_WORD_NULL)
         {
-            const char* key = lisp_cell_GetString(lisp_car(keyIt));
+            const char* key = lisp_word_GetString(lisp_car(keyIt));
             lisp_env_set(&new_env, key, lisp_car(valIt));
 
             keyIt = lisp_cdr(keyIt);
             valIt = lisp_cdr(valIt);
         }
 
-        LispCell result = lisp_eval(lambda.body, &new_env); 
+        LispWord result = lisp_eval(lambda.body, &new_env); 
         lisp_env_release(&new_env); // TODO: ref counting?  
         return result;
     }
-    else if (proc.type == LISP_CELL_PROC)
+    else if (proc.type == LISP_WORD_PROC)
     {
         // call into C functions
         // no environment required 
-        LispCell (*func)(LispCell) = proc.val;
+        LispWord (*func)(LispWord) = proc.val;
         return func(args);
     }
     else
@@ -746,24 +775,24 @@ static LispCell lisp_apply(LispCell proc, LispCell args)
     }
 }
 
-static LispCell lisp_eval_list(LispCell list, LispEnv* env)
+static LispWord lisp_eval_list(LispWord list, LispEnv* env)
 {
-    LispCell start = lisp_null();
-    LispCell previous = lisp_null();
+    LispWord start = lisp_null();
+    LispWord previous = lisp_null();
 
-    while (list.type != LISP_CELL_NULL)
+    while (list.type != LISP_WORD_NULL)
     {
-        LispCell new_cell = lisp_cons(lisp_eval(lisp_car(list), env), lisp_null());
+        LispWord new_word = lisp_cons(lisp_eval(lisp_car(list), env), lisp_null());
 
-        if (previous.type == LISP_CELL_NULL)
+        if (previous.type == LISP_WORD_NULL)
         {
-            start = new_cell;
-            previous = new_cell;
+            start = new_word;
+            previous = new_word;
         }
         else
         {
-            lisp_cdr(previous) = new_cell;
-            previous = new_cell;
+            lisp_cdr(previous) = new_word;
+            previous = new_word;
         }
 
         list = lisp_cdr(list);
@@ -772,32 +801,32 @@ static LispCell lisp_eval_list(LispCell list, LispEnv* env)
     return start;
 }
 
-LispCell lisp_eval(LispCell cell, LispEnv* env)
+LispWord lisp_eval(LispWord word, LispEnv* env)
 {
-    if (cell.type == LISP_CELL_SYMBOL)
+    if (word.type == LISP_WORD_SYMBOL)
     {
         // read variable 
-        const char* key = lisp_cell_GetString(cell);
+        const char* key = lisp_word_GetString(word);
         return lisp_env_get(env, key);
     }
-    else if (cell.type == LISP_CELL_INT || 
-            cell.type == LISP_CELL_FLOAT ||
-            cell.type == LISP_CELL_STRING)
+    else if (word.type == LISP_WORD_INT || 
+            word.type == LISP_WORD_FLOAT ||
+            word.type == LISP_WORD_STRING)
     {
         // atom
-        return cell;
+        return word;
     }
-    else if (cell.type == LISP_CELL_PAIR && 
-             lisp_car(cell).type == LISP_CELL_SYMBOL)
+    else if (word.type == LISP_WORD_PAIR && 
+             lisp_car(word).type == LISP_WORD_SYMBOL)
     { 
-        const char* opSymbol = lisp_cell_GetString(lisp_car(cell));
+        const char* opSymbol = lisp_word_GetString(lisp_car(word));
 
         if (strcmp(opSymbol, "IF") == 0)
         {
             // if conditional statemetns
-            LispCell cond = lisp_cell_at_index(cell, 1);
-            LispCell result = lisp_cell_at_index(cell, 2);
-            LispCell alt = lisp_cell_at_index(cell, 3);
+            LispWord cond = lisp_word_at_index(word, 1);
+            LispWord result = lisp_word_at_index(word, 2);
+            LispWord alt = lisp_word_at_index(word, 3);
 
             if (lisp_eval(cond, env).int_val != 0)
             {
@@ -810,13 +839,13 @@ LispCell lisp_eval(LispCell cell, LispEnv* env)
         }
         else if (strcmp(opSymbol, "QUOTE") == 0)
         {
-            return cell;
+            return word;
         }
         else if (strcmp(opSymbol, "DEFINE") == 0)
         {
             // variable definitions
-            const char* key = lisp_cell_GetString(lisp_cell_at_index(cell, 1));
-            LispCell value = lisp_eval(lisp_cell_at_index(cell, 2), env);
+            const char* key = lisp_word_GetString(lisp_word_at_index(word, 1));
+            LispWord value = lisp_eval(lisp_word_at_index(word, 2), env);
             lisp_env_set(env, key, value);
             return value;
         }
@@ -825,12 +854,12 @@ LispCell lisp_eval(LispCell cell, LispEnv* env)
             // mutablity
             // like define, but requires existance
             // and will search up the environment chain
-            const char* key = lisp_cell_GetString(lisp_cell_at_index(cell, 1)); 
+            const char* key = lisp_word_GetString(lisp_word_at_index(word, 1)); 
             LispEnv* targetLispEnv = lisp_env_FindWithKey(env, key);
 
             if (targetLispEnv)
             {
-                LispCell value = lisp_eval(lisp_cell_at_index(cell, 2), env);
+                LispWord value = lisp_eval(lisp_word_at_index(word, 2), env);
                 lisp_env_set(targetLispEnv, key, value);
                 return value;
             }
@@ -843,13 +872,13 @@ LispCell lisp_eval(LispCell cell, LispEnv* env)
         else if (strcmp(opSymbol, "LAMBDA") == 0)
         {
             // lambda defintions (compound procedures)
-            return lisp_cell_CreateLambda(lisp_cell_at_index(cell, 1), lisp_cell_at_index(cell, 2), env);
+            return lisp_create_lambda(lisp_word_at_index(word, 1), lisp_word_at_index(word, 2), env);
         }
         else
         {
             // application
-            LispCell proc = lisp_eval(lisp_car(cell), env);
-            LispCell args = lisp_eval_list(lisp_cdr(cell), env);
+            LispWord proc = lisp_eval(lisp_car(word), env);
+            LispWord args = lisp_eval_list(lisp_cdr(word), env);
             return lisp_apply(proc, args);
        }
     }

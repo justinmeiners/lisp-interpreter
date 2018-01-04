@@ -15,7 +15,7 @@ int main(int argc, const char* argv[])
         char line[LINE_MAX];
         fgets(line, LINE_MAX, stdin);
 
-        LispCell contents = lisp_read(line);
+        LispWord contents = lisp_read(line);
         lisp_print(stdout, lisp_eval(lisp_car(contents), &global));
         printf("\n");
     }
