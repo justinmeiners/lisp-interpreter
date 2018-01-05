@@ -11,8 +11,8 @@ typedef enum
     LISP_PAIR,   // cons pair (car, cdr)
     LISP_SYMBOL, // unquoted strings
     LISP_STRING, // quoted strings
-    LISP_LAMBDA,   // user defined lambda
-    LISP_PROC, // C function
+    LISP_LAMBDA, // user defined lambda
+    LISP_PROC,   // C function
     LISP_NULL,
 } LispType;
 
@@ -63,15 +63,12 @@ typedef struct LispEnv
     LispEnvEntry* table;
 } LispEnv;
 
-typedef struct
-{
-    LispHeap heap;
-    LispEnv env;
-} LispContext;
-
 // Cell utilities
 #define lisp_car(word) ( ((LispWord*)(((LispBlock*)(word).val)->data))[0] )
 #define lisp_cdr(word) ( ((LispWord*)(((LispBlock*)(word).val)->data))[1] )
+
+LispType lisp_type(LispWord word);
+int lisp_is_null(LispWord word);
 LispWord lisp_null();
 LispWord lisp_create_int(int n);
 LispWord lisp_create_float(float x);
@@ -81,10 +78,7 @@ const char* lisp_string(LispWord word);
 LispWord lisp_create_symbol(const char* symbol, LispHeap* heap);
 const char* lisp_symbol(LispWord word);
 // procedures
-LispWord lisp_create_proc(LispWord (*func)(LispWord));
-
-// memory managment/garbage collection
-void lisp_heap_init(LispHeap* heap);
+LispWord lisp_create_proc(LispWord (*func)(LispWord,LispHeap*));
 
 // evaluation environments
 void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity);
@@ -103,5 +97,10 @@ void lisp_env_init_default(LispEnv* env);
 LispWord lisp_read(const char* program, LispHeap* heap);
 LispWord lisp_eval(LispWord word, LispEnv* env, LispHeap* heap);
 void lisp_print(FILE* file, LispWord word);
+
+// memory managment/garbage collection
+void lisp_heap_init(LispHeap* heap);
+size_t lisp_gc(LispHeap* from, LispEnv* env);
+
 
 #endif

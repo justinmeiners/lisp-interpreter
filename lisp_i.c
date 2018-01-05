@@ -8,6 +8,7 @@ int main(int argc, const char* argv[])
     LispEnv global;
     lisp_env_init_default(&global);
 
+   // printf("%i\n", sizeof(LispWord));
 
 #define LINE_MAX 2048
 
@@ -21,6 +22,7 @@ int main(int argc, const char* argv[])
         LispWord contents = lisp_read(line, &heap);
         lisp_print(stdout, lisp_eval(lisp_car(contents), &global, &heap));
         printf("\n");
+        printf("collected: %lu size: %lu\n", lisp_gc(&heap, &global), heap.size);
     }
 
     return 1;
