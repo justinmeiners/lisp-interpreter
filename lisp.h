@@ -18,14 +18,6 @@ typedef enum
 
 typedef struct
 {
-    int gc_flags;
-    int type;
-    intptr_t data_size;
-    char data[];
-} LispBlock;
-
-typedef struct
-{
     LispType type;
 
     union
@@ -38,16 +30,15 @@ typedef struct
 
 typedef struct
 {
-    char* buffer;
-    size_t size;
-    size_t capacity;
-} LispHeap;
-
-#define ENTRY_KEY_MAX 128
+    int gc_flags;
+    int type;
+    intptr_t data_size;
+    char data[];
+} LispBlock;
 
 typedef struct
 {
-   char key[ENTRY_KEY_MAX];
+   LispWord symbol;
    LispWord value; 
 } LispEnvEntry;
 
@@ -63,6 +54,22 @@ typedef struct LispEnv
     LispEnvEntry* table;
 } LispEnv;
 
+typedef struct
+{
+    char* buffer;
+    size_t size;
+    size_t capacity;
+} LispHeap;
+
+typedef struct
+{
+    LispHeap heap;
+    LispEnv global;
+} LispContext;
+
+
+typedef LispWord (*LispProc)(LispWord, LispContext*);
+
 // Cell utilities
 #define lisp_car(word) ( ((LispWord*)(((LispBlock*)(word).val)->data))[0] )
 #define lisp_cdr(word) ( ((LispWord*)(((LispBlock*)(word).val)->data))[1] )
@@ -72,35 +79,34 @@ int lisp_is_null(LispWord word);
 LispWord lisp_null();
 LispWord lisp_create_int(int n);
 LispWord lisp_create_float(float x);
-LispWord lisp_cons(LispWord car, LispWord cdr, LispHeap* heap);
-LispWord lisp_create_string(const char* string, LispHeap* heap);
+LispWord lisp_cons(LispWord car, LispWord cdr, LispContext* ctx);
+LispWord lisp_create_string(const char* string, LispContext* ctx);
 const char* lisp_string(LispWord word);
-LispWord lisp_create_symbol(const char* symbol, LispHeap* heap);
+LispWord lisp_create_symbol(const char* symbol, LispContext* ctx);
 const char* lisp_symbol(LispWord word);
 // procedures
-LispWord lisp_create_proc(LispWord (*func)(LispWord,LispHeap*));
+LispWord lisp_create_proc(LispProc proc);
 
 // evaluation environments
 void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity);
 // reference counting memory managmeent
 void lisp_env_retain(LispEnv* env);
 void lisp_env_release(LispEnv* env);
-void lisp_env_set(LispEnv* env, const char* key, LispWord value);
+void lisp_env_set(LispEnv* env, LispWord symbol, LispWord value);
 void lisp_env_print(LispEnv* env);
 
-// default global enviornment
-// you can start your own enviornment with this
-// and then add functions and variable definitions
-void lisp_env_init_default(LispEnv* env);
-
 // Maxwell's equations of Software. REP
-LispWord lisp_read(const char* program, LispHeap* heap);
-LispWord lisp_eval(LispWord word, LispEnv* env, LispHeap* heap);
-void lisp_print(FILE* file, LispWord word);
+LispWord lisp_read(const char* program, LispContext* ctx);
+LispWord lisp_eval(LispWord symbol, LispEnv* env, LispContext* ctx);
+void lisp_print(LispWord word);
+void lisp_printf(FILE* file, LispWord word);
 
 // memory managment/garbage collection
-void lisp_heap_init(LispHeap* heap);
-size_t lisp_gc(LispHeap* from, LispEnv* env);
+int lisp_init(LispContext* ctx);
+// this is just a shortcut for
+// lisp_env_set(.. lisp_create_symbol(..), lisp_create_proc(proc))
+void lisp_add_proc(const char* name, LispProc proc, LispContext* ctx);
+size_t lisp_collect(LispContext* ctx);
 
 
 #endif
