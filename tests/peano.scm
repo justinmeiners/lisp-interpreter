@@ -5,5 +5,5 @@
       b
       (peano (- a 1) (+ b 1)))))
 
-(display (peano 3 4))
+(display (peano 2 4))
  

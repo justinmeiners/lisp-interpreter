@@ -222,6 +222,8 @@ static void heap_init(LispHeap* heap, int capacity)
     heap->buffer = malloc(heap->capacity);
 }
 
+static void heap_shutdown(LispHeap* heap) { free(heap->buffer); }
+
 static LispBlock* block_alloc(size_t data_size, LispType type, LispHeap* heap)
 {
     LispBlock* block = (LispBlock*)(heap->buffer + heap->size);
@@ -338,14 +340,13 @@ const char* lisp_symbol(LispWord word)
     return lisp_string(word);
 }
 
-static int lambda_identifier = 0;
 
 LispWord lisp_create_lambda(LispWord args, LispWord body, LispEnv* env, LispContext* ctx)
 {
     LispBlock* block = block_alloc(sizeof(Lambda), LISP_LAMBDA, &ctx->heap);
 
     Lambda data;
-    data.identifier = lambda_identifier++;
+    data.identifier = ctx->lambda_counter++;
     data.args = args;
     data.body = body;
     data.env = env;
@@ -357,7 +358,7 @@ LispWord lisp_create_lambda(LispWord args, LispWord body, LispEnv* env, LispCont
     return word;
 }
 
-Lambda lisp_word_GetLambda(LispWord lambda)
+Lambda lisp_lambda(LispWord lambda)
 {
     LispBlock* block = lambda.val;
     return *(const Lambda*)block->data;
@@ -537,7 +538,7 @@ static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
             fprintf(file, "\"%s\"", lisp_string(word));
             break;
         case LISP_LAMBDA:
-            fprintf(file, "lambda");
+            fprintf(file, "lambda-%i", lisp_lambda(word).identifier);
             break;
         case LISP_PROC:
             fprintf(file, "procedure-%x", (unsigned int)word.val); 
@@ -733,10 +734,7 @@ static LispEnv* find_env(LispEnv* env, LispWord symbol)
         int index;
         if (lisp_env_search(current, lisp_symbol(symbol), &index))
         {
-            if (!lisp_env_empty(current, index))
-            {
-                return env;
-            }
+            if (!lisp_env_empty(current, index)) return env;
         }
 
         current = current->parent;
@@ -764,7 +762,7 @@ static LispWord lisp_apply(LispWord proc, LispWord args, LispContext* ctx)
         {  
             // lambda call (compound procedure)
             // construct a new environment
-            Lambda lambda = lisp_word_GetLambda(proc);
+            Lambda lambda = lisp_lambda(proc);
 
             LispEnv new_env;
             lisp_env_init(&new_env, lambda.env, 64); 
@@ -984,6 +982,7 @@ static LispWord proc_mult(LispWord args, LispContext* ctx)
 
 int lisp_init(LispContext* ctx)
 {
+    ctx->lambda_counter = 0;
     heap_init(&ctx->heap, 4096);
     lisp_env_init(&ctx->global, NULL, 2048);
 
@@ -1022,6 +1021,9 @@ static inline LispWord gc_move_word(LispWord word, LispHeap* to)
             
             // save forwarding address
             block->data_size = (intptr_t)dest;
+            
+            // clear visited, mark moved
+            block->gc_flags &= ~GC_VISITED;
             block->gc_flags |= GC_MOVED;
         }
 
@@ -1037,7 +1039,10 @@ static void gc_move_env(LispEnv* env, LispHeap* to)
     for (int i = 0; i < env->capacity; ++i)
     {
         if (!lisp_env_empty(env, i))
+        {
             env->table[i].value = gc_move_word(env->table[i].value, to);
+            env->table[i].symbol = gc_move_word(env->table[i].symbol, to);
+        }
     }
 }
 
@@ -1075,6 +1080,8 @@ static void gc_move_references(LispHeap* to)
                     done = 0;
                 }
 
+                // clear the move flag and set visited
+                block->gc_flags &= ~GC_MOVED;
                 block->gc_flags |= GC_VISITED;
             }
 
@@ -1084,9 +1091,10 @@ static void gc_move_references(LispHeap* to)
 
         if (done) break;
     }
-    printf("%i\n", iterations);
+    //printf("%i\n", iterations);
 }
 
+/*
 static void gc_clear_flags(LispHeap* to)
 {
     // clear the flags
@@ -1098,7 +1106,7 @@ static void gc_clear_flags(LispHeap* to)
         offset += sizeof(LispBlock) + block->data_size;
     }
     assert(offset == to->size);
-}
+} */
 
 size_t lisp_collect(LispContext* ctx)
 {
@@ -1114,7 +1122,7 @@ size_t lisp_collect(LispContext* ctx)
     gc_move_env(&ctx->global, &to);
     gc_move_references(&to);
 
-    gc_clear_flags(&to);
+    //gc_clear_flags(&to);
 
     size_t result = from->size - to.size;
 

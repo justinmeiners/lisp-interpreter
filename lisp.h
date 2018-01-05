@@ -63,10 +63,18 @@ typedef struct
 
 typedef struct
 {
+    LispWord* table;
+    size_t capacity;
+} SymbolTable;
+
+typedef struct
+{
     LispHeap heap;
     LispEnv global;
+    SymbolTable symbolTable;
+    
+    size_t lambda_counter;
 } LispContext;
-
 
 typedef LispWord (*LispProc)(LispWord, LispContext*);
 

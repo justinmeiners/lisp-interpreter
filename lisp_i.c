@@ -33,8 +33,6 @@ int main(int argc, const char* argv[])
         fclose(file);
 
         LispWord list = lisp_read(contents, &ctx);
-
-        lisp_print(list);
         lisp_eval(list, NULL, &ctx);
         lisp_collect(&ctx); 
     }
