@@ -39,7 +39,7 @@ typedef struct
 typedef struct
 {
    LispWord symbol;
-   LispWord value; 
+   LispWord val;
 } LispEnvEntry;
 
 // hash table
@@ -49,7 +49,8 @@ typedef struct LispEnv
     struct LispEnv* parent;
 
     int retain_count;
-    int count;
+
+    int size;
     int capacity;
     LispEnvEntry* table;
 } LispEnv;
@@ -61,19 +62,21 @@ typedef struct
     size_t capacity;
 } LispHeap;
 
+
 typedef struct
 {
-    LispWord* table;
-    size_t capacity;
+    const LispBlock** symbols;
+    int size;
+    int capacity;
 } SymbolTable;
 
 typedef struct
 {
     LispHeap heap;
     LispEnv global;
-    SymbolTable symbolTable;
+    SymbolTable symbols;
     
-    size_t lambda_counter;
+    int lambda_counter;
 } LispContext;
 
 typedef LispWord (*LispProc)(LispWord, LispContext*);
@@ -97,9 +100,6 @@ LispWord lisp_create_proc(LispProc proc);
 
 // evaluation environments
 void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity);
-// reference counting memory managmeent
-void lisp_env_retain(LispEnv* env);
-void lisp_env_release(LispEnv* env);
 void lisp_env_set(LispEnv* env, LispWord symbol, LispWord value);
 void lisp_env_print(LispEnv* env);
 
