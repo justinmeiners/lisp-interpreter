@@ -13,7 +13,7 @@ typedef enum
     LISP_STRING, // quoted strings
     LISP_LAMBDA, // user defined lambda
     LISP_PROC,   // C function
-    LISP_ENV, /// environment
+    LISP_ENV,    // evaluation environment
     LISP_NULL,
 } LispType;
 
@@ -31,17 +31,17 @@ typedef struct
 
 typedef struct
 {
-    int gc_flags;
-    int type;
-    intptr_t data_size;
+    short gc_flags;
+    short type;
+    unsigned int data_size;
     char data[];
 } LispBlock;
 
 typedef struct
 {
     char* buffer;
-    size_t size;
-    size_t capacity;
+    unsigned int size;
+    unsigned int capacity;
 } LispHeap;
 
 typedef struct

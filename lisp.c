@@ -290,7 +290,7 @@ static void symbol_table_add(SymbolTable* table, const LispBlock* symbol_block)
     assert(0);
 }
 
-static void heap_init(LispHeap* heap, size_t capacity)
+static void heap_init(LispHeap* heap, unsigned int capacity)
 {
     heap->capacity = capacity;
     heap->size = 0;
@@ -299,7 +299,7 @@ static void heap_init(LispHeap* heap, size_t capacity)
 
 static void heap_shutdown(LispHeap* heap) { free(heap->buffer); }
 
-static LispBlock* block_alloc(size_t data_size, LispType type, LispHeap* heap)
+static LispBlock* block_alloc(unsigned int data_size, LispType type, LispHeap* heap)
 {
     if (heap->size + data_size + sizeof(LispBlock) > heap->capacity)
     {
@@ -387,7 +387,7 @@ LispWord lisp_at_index(LispWord list, int i)
 
 LispWord lisp_create_string(const char* string, LispContext* ctx)
 {
-    size_t length = strlen(string) + 1;
+    unsigned int length = (unsigned int)strlen(string) + 1;
     LispBlock* block = block_alloc(length, LISP_STRING, &ctx->heap);
     memcpy(block->data, string, length);
 
@@ -404,7 +404,7 @@ LispWord lisp_create_symbol(const char* symbol, LispContext* ctx)
     if (block == NULL)
     {
         // allocate a new block
-        size_t length = strlen(symbol) + 1;
+        unsigned int length = (unsigned int)strlen(symbol) + 1;
         block = block_alloc(length, LISP_SYMBOL, &ctx->heap);
         memcpy(block->data, symbol, length);
 
@@ -657,12 +657,6 @@ static const char* lisp_type_name[] = {
     "NULL",
 };
 
-typedef struct
-{
-   LispWord symbol;
-   LispWord val;
-} EnvEntry;
-
 // hash table
 // open addressing with dynamic resizing
 typedef struct 
@@ -671,7 +665,12 @@ typedef struct
     int size;
     int capacity;
     LispWord parent;
-    EnvEntry table[];
+
+    struct EnvEntry
+    {
+       LispWord symbol;
+       LispWord val;
+    } table[];
 } Env;
 
 Env* lisp_env(LispWord word)
@@ -683,8 +682,7 @@ Env* lisp_env(LispWord word)
 
 LispWord lisp_create_env(LispWord parent, int capacity, LispContext* ctx)
 {
-    size_t size = sizeof(Env) + sizeof(EnvEntry) * capacity;
-
+    int size = sizeof(Env) + sizeof(struct EnvEntry) * capacity;
     LispBlock* block = block_alloc(size, LISP_ENV, &ctx->heap);
 
     Env* env = (Env*)block->data;
@@ -1070,8 +1068,12 @@ static LispWord proc_eq(LispWord args, LispContext* ctx)
 
 static LispWord proc_display(LispWord args, LispContext* ctx)
 {
-    lisp_print(lisp_car(args));
-    return lisp_null();
+    lisp_print(lisp_car(args)); return lisp_null();
+}
+
+static LispWord proc_newline(LispWord args, LispContext* ctx)
+{
+    printf("\n"); return lisp_null(); 
 }
 
 static LispWord proc_equals(LispWord args, LispContext* ctx)
@@ -1094,10 +1096,20 @@ static LispWord proc_mult(LispWord args, LispContext* ctx)
     return lisp_create_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
 }
 
+struct LispContext
+{
+    LispHeap heap;
+    LispWord env;
+    SymbolTable symbols;
+    int debug;
+    
+    int lambda_counter;
+};
+
 int lisp_init(LispContext* ctx)
 {
     ctx->lambda_counter = 0;
-    ctx->debug = 0;
+    ctx->debug = 1;
     heap_init(&ctx->heap, 2097152);
     symbol_table_init(&ctx->symbols, 2048);
 
@@ -1112,6 +1124,7 @@ int lisp_init(LispContext* ctx)
         "CDR",
         "EQ?",
         "DISPLAY",
+        "NEWLINE",
         "=",
         "+",
         "-",
@@ -1125,6 +1138,7 @@ int lisp_init(LispContext* ctx)
         proc_cdr,
         proc_eq,
         proc_display,
+        proc_newline,
         proc_equals,
         proc_add,
         proc_sub,
@@ -1169,20 +1183,20 @@ static inline LispWord gc_move_word(LispWord word, LispHeap* to)
 
         if (!(block->gc_flags & GC_MOVED))
         {
+            unsigned int address = to->size;
             // copy the data
             size_t size = sizeof(LispBlock) + block->data_size;
             LispBlock* dest = (LispBlock*)(to->buffer + to->size);
             memcpy(dest, block, size);
             to->size += size;
             
-            // save forwarding address
-            block->data_size = (intptr_t)dest;
-            
+            // save forwarding address (offset in to)
+            block->data_size = address;
             block->gc_flags |= GC_MOVED;
         }
 
         // assign block address back to word
-        word.val = (LispBlock*)block->data_size;
+        word.val = (LispBlock*)(to->buffer + block->data_size);
     }
 
     return word;
@@ -1319,7 +1333,7 @@ size_t lisp_collect(LispContext* ctx)
     *from = to;
 
     if (ctx->debug)
-        printf("gc collected: %lu heap: %lu\n", result, ctx->heap.size);
+        printf("gc collected: %lu heap: %i\n", result, ctx->heap.size);
 
     // we need to save blocks referenced
     // by other blocks now
