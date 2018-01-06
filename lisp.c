@@ -265,8 +265,10 @@ static void symbol_table_add(SymbolTable* table, const LispBlock* symbol_block)
         {
             table->symbols[index] = symbol_block;
             ++table->size;
-            
-            if (table->size * 2 > table->capacity)
+
+            float load_factor = table->size / (float)table->capacity;
+           
+            if (load_factor > 0.6f)
             {
                 SymbolTable dest;
                 symbol_table_init(&dest, table->capacity * 2);
@@ -307,6 +309,12 @@ static void heap_shutdown(LispHeap* heap) { free(heap->buffer); }
 
 static LispBlock* block_alloc(size_t data_size, LispType type, LispHeap* heap)
 {
+    if (heap->size + data_size + sizeof(LispBlock) > heap->capacity)
+    {
+        fprintf(stderr, "heap full\n");
+        return NULL;
+    }
+
     LispBlock* block = (LispBlock*)(heap->buffer + heap->size);
     block->gc_flags = 0;
     block->data_size = data_size;
@@ -329,6 +337,7 @@ LispWord lisp_null()
 {
     LispWord word;
     word.type = LISP_NULL;
+    word.int_val = 0;
     return word;
 }
 
@@ -340,12 +349,28 @@ LispWord lisp_create_int(int n)
     return word;
 }
 
+int lisp_int(LispWord word)
+{
+    if (word.type == LISP_FLOAT)
+        return (int)word.float_val;
+
+    return word.int_val;
+}
+
 LispWord lisp_create_float(float x)
 {
     LispWord word;
     word.type = LISP_FLOAT;
     word.float_val = x;
     return word;
+}
+
+float lisp_float(LispWord word)
+{
+    if (word.type == LISP_INT)
+        return(float)word.int_val;
+
+    return word.float_val;
 }
 
 LispWord lisp_cons(LispWord car, LispWord cdr, LispContext* ctx)
@@ -625,10 +650,10 @@ static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
     switch (lisp_type(word))
     {
         case LISP_INT:
-            fprintf(file, "%i", word.int_val);
+            fprintf(file, "%i", lisp_int(word));
             break;
         case LISP_FLOAT:
-            fprintf(file, "%f", word.float_val);
+            fprintf(file, "%f", lisp_float(word));
             break;
         case LISP_NULL:
             fprintf(file, "NIL");
@@ -668,15 +693,8 @@ static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
     }
 }
 
-void lisp_printf(FILE* file, LispWord word)
-{
-    lisp_print_r(file, word, 0); 
-}
-
-void lisp_print(LispWord word)
-{
-    lisp_printf(stdout, word);
-}
+void lisp_printf(FILE* file, LispWord word) { lisp_print_r(file, word, 0);  }
+void lisp_print(LispWord word) {  lisp_printf(stdout, word); }
 
 static const char* lisp_type_name[] = {
     "FLOAT",
@@ -809,7 +827,7 @@ static LispWord lisp_apply(LispWord proc, LispWord args, LispContext* ctx)
             Lambda lambda = lisp_lambda(proc);
 
             LispEnv new_env;
-            lisp_env_init(&new_env, lambda.env, 64); 
+            lisp_env_init(&new_env, lambda.env, 128);
 
             // bind parameters to arguments
             // to pass into function call
@@ -905,7 +923,7 @@ LispWord lisp_eval(LispWord word, LispEnv* env, LispContext* ctx)
             LispWord conseq = lisp_at_index(word, 2);
             LispWord alt = lisp_at_index(word, 3);
 
-            if (lisp_eval(predicate, env, ctx).int_val != 0)
+            if (lisp_int(lisp_eval(predicate, env, ctx)) != 0)
             {
                 return lisp_eval(conseq, env, ctx);
             } 
@@ -917,7 +935,6 @@ LispWord lisp_eval(LispWord word, LispEnv* env, LispContext* ctx)
         else if (strcmp(opSymbol, "BEGIN") == 0)
         {
             LispWord it = lisp_cdr(word);
-
             LispWord result = lisp_null();
 
             while (!lisp_is_null(it))
@@ -1036,8 +1053,10 @@ static LispWord proc_mult(LispWord args, LispContext* ctx)
 int lisp_init(LispContext* ctx)
 {
     ctx->lambda_counter = 0;
-    heap_init(&ctx->heap, 4096);
+    ctx->debug = 1;
+    heap_init(&ctx->heap, 2097152);
     symbol_table_init(&ctx->symbols, 2048);
+
     lisp_env_init(&ctx->global, NULL, 2048);
     lisp_env_set(&ctx->global, lisp_create_symbol("NULL", ctx), lisp_null());
 
@@ -1110,8 +1129,27 @@ size_t lisp_collect(LispContext* ctx)
 {
     LispHeap* from = &ctx->heap;
 
+    int capacity = ctx->symbols.capacity;
+
+    float load_factor = ctx->symbols.size / (float)ctx->symbols.capacity;
+
+    if (load_factor < 0.05f)
+    {
+        capacity /= 2;
+
+        if (ctx->debug)
+            printf("shrinking symbol table %i\n", capacity);
+    } 
+    else if (load_factor > 0.5f)
+    {
+        capacity *= 2;
+
+        if (ctx->debug)
+            printf("growing symbol table %i\n", capacity);
+    }
+
     SymbolTable new_symbols;
-    symbol_table_init(&new_symbols, ctx->symbols.capacity);
+    symbol_table_init(&new_symbols, capacity);
 
     LispHeap to;
     heap_init(&to, from->capacity);
@@ -1123,10 +1161,10 @@ size_t lisp_collect(LispContext* ctx)
     gc_move_env(&ctx->global, &to);
 
     // move references
-    int iterations = 0;
+    int passes = 0;
     while (1)
     {
-        ++iterations;
+        ++passes;
         int done = 1;
         size_t offset = 0;
         while (offset < to.size)
@@ -1171,10 +1209,14 @@ size_t lisp_collect(LispContext* ctx)
 
             offset += sizeof(LispBlock) + block->data_size;
         }
-        assert(offset == to.size);
 
         if (done) break;
     }
+
+    if (ctx->debug)
+        printf("gc passes: %i\n", passes);
+
+    assert(passes <= 2);
  
     {
         // clear the flags
@@ -1196,6 +1238,10 @@ size_t lisp_collect(LispContext* ctx)
 
     heap_shutdown(from);
     *from = to;
+
+    if (ctx->debug)
+        printf("gc collected: %lu heap: %lu\n", result, ctx->heap.size);
+
 
     // we need to save blocks referenced
     // by other blocks now

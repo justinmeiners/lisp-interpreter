@@ -47,9 +47,6 @@ typedef struct
 typedef struct LispEnv
 {
     struct LispEnv* parent;
-
-    int retain_count;
-
     int size;
     int capacity;
     LispEnvEntry* table;
@@ -75,6 +72,7 @@ typedef struct
     LispHeap heap;
     LispEnv global;
     SymbolTable symbols;
+    int debug;
     
     int lambda_counter;
 } LispContext;
@@ -89,7 +87,9 @@ LispType lisp_type(LispWord word);
 int lisp_is_null(LispWord word);
 LispWord lisp_null();
 LispWord lisp_create_int(int n);
+int lisp_int(LispWord word);
 LispWord lisp_create_float(float x);
+float lisp_float(LispWord word);
 LispWord lisp_cons(LispWord car, LispWord cdr, LispContext* ctx);
 LispWord lisp_create_string(const char* string, LispContext* ctx);
 const char* lisp_string(LispWord word);

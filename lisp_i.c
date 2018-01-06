@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include "lisp.h"
+#include <time.h>
 
 #define LINE_MAX 2048
 
@@ -45,10 +46,18 @@ int main(int argc, const char* argv[])
             char line[LINE_MAX];
             fgets(line, LINE_MAX, stdin);
 
+            clock_t start_time = clock();
             LispWord contents = lisp_read(line, &ctx);
-            lisp_print(lisp_eval(contents, NULL, &ctx));
+            LispWord result = lisp_eval(contents, NULL, &ctx);
+            clock_t end_time = clock();
+            lisp_print(result);
             printf("\n");
-            printf("collected: %lu size: %lu\n", lisp_collect(&ctx), ctx.heap.size);
+            printf("us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+
+            start_time = clock();
+            lisp_collect(&ctx);
+            end_time = clock();
+            printf("gc us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
         }
     }
 
