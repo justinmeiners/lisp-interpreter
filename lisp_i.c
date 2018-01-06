@@ -34,7 +34,7 @@ int main(int argc, const char* argv[])
         fclose(file);
 
         LispWord list = lisp_read(contents, &ctx);
-        lisp_eval(list, NULL, &ctx);
+        lisp_eval(list, ctx.env, &ctx);
         lisp_collect(&ctx); 
     }
     else
@@ -48,16 +48,20 @@ int main(int argc, const char* argv[])
 
             clock_t start_time = clock();
             LispWord contents = lisp_read(line, &ctx);
-            LispWord result = lisp_eval(contents, NULL, &ctx);
+            LispWord result = lisp_eval(contents, ctx.env, &ctx);
             clock_t end_time = clock();
             lisp_print(result);
             printf("\n");
-            printf("us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+            
+            if (ctx.debug)
+                printf("us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
             start_time = clock();
             lisp_collect(&ctx);
             end_time = clock();
-            printf("gc us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+            
+            if (ctx.debug)
+                printf("gc us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
         }
     }
 

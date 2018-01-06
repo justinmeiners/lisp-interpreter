@@ -13,6 +13,7 @@ typedef enum
     LISP_STRING, // quoted strings
     LISP_LAMBDA, // user defined lambda
     LISP_PROC,   // C function
+    LISP_ENV, /// environment
     LISP_NULL,
 } LispType;
 
@@ -38,27 +39,10 @@ typedef struct
 
 typedef struct
 {
-   LispWord symbol;
-   LispWord val;
-} LispEnvEntry;
-
-// hash table
-// open addressing with dynamic resizing
-typedef struct LispEnv
-{
-    struct LispEnv* parent;
-    int size;
-    int capacity;
-    LispEnvEntry* table;
-} LispEnv;
-
-typedef struct
-{
     char* buffer;
     size_t size;
     size_t capacity;
 } LispHeap;
-
 
 typedef struct
 {
@@ -70,7 +54,7 @@ typedef struct
 typedef struct
 {
     LispHeap heap;
-    LispEnv global;
+    LispWord env;
     SymbolTable symbols;
     int debug;
     
@@ -99,21 +83,18 @@ const char* lisp_symbol(LispWord word);
 LispWord lisp_create_proc(LispProc proc);
 
 // evaluation environments
-void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity);
-void lisp_env_set(LispEnv* env, LispWord symbol, LispWord value);
-void lisp_env_print(LispEnv* env);
+LispWord lisp_create_env(LispWord parent, int capacity, LispContext* ctx);
+void lisp_env_set(LispWord env, LispWord symbol, LispWord value, LispContext* ctx);
+void lisp_env_add_procs(LispWord env, const char** names, LispProc* funcs, LispContext* ctx);
 
 // Maxwell's equations of Software. REP
 LispWord lisp_read(const char* program, LispContext* ctx);
-LispWord lisp_eval(LispWord symbol, LispEnv* env, LispContext* ctx);
+LispWord lisp_eval(LispWord symbol, LispWord env, LispContext* ctx);
 void lisp_print(LispWord word);
 void lisp_printf(FILE* file, LispWord word);
 
 // memory managment/garbage collection
 int lisp_init(LispContext* ctx);
-// this is just a shortcut for
-// lisp_env_set(.. lisp_create_symbol(..), lisp_create_proc(proc))
-void lisp_add_proc(const char* name, LispProc proc, LispContext* ctx);
 size_t lisp_collect(LispContext* ctx);
 
 

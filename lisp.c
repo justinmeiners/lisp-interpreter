@@ -290,14 +290,6 @@ static void symbol_table_add(SymbolTable* table, const LispBlock* symbol_block)
     assert(0);
 }
 
-typedef struct
-{
-    int identifier;
-    LispWord args;
-    LispWord body;
-    LispEnv* env;
-} Lambda;
-
 static void heap_init(LispHeap* heap, size_t capacity)
 {
     heap->capacity = capacity;
@@ -353,7 +345,6 @@ int lisp_int(LispWord word)
 {
     if (word.type == LISP_FLOAT)
         return (int)word.float_val;
-
     return word.int_val;
 }
 
@@ -369,7 +360,6 @@ float lisp_float(LispWord word)
 {
     if (word.type == LISP_INT)
         return(float)word.int_val;
-
     return word.float_val;
 }
 
@@ -446,16 +436,27 @@ LispWord lisp_create_proc(LispProc func)
 
 const char* lisp_string(LispWord word)
 {
+    assert(word.type == LISP_STRING);
     LispBlock* block = word.val;
     return block->data;
 }
 
 const char* lisp_symbol(LispWord word)
 {
-    return lisp_string(word);
+    assert(word.type == LISP_SYMBOL);
+    LispBlock* block = word.val;
+    return block->data;
 }
 
-LispWord lisp_create_lambda(LispWord args, LispWord body, LispEnv* env, LispContext* ctx)
+typedef struct
+{
+    int identifier;
+    LispWord args;
+    LispWord body;
+    LispWord env;
+} Lambda;
+
+LispWord lisp_create_lambda(LispWord args, LispWord body, LispWord env, LispContext* ctx)
 {
     LispBlock* block = block_alloc(sizeof(Lambda), LISP_LAMBDA, &ctx->heap);
 
@@ -645,6 +646,151 @@ LispWord lisp_read(const char* program, LispContext* ctx)
     return result;
 }
 
+static const char* lisp_type_name[] = {
+    "FLOAT",
+    "INT",
+    "PAIR",
+    "SYMBOL",
+    "STRING",
+    "LAMBDA",
+    "PROCEDURE",
+    "NULL",
+};
+
+typedef struct
+{
+   LispWord symbol;
+   LispWord val;
+} EnvEntry;
+
+// hash table
+// open addressing with dynamic resizing
+typedef struct 
+{
+    int depth;
+    int size;
+    int capacity;
+    LispWord parent;
+    EnvEntry table[];
+} Env;
+
+Env* lisp_env(LispWord word)
+{
+    assert(word.type == LISP_ENV);
+    LispBlock* block = word.val;
+    return (Env*)block->data;
+}
+
+LispWord lisp_create_env(LispWord parent, int capacity, LispContext* ctx)
+{
+    size_t size = sizeof(Env) + sizeof(EnvEntry) * capacity;
+
+    LispBlock* block = block_alloc(size, LISP_ENV, &ctx->heap);
+
+    Env* env = (Env*)block->data;
+    env->size = 0;
+    env->capacity = capacity;
+    env->parent = parent;
+
+    if (lisp_is_null(parent))
+    {
+        env->depth = 0;
+    }
+    else
+    {
+        Env* parent_env = lisp_env(parent);
+        env->depth = parent_env->depth + 1;
+    }
+
+    // clear the keys
+    for (int i = 0; i < capacity; ++i)
+        env->table[i].symbol = lisp_null();
+
+    LispWord word;
+    word.type = block->type;
+    word.val = block;
+    return word;
+}
+
+void lisp_env_set(LispWord word, LispWord symbol, LispWord value, LispContext* ctx)
+{
+    const char *key = lisp_symbol(symbol);
+    Env* env = lisp_env(word);
+
+    int index = hash_string(key) % env->capacity;
+
+    for (int i = 0; i < env->capacity - 1; ++i)
+    {
+        if (lisp_is_null(env->table[i].symbol))
+        {   
+            env->table[index].val = value;
+            env->table[index].symbol = symbol;
+
+            ++env->size;
+
+            // replace with a bigger table
+            float load_factor = env->size / (float)env->capacity;
+            if (load_factor > 0.6f)
+            {
+                printf("resizing\n");
+
+                LispWord dest = lisp_create_env(env->parent, env->capacity * 2, ctx);
+                for (int j = 0; j < env->capacity; ++j)
+                    lisp_env_set(dest, env->table[i].symbol, env->table[j].val, ctx);
+
+                env = lisp_env(dest);
+                word = dest;
+            }
+            return;
+        }
+        else if (strcmp(lisp_symbol(env->table[index].symbol), key) == 0)
+        {
+            env->table[index].val = value;
+            return;
+        }
+
+        index = (index + 1) % env->capacity;
+    }
+
+    // hash table full
+    // this should never happen because of resizing
+    assert(0);
+}
+
+LispWord lisp_env_get(LispWord bottom, LispWord symbol, LispWord* holding_env)
+{
+    const char* key = lisp_symbol(symbol);
+    int hash = hash_string(key);
+
+    LispWord current = bottom;
+  
+    while (!lisp_is_null(current))
+    {
+        Env* env = lisp_env(current);
+        int index = hash % env->capacity;
+
+        for (int i = 0; i < env->capacity - 1; ++i)
+        {
+            if (lisp_is_null(env->table[index].symbol))
+            {
+                break;
+            }
+            else if (strcmp(lisp_symbol(env->table[index].symbol), key) == 0)
+            {
+                *holding_env = current;
+                return env->table[index].val;
+            }
+
+            index = (index + 1) % env->capacity;
+        }
+
+        current = env->parent;
+    }
+
+   *holding_env = lisp_null(); 
+   return lisp_null();
+}
+
 static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
 {
     switch (lisp_type(word))
@@ -670,6 +816,21 @@ static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
         case LISP_PROC:
             fprintf(file, "procedure-%x", (unsigned int)word.val); 
             break;
+        case LISP_ENV:
+        {
+            Env* env = lisp_env(word);
+            fprintf(file, "%i-{", env->depth);
+            for (int i = 0; i < env->capacity; ++i)
+            {
+                if (!lisp_is_null(env->table[i].symbol))
+                {
+                    lisp_print_r(file, env->table[i].symbol, 0);
+                    fprintf(file, " ");
+                }
+            }
+            fprintf(file, "}");
+            break;
+        }
         case LISP_PAIR:
             if (!is_cdr) fprintf(file, "(");
             lisp_print_r(file, lisp_car(word), 0);
@@ -696,126 +857,6 @@ static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
 void lisp_printf(FILE* file, LispWord word) { lisp_print_r(file, word, 0);  }
 void lisp_print(LispWord word) {  lisp_printf(stdout, word); }
 
-static const char* lisp_type_name[] = {
-    "FLOAT",
-    "INT",
-    "PAIR",
-    "SYMBOL",
-    "STRING",
-    "LAMBDA",
-    "PROCEDURE",
-    "NULL",
-};
-
-void lisp_env_init(LispEnv* env, LispEnv* parent, int capacity)
-{
-    env->size = 0;
-    env->capacity = capacity;
-    env->parent = parent;
-    env->table = malloc(sizeof(LispEnvEntry) * capacity);
-    env->retain_count = 1;
-
-    // clear the keys
-    for (int i = 0; i < capacity; ++i)
-        env->table[i].symbol = lisp_null();
-}
-
-void lisp_env_shutdown(LispEnv* env)
-{
-    free(env->table);
-}
-
-void lisp_env_set(LispEnv* env, LispWord symbol, LispWord value)
-{
-    assert(symbol.type == LISP_SYMBOL);
-    const char *key = lisp_symbol(symbol);
-
-    int index = hash_string(key) % env->capacity;
-
-    for (int i = 0; i < env->capacity - 1; ++i)
-    {
-        if (lisp_is_null(env->table[i].symbol))
-        {   
-            env->table[index].val = value;
-            env->table[index].symbol = symbol;
-
-            ++env->size;
-
-            // replace with a bigger table
-            if (env->size * 2 > env->capacity)
-            {
-                printf("resizing\n");
-
-                LispEnv dest;
-                lisp_env_init(&dest, env->parent, env->capacity * 2);
-
-                for (int j = 0; j < env->capacity; ++j)
-                    lisp_env_set(&dest, env->table[i].symbol, env->table[j].val);
-
-                lisp_env_shutdown(env);
-                *env = dest;
-            }
-            return;
-        }
-        else if (strcmp(lisp_symbol(env->table[index].symbol), key) == 0)
-        {
-            env->table[index].val = value;
-            return;
-        }
-
-        index = (index + 1) % env->capacity;
-    }
-
-    // hash table full
-    // this should never happen because of resizing
-    assert(0);
-}
-
-LispEnv* lisp_env_get(const LispEnv* bottom, LispWord symbol, LispWord* result)
-{
-    assert(symbol.type == LISP_SYMBOL);
-    const char* key = lisp_symbol(symbol);
-    int hash = hash_string(key);
-
-    const LispEnv* env = bottom;
-    
-    while (env)
-    {
-        int index = hash % env->capacity;
-
-        for (int i = 0; i < env->capacity - 1; ++i)
-        {
-            if (lisp_is_null(env->table[index].symbol))
-            {
-                break;
-            }
-            else if (strcmp(lisp_symbol(env->table[index].symbol), key) == 0)
-            {
-                *result = env->table[index].val;
-                return (LispEnv*)env;
-            }
-
-            index = (index + 1) % env->capacity;
-        }
-
-        env = env->parent;
-    }
-
-   *result = lisp_null(); 
-   return NULL;
-}
-
-void lisp_env_print(LispEnv* env)
-{
-    printf("{");
-    for (int i = 0; i < env->capacity; ++i)
-    {
-        if (!lisp_is_null(env->table[i].symbol))
-            printf("%s ", lisp_symbol(env->table[i].symbol));
-    }
-    printf("}");
-}
-
 static LispWord lisp_apply(LispWord proc, LispWord args, LispContext* ctx)
 {
     switch (lisp_type(proc))
@@ -825,9 +866,7 @@ static LispWord lisp_apply(LispWord proc, LispWord args, LispContext* ctx)
             // lambda call (compound procedure)
             // construct a new environment
             Lambda lambda = lisp_lambda(proc);
-
-            LispEnv new_env;
-            lisp_env_init(&new_env, lambda.env, 128);
+            LispWord new_env = lisp_create_env(lambda.env, 128, ctx);
 
             // bind parameters to arguments
             // to pass into function call
@@ -836,14 +875,13 @@ static LispWord lisp_apply(LispWord proc, LispWord args, LispContext* ctx)
 
             while (!lisp_is_null(keyIt))
             {
-                lisp_env_set(&new_env, lisp_car(keyIt), lisp_car(valIt));
+                lisp_env_set(new_env, lisp_car(keyIt), lisp_car(valIt), ctx);
 
                 keyIt = lisp_cdr(keyIt);
                 valIt = lisp_cdr(valIt);
             }
 
-            LispWord result = lisp_eval(lambda.body, &new_env, ctx); 
-            lisp_env_shutdown(&new_env);
+            LispWord result = lisp_eval(lambda.body, new_env, ctx); 
             return result;
         }
         case LISP_PROC:
@@ -861,7 +899,7 @@ static LispWord lisp_apply(LispWord proc, LispWord args, LispContext* ctx)
     }
 }
 
-static LispWord eval_list(LispWord list, LispEnv* env, LispContext* ctx)
+static LispWord eval_list(LispWord list, LispWord env, LispContext* ctx)
 {
     LispWord start = lisp_null();
     LispWord previous = lisp_null();
@@ -887,18 +925,17 @@ static LispWord eval_list(LispWord list, LispEnv* env, LispContext* ctx)
     return start;
 }
 
-LispWord lisp_eval(LispWord word, LispEnv* env, LispContext* ctx)
+LispWord lisp_eval(LispWord word, LispWord env, LispContext* ctx)
 {
-    if (!env) env = &ctx->global;
-    assert(env);
-
     LispType type = lisp_type(word);
     if (type == LISP_SYMBOL)
     {
         // variable reference
 
-        LispWord result;
-        if (!lisp_env_get(env, word, &result))
+        LispWord found_env;
+        LispWord result = lisp_env_get(env, word, &found_env);
+
+        if (lisp_is_null(found_env))
         {
             fprintf(stderr, "cannot find variable: %s\n", lisp_symbol(word));
         }
@@ -954,7 +991,7 @@ LispWord lisp_eval(LispWord word, LispEnv* env, LispContext* ctx)
             // variable definitions
             LispWord symbol = lisp_at_index(word, 1); 
             LispWord value = lisp_eval(lisp_at_index(word, 2), env, ctx);
-            lisp_env_set(env, symbol, value);
+            lisp_env_set(env, symbol, value, ctx);
             return value;
         }
         else if (strcmp(opSymbol, "SET!") == 0)
@@ -964,13 +1001,13 @@ LispWord lisp_eval(LispWord word, LispEnv* env, LispContext* ctx)
             // and will search up the environment chain
             LispWord symbol = lisp_at_index(word, 1);
 
-            LispWord temp;
-            LispEnv* targetLispEnv = lisp_env_get(env, symbol, &temp);
+            LispWord found_env;
+            lisp_env_get(env, symbol, &found_env);
 
-            if (targetLispEnv)
+            if (!lisp_is_null(found_env))
             {
                 LispWord value = lisp_eval(lisp_at_index(word, 2), env, ctx);
-                lisp_env_set(targetLispEnv, symbol, value);
+                lisp_env_set(found_env, symbol, value, ctx);
                 return value;
             }
             else
@@ -992,7 +1029,14 @@ LispWord lisp_eval(LispWord word, LispEnv* env, LispContext* ctx)
             LispWord proc = lisp_eval(lisp_car(word), env, ctx);
             LispWord args = eval_list(lisp_cdr(word), env, ctx);
             return lisp_apply(proc, args, ctx);
-       }
+        }
+    }
+    else if (type == LISP_PAIR)
+    {
+        // operator application
+        LispWord proc = lisp_eval(lisp_car(word), env, ctx);
+        LispWord args = eval_list(lisp_cdr(word), env, ctx);
+        return lisp_apply(proc, args, ctx);
     }
     else
     {
@@ -1053,28 +1097,58 @@ static LispWord proc_mult(LispWord args, LispContext* ctx)
 int lisp_init(LispContext* ctx)
 {
     ctx->lambda_counter = 0;
-    ctx->debug = 1;
+    ctx->debug = 0;
     heap_init(&ctx->heap, 2097152);
     symbol_table_init(&ctx->symbols, 2048);
 
-    lisp_env_init(&ctx->global, NULL, 2048);
-    lisp_env_set(&ctx->global, lisp_create_symbol("NULL", ctx), lisp_null());
+    ctx->env = lisp_create_env(lisp_null(), 2048, ctx);
 
-    lisp_add_proc("CONS", proc_cons, ctx);
-    lisp_add_proc("CAR", proc_car, ctx);
-    lisp_add_proc("CDR", proc_cdr, ctx);
-    lisp_add_proc("EQ?", proc_eq, ctx);
-    lisp_add_proc("DISPLAY", proc_display, ctx);
-    lisp_add_proc("=", proc_equals, ctx);
-    lisp_add_proc("+", proc_add, ctx);
-    lisp_add_proc("-", proc_sub, ctx);
-    lisp_add_proc("*", proc_mult, ctx);
+    lisp_env_set(ctx->env, lisp_create_symbol("NULL", ctx), lisp_null(), ctx);
+    lisp_env_set(ctx->env, lisp_create_symbol("global", ctx), ctx->env, ctx);
+
+    const char* names[] = {
+        "CONS",
+        "CAR",
+        "CDR",
+        "EQ?",
+        "DISPLAY",
+        "=",
+        "+",
+        "-",
+        "*",
+        NULL,
+    };
+
+    LispProc funcs[] = {
+        proc_cons,
+        proc_car,
+        proc_cdr,
+        proc_eq,
+        proc_display,
+        proc_equals,
+        proc_add,
+        proc_sub,
+        proc_mult,
+        NULL,
+    };
+
+    lisp_env_add_procs(ctx->env, names, funcs, ctx);
+
     return 1;
 }
 
-void lisp_add_proc(const char* name, LispProc proc, LispContext* ctx)
+void lisp_env_add_procs(LispWord env, const char** names, LispProc* funcs, LispContext* ctx)
 {
-    lisp_env_set(&ctx->global, lisp_create_symbol(name, ctx), lisp_create_proc(proc)); 
+    const char** name = names;
+    LispProc* func = funcs;
+
+    while (*name)
+    {
+        lisp_env_set(env, lisp_create_symbol(*name, ctx), lisp_create_proc(*func), ctx);
+
+        ++name;
+        ++func;
+    }
 }
 
 enum
@@ -1088,7 +1162,8 @@ static inline LispWord gc_move_word(LispWord word, LispHeap* to)
     if (word.type == LISP_PAIR ||
         word.type == LISP_SYMBOL ||
         word.type == LISP_STRING ||
-        word.type == LISP_LAMBDA)
+        word.type == LISP_LAMBDA ||
+        word.type == LISP_ENV)
     {
         LispBlock* block = word.val;
 
@@ -1113,18 +1188,6 @@ static inline LispWord gc_move_word(LispWord word, LispHeap* to)
     return word;
 }
 
-static void gc_move_env(LispEnv* env, LispHeap* to)
-{ 
-    for (int i = 0; i < env->capacity; ++i)
-    {
-        if (!lisp_is_null(env->table[i].symbol))
-        {
-            env->table[i].val = gc_move_word(env->table[i].val, to);
-            env->table[i].symbol = gc_move_word(env->table[i].symbol, to);
-        }
-    }
-}
- 
 size_t lisp_collect(LispContext* ctx)
 {
     LispHeap* from = &ctx->heap;
@@ -1158,7 +1221,7 @@ size_t lisp_collect(LispContext* ctx)
     // pointed to by words
    
     // move global environment
-    gc_move_env(&ctx->global, &to);
+    ctx->env = gc_move_word(ctx->env, &to);
 
     // move references
     int passes = 0;
@@ -1189,7 +1252,7 @@ size_t lisp_collect(LispContext* ctx)
                     Lambda* lambda = (Lambda*)block->data;
                     lambda->args = gc_move_word(lambda->args, &to);
                     lambda->body = gc_move_word(lambda->body, &to);
-                    // TODO: freeing environments?
+                    lambda->env = gc_move_word(lambda->env, &to);
                     done = 0;
                 }
                 else if (block->type == LISP_SYMBOL)
@@ -1202,6 +1265,22 @@ size_t lisp_collect(LispContext* ctx)
                         symbol_table_add(&new_symbols, block);
                     }
                     else { assert(stored_block == block); }
+                }
+                else if (block->type == LISP_ENV)
+                {
+                    // save all references in environments
+                    Env* env = (Env*)block->data;
+
+                    for (int i = 0; i < env->capacity; ++i)
+                    {
+                        if (!lisp_is_null(env->table[i].symbol))
+                        {
+                            env->table[i].val = gc_move_word(env->table[i].val, &to);
+                            env->table[i].symbol = gc_move_word(env->table[i].symbol, &to);
+                        }
+                    }
+
+                    env->parent = gc_move_word(env->parent, &to);
                 }
 
                 block->gc_flags |= GC_VISITED;
@@ -1241,7 +1320,6 @@ size_t lisp_collect(LispContext* ctx)
 
     if (ctx->debug)
         printf("gc collected: %lu heap: %lu\n", result, ctx->heap.size);
-
 
     // we need to save blocks referenced
     // by other blocks now
