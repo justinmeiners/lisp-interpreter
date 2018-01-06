@@ -5,7 +5,10 @@
 #define LINE_MAX 2048
 
 int main(int argc, const char* argv[])
-{   
+{
+    printf("word-size: %lu\n", sizeof(LispWord));
+    printf("block-size: %lu\n", sizeof(LispBlock));
+    
     LispContext ctx;
     lisp_init(&ctx);
 

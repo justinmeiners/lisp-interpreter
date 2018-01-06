@@ -31,8 +31,8 @@ typedef struct
 
 typedef struct
 {
-    short gc_flags;
-    short type;
+    unsigned short gc_flags;
+    unsigned short type;
     unsigned int data_size;
     char data[];
 } LispBlock;
@@ -47,8 +47,8 @@ typedef struct
 typedef struct
 {
     const LispBlock** symbols;
-    int size;
-    int capacity;
+    unsigned int size;
+    unsigned int capacity;
 } SymbolTable;
 
 typedef struct

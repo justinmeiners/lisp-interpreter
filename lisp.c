@@ -16,7 +16,7 @@
 #include <assert.h>
 #include "lisp.h"
 
-static int hash_string(const char* c)
+static unsigned int hash_string(const char* c)
 {     
     // adler 32
     int s1 = 1;
@@ -53,7 +53,7 @@ static const char* token_type_name[] = {
 typedef struct
 {
     TokenType type;
-    int length;  
+    unsigned int length;
     const char* start;
 } Token;
 
@@ -189,7 +189,7 @@ static int read_token(const char* c,
     }
     // save pointers to token text
     tok->start = c;
-    tok->length = nc - c;
+    tok->length = (unsigned int)(nc - c);
     *oc = nc;   
     return 1;
 }
@@ -216,103 +216,6 @@ static Token* tokenize(const char* program, int* count)
 
     *count = token_count;
     return tokens;
-}
-
-static void symbol_table_init(SymbolTable* table, int capacity)
-{
-    table->size = 0;
-    table->capacity = capacity;
-    table->symbols = malloc(sizeof(LispBlock*) * capacity);
-
-    for (int i = 0; i < table->capacity; ++i)
-        table->symbols[i] = NULL;
-}
-
-static void symbol_table_shutdown(SymbolTable* table)
-{
-    free(table->symbols);
-}
-
-static LispBlock* symbol_table_get(SymbolTable* table, const char* symbol)
-{
-    int index = hash_string(symbol) % table->capacity;
-
-    for (int i = 0; i < table->capacity - 1; ++i)
-    {
-        if (!table->symbols[index])
-        {
-            return NULL;
-        }
-        else if (strcmp(table->symbols[index]->data, symbol) == 0)
-        {
-            return (LispBlock*)table->symbols[index];
-        }
-
-        index = (index + 1) % table->capacity;
-    }
- 
-    return NULL;
-}
-
-static void symbol_table_add(SymbolTable* table, const LispBlock* symbol_block)
-{
-    // this only works if the item has never been added before
-    int index = hash_string(symbol_block->data) % table->capacity;
-
-    for (int i = 0; i < table->capacity - 1; ++i)
-    {
-        if (!table->symbols[index])
-        {
-            table->symbols[index] = symbol_block;
-            ++table->size;
-
-            float load_factor = table->size / (float)table->capacity;
-           
-            if (load_factor > 0.6f)
-            {
-                SymbolTable dest;
-                symbol_table_init(&dest, table->capacity * 2);
-                for (int j = 0; j < table->capacity; ++j)
-                    symbol_table_add(&dest, table->symbols[j]);
-
-                symbol_table_shutdown(table);
-                *table = dest;
-            }
-
-            return;
-        }
-
-        index = (index + 1) % table->capacity;
-    }     
-
-    // table full which should never happen
-    // because of resizing
-    assert(0);
-}
-
-static void heap_init(LispHeap* heap, unsigned int capacity)
-{
-    heap->capacity = capacity;
-    heap->size = 0;
-    heap->buffer = malloc(heap->capacity);
-}
-
-static void heap_shutdown(LispHeap* heap) { free(heap->buffer); }
-
-static LispBlock* block_alloc(unsigned int data_size, LispType type, LispHeap* heap)
-{
-    if (heap->size + data_size + sizeof(LispBlock) > heap->capacity)
-    {
-        fprintf(stderr, "heap full\n");
-        return NULL;
-    }
-
-    LispBlock* block = (LispBlock*)(heap->buffer + heap->size);
-    block->gc_flags = 0;
-    block->data_size = data_size;
-    block->type = type;
-    heap->size += sizeof(LispBlock) + data_size;
-    return block;
 }
 
 LispType lisp_type(LispWord word)
@@ -363,16 +266,41 @@ float lisp_float(LispWord word)
     return word.float_val;
 }
 
+static void heap_init(LispHeap* heap, unsigned int capacity)
+{
+    heap->capacity = capacity;
+    heap->size = 0;
+    heap->buffer = malloc(heap->capacity);
+}
+
+static void heap_shutdown(LispHeap* heap) { free(heap->buffer); }
+
+static LispBlock* block_alloc(unsigned int data_size, LispType type, LispHeap* heap)
+{
+    if (heap->size + data_size + sizeof(LispBlock) > heap->capacity)
+    {
+        fprintf(stderr, "heap full\n");
+        return NULL;
+    }
+    
+    LispBlock* block = (LispBlock*)(heap->buffer + heap->size);
+    block->gc_flags = 0;
+    block->data_size = data_size;
+    block->type = type;
+    heap->size += sizeof(LispBlock) + data_size;
+    return block;
+}
+
 LispWord lisp_cons(LispWord car, LispWord cdr, LispContext* ctx)
-{  
+{
     LispBlock* block = block_alloc(sizeof(LispWord) * 2, LISP_PAIR, &ctx->heap);
     LispWord word;
     word.type = block->type;
     word.val = block;
     lisp_car(word) = car;
-    lisp_cdr(word) = cdr;      
+    lisp_cdr(word) = cdr;
     return word;
-}       
+}
 
 LispWord lisp_at_index(LispWord list, int i)
 {
@@ -381,7 +309,6 @@ LispWord lisp_at_index(LispWord list, int i)
         list = lisp_cdr(list);
         --i;
     }
-
     return lisp_car(list);
 }
 
@@ -390,47 +317,22 @@ LispWord lisp_create_string(const char* string, LispContext* ctx)
     unsigned int length = (unsigned int)strlen(string) + 1;
     LispBlock* block = block_alloc(length, LISP_STRING, &ctx->heap);
     memcpy(block->data, string, length);
-
+    
     LispWord word;
     word.type = block->type;
-    word.val = block; 
+    word.val = block;
     return word;
 }
 
-LispWord lisp_create_symbol(const char* symbol, LispContext* ctx)
+static LispWord string_from_view(const char* string, unsigned int length, LispContext* ctx)
 {
-    LispBlock* block = (LispBlock*)symbol_table_get(&ctx->symbols, symbol);
-
-    if (block == NULL)
-    {
-        // allocate a new block
-        unsigned int length = (unsigned int)strlen(symbol) + 1;
-        block = block_alloc(length, LISP_SYMBOL, &ctx->heap);
-        memcpy(block->data, symbol, length);
-
-        // always convert symbols to uppercase
-        char* c = block->data;
-
-        while (*c)
-        {
-            *c = toupper(*c);
-            ++c;
-        }
-
-        symbol_table_add(&ctx->symbols, block);
-    }
-
+    LispBlock* block = block_alloc(length + 1, LISP_STRING, &ctx->heap);
+    memcpy(block->data, string, length);
+    block->data[length] = '\0';
+    
     LispWord word;
     word.type = block->type;
-    word.val = block; 
-    return word;
-}
-
-LispWord lisp_create_proc(LispProc func)
-{
-    LispWord word;
-    word.type = LISP_PROC;
-    word.val = (LispBlock*)func;
+    word.val = block;
     return word;
 }
 
@@ -441,11 +343,169 @@ const char* lisp_string(LispWord word)
     return block->data;
 }
 
+typedef struct
+{
+    unsigned int hash;
+    char string[];
+} Symbol;
+
 const char* lisp_symbol(LispWord word)
 {
     assert(word.type == LISP_SYMBOL);
     LispBlock* block = word.val;
-    return block->data;
+    Symbol* symbol = (Symbol*)block->data;
+    return symbol->string;
+}
+
+static void symbol_table_init(SymbolTable* table, int capacity)
+{
+    table->size = 0;
+    table->capacity = capacity;
+    table->symbols = malloc(sizeof(LispBlock*) * capacity);
+
+    for (int i = 0; i < table->capacity; ++i)
+        table->symbols[i] = NULL;
+}
+
+static void symbol_table_shutdown(SymbolTable* table)
+{
+    free(table->symbols);
+}
+
+static LispBlock* symbol_table_get(SymbolTable* table, const char* string, unsigned int max_length)
+{
+    unsigned int index = hash_string(string) % table->capacity;
+
+    for (int i = 0; i < table->capacity - 1; ++i)
+    {
+        if (!table->symbols[index])
+        {
+            return NULL;
+        }
+        else
+        {
+            const Symbol* symbol = (const Symbol*)table->symbols[index]->data;
+            
+            if (strncasecmp(symbol->string, string, max_length) == 0)
+            {
+                return (LispBlock*)table->symbols[index];
+            }
+        }
+
+        index = (index + 1) % table->capacity;
+    }
+ 
+    return NULL;
+}
+
+static void symbol_table_add(SymbolTable* table, const LispBlock* symbol_block)
+{
+    // this only works if the item has never been added before
+    Symbol* symbol = (Symbol*)symbol_block->data;
+    unsigned int index = symbol->hash % table->capacity;
+
+    for (int i = 0; i < table->capacity - 1; ++i)
+    {
+        if (!table->symbols[index])
+        {
+            table->symbols[index] = symbol_block;
+            ++table->size;
+
+            float load_factor = table->size / (float)table->capacity;
+           
+            if (load_factor > 0.6f)
+            {
+                SymbolTable dest;
+                symbol_table_init(&dest, table->capacity * 2);
+                for (int j = 0; j < table->capacity; ++j)
+                    symbol_table_add(&dest, table->symbols[j]);
+
+                symbol_table_shutdown(table);
+                *table = dest;
+            }
+
+            return;
+        }
+
+        index = (index + 1) % table->capacity;
+    }     
+
+    // table full which should never happen
+    // because of resizing
+    assert(0);
+}
+
+LispWord lisp_create_symbol(const char* string, LispContext* ctx)
+{
+    LispBlock* block = (LispBlock*)symbol_table_get(&ctx->symbols, string, 2048);
+    
+    if (block == NULL)
+    {
+        // allocate a new block
+        unsigned int string_length = (unsigned int)strlen(string) + 1;
+        block = block_alloc(sizeof(Symbol) + string_length, LISP_SYMBOL, &ctx->heap);
+        
+        Symbol* symbol = (Symbol*)block->data;
+        symbol->hash = hash_string(string);
+        memcpy(symbol->string, string, string_length);
+        
+        // always convert symbols to uppercase
+        char* c = symbol->string;
+        
+        while (*c)
+        {
+            *c = toupper(*c);
+            ++c;
+        }
+        
+        symbol_table_add(&ctx->symbols, block);
+    }
+    
+    LispWord word;
+    word.type = block->type;
+    word.val = block;
+    return word;
+}
+
+static LispWord symbol_from_view(const char* string, unsigned int string_length, LispContext* ctx)
+{
+    // always convert symbols to uppercase
+    LispBlock* block = (LispBlock*)symbol_table_get(&ctx->symbols, string, string_length);
+    
+    if (block == NULL)
+    {
+        // allocate a new block
+        block = block_alloc(sizeof(Symbol) + string_length + 1, LISP_SYMBOL, &ctx->heap);
+        
+        Symbol* symbol = (Symbol*)block->data;
+        symbol->hash = hash_string(string);
+        memcpy(symbol->string, string, string_length);
+        symbol->string[string_length] = '\0';
+        
+        // always convert symbols to uppercase
+        char* c = symbol->string;
+        
+        while (*c)
+        {
+            *c = toupper(*c);
+            ++c;
+        }
+        
+        symbol_table_add(&ctx->symbols, block);
+    }
+    
+    LispWord word;
+    word.type = block->type;
+    word.val = block;
+    return word;
+}
+
+LispWord lisp_create_proc(LispProc func)
+{
+    LispWord word;
+    word.type = LISP_PROC;
+    word.val = (LispBlock*)func;
+    return word;
 }
 
 typedef struct
@@ -478,52 +538,6 @@ Lambda lisp_lambda(LispWord lambda)
     LispBlock* block = lambda.val;
     return *(const Lambda*)block->data;
 }
-
-static LispWord string_from_view(const char* string, int length, LispContext* ctx)
-{ 
-    LispBlock* block = block_alloc(length + 1, LISP_STRING, &ctx->heap);
-    memcpy(block->data, string, length);
-    block->data[length] = '\0';
-
-    LispWord word;
-    word.type = block->type;
-    word.val = block; 
-    return word;
-}
-
-static LispWord symbol_from_view(const char* start, int length, LispContext* ctx)
-{
-    char* symbol = malloc(length + 1);
-    memcpy(symbol, start, length);
-    symbol[length] = '\0';
-    
-    // always convert symbols to uppercase
-    char* c = symbol;
-    
-    while (*c)
-    {
-        *c = toupper(*c);
-        ++c;
-    }
-    
-    LispBlock* block = (LispBlock*)symbol_table_get(&ctx->symbols, symbol);
-    
-    if (!block)
-    {
-        // allocate a new block
-        block = block_alloc(length + 1, LISP_SYMBOL, &ctx->heap);
-        memcpy(block->data, symbol, length + 1);
-        symbol_table_add(&ctx->symbols, block);
-    }
-    
-    free(symbol);
-    
-    LispWord word;
-    word.type = block->type;
-    word.val = block;
-    return word;
-}
-
 
 #define SCRATCH_MAX 128
 
@@ -715,7 +729,7 @@ void lisp_env_set(LispWord word, LispWord symbol, LispWord value, LispContext* c
     const char *key = lisp_symbol(symbol);
     Env* env = lisp_env(word);
 
-    int index = hash_string(key) % env->capacity;
+    unsigned int index = hash_string(key) % env->capacity;
 
     for (int i = 0; i < env->capacity - 1; ++i)
     {
@@ -758,7 +772,7 @@ void lisp_env_set(LispWord word, LispWord symbol, LispWord value, LispContext* c
 LispWord lisp_env_get(LispWord bottom, LispWord symbol, LispWord* holding_env)
 {
     const char* key = lisp_symbol(symbol);
-    int hash = hash_string(key);
+    unsigned int hash = hash_string(key);
 
     LispWord current = bottom;
   
@@ -1272,7 +1286,7 @@ size_t lisp_collect(LispContext* ctx)
                 else if (block->type == LISP_SYMBOL)
                 {
                     // save symbol in new table
-                    const LispBlock* stored_block = symbol_table_get(&new_symbols, block->data);
+                    const LispBlock* stored_block = symbol_table_get(&new_symbols, block->data, block->data_size);
 
                     if (!stored_block)
                     {
