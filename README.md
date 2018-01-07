@@ -10,6 +10,7 @@ A single header + source Lisp intepreter. I wrote this to improve my knowledge o
 - One header and source file.
 - Closures
 - Cheney garbage collection with explicit invocation.
+- Symbol table
 - Easy integration of C functions.
 - REPL command line tool.
 
