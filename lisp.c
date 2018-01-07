@@ -670,6 +670,7 @@ static const char* lisp_type_name[] = {
     "STRING",
     "LAMBDA",
     "PROCEDURE",
+    "ENV",
     "NULL",
 };
 
@@ -865,47 +866,6 @@ static void lisp_print_r(FILE* file, LispWord word, int is_cdr)
 void lisp_printf(FILE* file, LispWord word) { lisp_print_r(file, word, 0);  }
 void lisp_print(LispWord word) {  lisp_printf(stdout, word); }
 
-static LispWord lisp_apply(LispWord proc, LispWord args, LispContext* ctx)
-{
-    switch (lisp_type(proc))
-    {       
-        case LISP_LAMBDA:
-        {  
-            // lambda call (compound procedure)
-            // construct a new environment
-            Lambda lambda = lisp_lambda(proc);
-            LispWord new_env = lisp_create_env(lambda.env, 128, ctx);
-
-            // bind parameters to arguments
-            // to pass into function call
-            LispWord keyIt = lambda.args;
-            LispWord valIt = args;
-
-            while (!lisp_is_null(keyIt))
-            {
-                lisp_env_set(new_env, lisp_car(keyIt), lisp_car(valIt), ctx);
-
-                keyIt = lisp_cdr(keyIt);
-                valIt = lisp_cdr(valIt);
-            }
-
-            LispWord result = lisp_eval(lambda.body, new_env, ctx); 
-            return result;
-        }
-        case LISP_PROC:
-        {
-            // call into C functions
-            // no environment required 
-            LispWord (*func)(LispWord,LispContext*) = proc.val;
-            return func(args, ctx); 
-        }
-        default:
-        {
-            fprintf(stderr, "apply error: not a procedure %s\n", lisp_type_name[proc.type]);
-            return lisp_null();
-        }
-    }
-}
 
 static LispWord eval_list(LispWord list, LispWord env, LispContext* ctx)
 {
@@ -933,123 +893,158 @@ static LispWord eval_list(LispWord list, LispWord env, LispContext* ctx)
     return start;
 }
 
-LispWord lisp_eval(LispWord word, LispWord env, LispContext* ctx)
+LispWord lisp_eval(LispWord x, LispWord env, LispContext* ctx)
 {
-    LispType type = lisp_type(word);
-    if (type == LISP_SYMBOL)
+    while (1)
     {
-        // variable reference
-
-        LispWord found_env;
-        LispWord result = lisp_env_get(env, word, &found_env);
-
-        if (lisp_is_null(found_env))
+        LispType type = lisp_type(x);
+        
+        if (type == LISP_INT ||
+                type == LISP_FLOAT ||
+                type == LISP_STRING ||
+                type == LISP_NULL)
         {
-            fprintf(stderr, "cannot find variable: %s\n", lisp_symbol(word));
+            // atom
+            return x;
         }
-        return result;
-    }
-    else if (type == LISP_INT || 
-             type == LISP_FLOAT ||
-             type == LISP_STRING)
-    {
-        // atom
-        return word;
-    }
-    else if (type == LISP_PAIR && 
-             lisp_type(lisp_car(word)) == LISP_SYMBOL)
-    { 
-        const char* opSymbol = lisp_symbol(lisp_car(word));
-
-        if (strcmp(opSymbol, "IF") == 0)
+        else if (type == LISP_SYMBOL)
         {
-            // if conditional statemetns
-            LispWord predicate = lisp_at_index(word, 1);
-            LispWord conseq = lisp_at_index(word, 2);
-            LispWord alt = lisp_at_index(word, 3);
-
-            if (lisp_int(lisp_eval(predicate, env, ctx)) != 0)
+            // variable reference
+            LispWord found_env;
+            LispWord result = lisp_env_get(env, x, &found_env);
+            
+            if (lisp_is_null(found_env))
             {
-                return lisp_eval(conseq, env, ctx);
-            } 
-            else
-            {
-                return lisp_eval(alt, env, ctx);
+                fprintf(stderr, "cannot find variable: %s\n", lisp_symbol(x));
             }
-        }
-        else if (strcmp(opSymbol, "BEGIN") == 0)
-        {
-            LispWord it = lisp_cdr(word);
-            LispWord result = lisp_null();
-
-            while (!lisp_is_null(it))
-            {
-                result = lisp_eval(lisp_car(it), env, ctx);
-                it = lisp_cdr(it);
-            } 
-
             return result;
         }
-        else if (strcmp(opSymbol, "QUOTE") == 0)
-        {
-            return lisp_at_index(word, 1);
-        }
-        else if (strcmp(opSymbol, "DEFINE") == 0)
-        {
-            // variable definitions
-            LispWord symbol = lisp_at_index(word, 1); 
-            LispWord value = lisp_eval(lisp_at_index(word, 2), env, ctx);
-            lisp_env_set(env, symbol, value, ctx);
-            return value;
-        }
-        else if (strcmp(opSymbol, "SET!") == 0)
-        {
-            // mutablity
-            // like define, but requires existance
-            // and will search up the environment chain
-            LispWord symbol = lisp_at_index(word, 1);
+        else if (type == LISP_PAIR) 
+        { 
+            const char* op = NULL;
+            if (lisp_type(lisp_car(x)) == LISP_SYMBOL)
+                op = lisp_symbol(lisp_car(x));
 
-            LispWord found_env;
-            lisp_env_get(env, symbol, &found_env);
-
-            if (!lisp_is_null(found_env))
+            if (op && strcmp(op, "IF") == 0)
             {
-                LispWord value = lisp_eval(lisp_at_index(word, 2), env, ctx);
-                lisp_env_set(found_env, symbol, value, ctx);
-                return value;
+                // if conditional statemetns
+                LispWord predicate = lisp_at_index(x, 1);
+                LispWord conseq = lisp_at_index(x, 2);
+                LispWord alt = lisp_at_index(x, 3);
+
+                if (lisp_int(lisp_eval(predicate, env, ctx)) != 0)
+                {
+                    x = lisp_eval(conseq, env, ctx);
+                } 
+                else
+                {
+                    x = lisp_eval(alt, env, ctx);
+                }
+            }
+            else if (op && strcmp(op, "BEGIN") == 0)
+            {
+                LispWord it = lisp_cdr(x);
+                LispWord result = lisp_null();
+
+                while (!lisp_is_null(it))
+                {
+                    result = lisp_eval(lisp_car(it), env, ctx);
+                    it = lisp_cdr(it);
+                } 
+
+                x = result;
+            }
+            else if (op && strcmp(op, "QUOTE") == 0)
+            {
+                return lisp_at_index(x, 1);
+            }
+            else if (op && strcmp(op, "DEFINE") == 0)
+            {
+                // variable definitions
+                LispWord symbol = lisp_at_index(x, 1); 
+                LispWord value = lisp_eval(lisp_at_index(x, 2), env, ctx);
+                lisp_env_set(env, symbol, value, ctx);
+                return lisp_null();
+            }
+            else if (op && strcmp(op, "SET!") == 0)
+            {
+                // mutablity
+                // like define, but requires existance
+                // and will search up the environment chain
+                LispWord symbol = lisp_at_index(x, 1);
+
+                LispWord found_env;
+                lisp_env_get(env, symbol, &found_env);
+
+                if (!lisp_is_null(found_env))
+                {
+                    LispWord value = lisp_eval(lisp_at_index(x, 2), env, ctx);
+                    lisp_env_set(found_env, symbol, value, ctx);
+                    return value;
+                }
+                else
+                {
+                    fprintf(stderr, "error: unknown variable: %s\n", lisp_symbol(symbol));
+                    return lisp_null();
+                }
+            }
+            else if (op && strcmp(op, "LAMBDA") == 0)
+            {
+                // lambda defintions (compound procedures)
+                LispWord args = lisp_at_index(x, 1);
+                LispWord body = lisp_at_index(x, 2);
+                return lisp_create_lambda(args, body, env, ctx);
             }
             else
             {
-                fprintf(stderr, "error: unknown env\n");
-                return lisp_null();
+                // operator application
+                LispWord proc = lisp_eval(lisp_car(x), env, ctx);
+                LispWord args = eval_list(lisp_cdr(x), env, ctx);
+                
+                switch (lisp_type(proc))
+                {
+                    case LISP_LAMBDA:
+                    {
+                        // lambda call (compound procedure)
+                        // construct a new environment
+                        Lambda lambda = lisp_lambda(proc);
+                        LispWord new_env = lisp_create_env(lambda.env, 128, ctx);
+                        
+                        // bind parameters to arguments
+                        // to pass into function call
+                        LispWord keyIt = lambda.args;
+                        LispWord valIt = args;
+                        
+                        while (!lisp_is_null(keyIt))
+                        {
+                            lisp_env_set(new_env, lisp_car(keyIt), lisp_car(valIt), ctx);
+                            keyIt = lisp_cdr(keyIt);
+                            valIt = lisp_cdr(valIt);
+                        }
+                        
+                        x = lisp_eval(lambda.body, new_env, ctx);
+                        env = new_env;
+                        break;
+                    }
+                    case LISP_PROC:
+                    {
+                        // call into C functions
+                        // no environment required 
+                        LispWord (*func)(LispWord,LispContext*) = proc.val;
+                        return func(args, ctx); 
+                    }
+                    default:
+                    {
+                        fprintf(stderr, "apply error: not a procedure %s\n", lisp_type_name[proc.type]);
+                        return lisp_null();
+                    }
+                }
             }
-        }
-        else if (strcmp(opSymbol, "LAMBDA") == 0)
-        {
-            // lambda defintions (compound procedures)
-            LispWord args = lisp_at_index(word, 1);
-            LispWord body = lisp_at_index(word, 2);
-            return lisp_create_lambda(args, body, env, ctx);
         }
         else
         {
-            // operator application
-            LispWord proc = lisp_eval(lisp_car(word), env, ctx);
-            LispWord args = eval_list(lisp_cdr(word), env, ctx);
-            return lisp_apply(proc, args, ctx);
+            fprintf(stderr,"here: %s\n", lisp_type_name[x.type]);
         }
-    }
-    else if (type == LISP_PAIR)
-    {
-        // operator application
-        LispWord proc = lisp_eval(lisp_car(word), env, ctx);
-        LispWord args = eval_list(lisp_cdr(word), env, ctx);
-        return lisp_apply(proc, args, ctx);
-    }
-    else
-    {
-        fprintf(stderr, "eval error: invalid form\n");
-        return lisp_null();
     }
 }
 
@@ -1106,16 +1101,6 @@ static LispWord proc_mult(LispWord args, LispContext* ctx)
     return lisp_create_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
 }
 
-struct LispContext
-{
-    LispHeap heap;
-    LispWord env;
-    SymbolTable symbols;
-    int debug;
-    
-    int lambda_counter;
-};
-
 int lisp_init(LispContext* ctx)
 {
     ctx->lambda_counter = 0;
@@ -1157,7 +1142,6 @@ int lisp_init(LispContext* ctx)
     };
 
     lisp_env_add_procs(ctx->env, names, funcs, ctx);
-
     return 1;
 }
 
@@ -1169,7 +1153,6 @@ void lisp_env_add_procs(LispWord env, const char** names, LispProc* funcs, LispC
     while (*name)
     {
         lisp_env_set(env, lisp_create_symbol(*name, ctx), lisp_create_proc(*func), ctx);
-
         ++name;
         ++func;
     }
@@ -1333,8 +1316,7 @@ size_t lisp_collect(LispContext* ctx)
         }
         assert(offset == to.size);
     }
-
-
+    
     size_t result = from->size - to.size;
 
     // save new symbol table and heap
