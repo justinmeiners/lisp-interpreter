@@ -1104,7 +1104,7 @@ static LispWord proc_mult(LispWord args, LispContext* ctx)
 int lisp_init(LispContext* ctx)
 {
     ctx->lambda_counter = 0;
-    ctx->debug = 1;
+    ctx->debug = 0;
     heap_init(&ctx->heap, 2097152);
     symbol_table_init(&ctx->symbols, 2048);
 
