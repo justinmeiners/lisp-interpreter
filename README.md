@@ -18,11 +18,8 @@ A single header + source Lisp intepreter. I wrote this to improve my knowledge o
 ```
 $ ./lisp_i
 > (define sqr (lambda (x) (* x x)))
-NIL
 > (define length 40)
-NIL
 > (define area 0)
-NIL
 > (set! area (sqr length))
 1600
 ```
