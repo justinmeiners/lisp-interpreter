@@ -222,7 +222,7 @@ static Token* tokenize(const char* program, int* count)
 }
 
 LispType lisp_type(Lisp l) { return l.type; }
-int lisp_is_null(Lisp l) { return lisp_type(l) == LISP_NULL; }
+int lisp_eq(Lisp a, Lisp b) { return a.val == b.val; }
 
 Lisp lisp_null()
 {
@@ -232,7 +232,9 @@ Lisp lisp_null()
     return l;
 }
 
-Lisp lisp_create_int(int n)
+int lisp_is_null(Lisp l) {  return lisp_type(l) == LISP_NULL; }
+
+Lisp lisp_make_int(int n)
 {
     Lisp l;
     l.type = LISP_INT;
@@ -247,7 +249,7 @@ int lisp_int(Lisp l)
     return l.int_val;
 }
 
-Lisp lisp_create_float(float x)
+Lisp lisp_make_float(float x)
 {
     Lisp l;
     l.type = LISP_FLOAT;
@@ -298,17 +300,33 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext* ctx)
     return l;
 }
 
-Lisp lisp_at_index(Lisp list, int i)
+Lisp lisp_at_index(Lisp l, int i)
 {
     while (i > 0)
     {
-        list = lisp_cdr(list);
+        assert(l.type == LISP_PAIR);
+        l = lisp_cdr(l);
         --i;
     }
-    return lisp_car(list);
+    return lisp_car(l);
 }
 
-Lisp lisp_create_string(const char* string, LispContext* ctx)
+Lisp lisp_for_key(Lisp l, Lisp symbol)
+{
+    while (l.type == LISP_PAIR)
+    {
+        if (lisp_eq(lisp_car(l), symbol))
+        {
+            return lisp_car(l);
+        }
+
+        l = lisp_cdr(l);
+    }
+
+    return lisp_null();
+}
+
+Lisp lisp_make_string(const char* string, LispContext* ctx)
 {
     unsigned int length = (unsigned int)strlen(string) + 1;
     LispBlock* block = block_alloc(length, LISP_STRING, &ctx->heap);
@@ -439,7 +457,7 @@ static void symbol_table_add(SymbolTable* table, const LispBlock* symbol_block)
     assert(0);
 }
 
-Lisp lisp_create_symbol(const char* string, LispContext* ctx)
+Lisp lisp_make_symbol(const char* string, LispContext* ctx)
 {
     unsigned int string_length = (unsigned int)strlen(string) + 1;
     unsigned int hash = hash_string(string, string_length);
@@ -506,7 +524,7 @@ static Lisp symbol_from_view(const char* string, unsigned int string_length, Lis
     return l;
 }
 
-Lisp lisp_create_proc(LispProc func)
+Lisp lisp_make_proc(LispProc func)
 {
     Lisp l;
     l.type = LISP_PROC;
@@ -522,7 +540,7 @@ typedef struct
     Lisp env;
 } Lambda;
 
-Lisp lisp_create_lambda(Lisp args, Lisp body, Lisp env, LispContext* ctx)
+Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext* ctx)
 {
     LispBlock* block = block_alloc(sizeof(Lambda), LISP_LAMBDA, &ctx->heap);
 
@@ -559,12 +577,12 @@ static Lisp read_atom(const Token** pointer, LispContext* ctx)
         case TOKEN_INT:
             memcpy(scratch, token->start, token->length);
             scratch[token->length] = '\0';
-            l = lisp_create_int(atoi(scratch));
+            l = lisp_make_int(atoi(scratch));
             break;
         case TOKEN_FLOAT:
             memcpy(scratch, token->start, token->length);
             scratch[token->length] = '\0';
-            l = lisp_create_float(atof(scratch));
+            l = lisp_make_float(atof(scratch));
             break;
         case TOKEN_STRING:
             l = string_from_view(token->start + 1, token->length - 2, ctx);
@@ -624,7 +642,7 @@ static Lisp read_list_r(const Token** begin, const Token* end, LispContext* ctx)
     {
          ++token;
          Lisp l = lisp_cons(read_list_r(&token, end, ctx), lisp_null(), ctx);
-         start = lisp_cons(lisp_create_symbol("QUOTE", ctx), l, ctx);
+         start = lisp_cons(lisp_make_symbol("QUOTE", ctx), l, ctx);
     }
     else
     {
@@ -649,7 +667,7 @@ Lisp lisp_read(const char* program, LispContext* ctx)
     if (begin != end)
     {
         Lisp previous = lisp_cons(result, lisp_null(), ctx);
-        Lisp list = lisp_cons(lisp_create_symbol("BEGIN", ctx), previous, ctx);
+        Lisp list = lisp_cons(lisp_make_symbol("BEGIN", ctx), previous, ctx);
 
         while (begin != end)
         {
@@ -701,7 +719,7 @@ Env* lisp_env(Lisp l)
     return (Env*)block->data;
 }
 
-Lisp lisp_create_env(Lisp parent, int capacity, LispContext* ctx)
+Lisp lisp_make_env(Lisp parent, int capacity, LispContext* ctx)
 {
     int size = sizeof(Env) + sizeof(struct EnvEntry) * capacity;
     LispBlock* block = block_alloc(size, LISP_ENV, &ctx->heap);
@@ -750,7 +768,7 @@ void lisp_env_set(Lisp l, Lisp symbol, Lisp value, LispContext* ctx)
             {
                 printf("resizing\n");
 
-                Lisp dest = lisp_create_env(env->parent, env->capacity * 2, ctx);
+                Lisp dest = lisp_make_env(env->parent, env->capacity * 2, ctx);
                 for (int j = 0; j < env->capacity; ++j)
                     lisp_env_set(dest, env->table[i].symbol, env->table[j].val, ctx);
 
@@ -997,7 +1015,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContext* ctx)
                 // lambda defintions (compound procedures)
                 Lisp args = lisp_at_index(x, 1);
                 Lisp body = lisp_at_index(x, 2);
-                return lisp_create_lambda(args, body, env, ctx);
+                return lisp_make_lambda(args, body, env, ctx);
             }
             else
             {
@@ -1012,7 +1030,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContext* ctx)
                         // lambda call (compound procedure)
                         // construct a new environment
                         Lambda lambda = lisp_lambda(proc);
-                        Lisp new_env = lisp_create_env(lambda.env, 128, ctx);
+                        Lisp new_env = lisp_make_env(lambda.env, 128, ctx);
                         
                         // bind parameters to arguments
                         // to pass into function call
@@ -1072,7 +1090,7 @@ static Lisp proc_eq(Lisp args, LispContext* ctx)
     void* a = lisp_car(args).val;
     void* b = lisp_car(lisp_cdr(args)).val;
 
-    return lisp_create_int(a == b);
+    return lisp_make_int(a == b);
 }
 
 static Lisp proc_display(Lisp args, LispContext* ctx)
@@ -1087,22 +1105,22 @@ static Lisp proc_newline(Lisp args, LispContext* ctx)
 
 static Lisp proc_equals(Lisp args, LispContext* ctx)
 {
-    return lisp_create_int(lisp_car(args).int_val == lisp_car(lisp_cdr(args)).int_val);
+    return lisp_make_int(lisp_car(args).int_val == lisp_car(lisp_cdr(args)).int_val);
 }
 
 static Lisp proc_add(Lisp args, LispContext* ctx)
 {
-    return lisp_create_int(lisp_car(args).int_val + lisp_car(lisp_cdr(args)).int_val);
+    return lisp_make_int(lisp_car(args).int_val + lisp_car(lisp_cdr(args)).int_val);
 }
 
 static Lisp proc_sub(Lisp args, LispContext* ctx)
 {
-    return lisp_create_int(lisp_car(args).int_val - lisp_car(lisp_cdr(args)).int_val);
+    return lisp_make_int(lisp_car(args).int_val - lisp_car(lisp_cdr(args)).int_val);
 }
 
 static Lisp proc_mult(Lisp args, LispContext* ctx)
 {
-    return lisp_create_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
+    return lisp_make_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
 }
 
 static Lisp proc_load(Lisp args, LispContext* ctx)
@@ -1127,7 +1145,7 @@ static Lisp proc_load(Lisp args, LispContext* ctx)
     fread(contents, 1, length, file);
     fclose(file);
 
-    Lisp result = lisp_create_string(contents, ctx);
+    Lisp result = lisp_make_string(contents, ctx);
     free(contents);
     
     return result;
@@ -1146,10 +1164,10 @@ int lisp_init(LispContext* ctx)
     heap_init(&ctx->heap, 2097152);
     symbol_table_init(&ctx->symbols, 2048);
 
-    ctx->env = lisp_create_env(lisp_null(), 2048, ctx);
+    ctx->env = lisp_make_env(lisp_null(), 2048, ctx);
 
-    lisp_env_set(ctx->env, lisp_create_symbol("NULL", ctx), lisp_null(), ctx);
-    lisp_env_set(ctx->env, lisp_create_symbol("global", ctx), ctx->env, ctx);
+    lisp_env_set(ctx->env, lisp_make_symbol("NULL", ctx), lisp_null(), ctx);
+    lisp_env_set(ctx->env, lisp_make_symbol("global", ctx), ctx->env, ctx);
 
     const char* names[] = {
         "CONS",
@@ -1194,7 +1212,7 @@ void lisp_env_add_procs(Lisp env, const char** names, LispProc* funcs, LispConte
 
     while (*name)
     {
-        lisp_env_set(env, lisp_create_symbol(*name, ctx), lisp_create_proc(*func), ctx);
+        lisp_env_set(env, lisp_make_symbol(*name, ctx), lisp_make_proc(*func), ctx);
         ++name;
         ++func;
     }
