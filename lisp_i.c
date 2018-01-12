@@ -36,7 +36,7 @@ int main(int argc, const char* argv[])
         fread(contents, 1, length, file);
         fclose(file);
 
-        LispWord list = lisp_read(contents, &ctx);
+        Lisp list = lisp_read(contents, &ctx);
         lisp_eval(list, ctx.env, &ctx);
         lisp_collect(&ctx); 
     }
@@ -50,8 +50,8 @@ int main(int argc, const char* argv[])
             fgets(line, LINE_MAX, stdin);
 
             clock_t start_time = clock();
-            LispWord contents = lisp_read(line, &ctx);
-            LispWord result = lisp_eval(contents, ctx.env, &ctx);
+            Lisp contents = lisp_read(line, &ctx);
+            Lisp result = lisp_eval(contents, ctx.env, &ctx);
             clock_t end_time = clock();
             lisp_print(result);
             printf("\n");

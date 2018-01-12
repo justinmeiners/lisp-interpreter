@@ -1,3 +1,5 @@
+; test large memory allocations
+; and stack recursion
 
 (define build-list 
   (lambda (n) 

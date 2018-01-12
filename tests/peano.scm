@@ -1,3 +1,4 @@
+; Test tail call optimization
 
 (define peano
   (lambda (a b)

@@ -27,7 +27,7 @@ typedef struct
         int int_val;  
         void* val;
     };
-} LispWord;
+} Lisp;
 
 typedef struct
 {
@@ -54,44 +54,45 @@ typedef struct
 typedef struct
 {
     LispHeap heap;
-    LispWord env;
+    Lisp env;
     SymbolTable symbols;
     int debug;
     
     int lambda_counter;
 } LispContext;
 
-typedef LispWord (*LispProc)(LispWord, LispContext*);
+typedef Lisp (*LispProc)(Lisp, LispContext*);
 
 // Cell utilities
-#define lisp_car(word) ( ((LispWord*)(((LispBlock*)(word).val)->data))[0] )
-#define lisp_cdr(word) ( ((LispWord*)(((LispBlock*)(word).val)->data))[1] )
+#define lisp_car(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[0] )
+#define lisp_cdr(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[1] )
 
-LispType lisp_type(LispWord word);
-int lisp_is_null(LispWord word);
-LispWord lisp_null();
-LispWord lisp_create_int(int n);
-int lisp_int(LispWord word);
-LispWord lisp_create_float(float x);
-float lisp_float(LispWord word);
-LispWord lisp_cons(LispWord car, LispWord cdr, LispContext* ctx);
-LispWord lisp_create_string(const char* string, LispContext* ctx);
-const char* lisp_string(LispWord word);
-LispWord lisp_create_symbol(const char* symbol, LispContext* ctx);
-const char* lisp_symbol(LispWord word);
+LispType lisp_type(Lisp l);
+int lisp_is_null(Lisp l);
+Lisp lisp_null();
+Lisp lisp_create_int(int n);
+int lisp_int(Lisp l);
+Lisp lisp_create_float(float x);
+float lisp_float(Lisp l);
+Lisp lisp_cons(Lisp car, Lisp cdr, LispContext* ctx);
+Lisp lisp_create_string(const char* string, LispContext* ctx);
+const char* lisp_string(Lisp l);
+Lisp lisp_create_symbol(const char* symbol, LispContext* ctx);
+const char* lisp_symbol(Lisp l);
+
 // procedures
-LispWord lisp_create_proc(LispProc proc);
+Lisp lisp_create_proc(LispProc proc);
 
 // evaluation environments
-LispWord lisp_create_env(LispWord parent, int capacity, LispContext* ctx);
-void lisp_env_set(LispWord env, LispWord symbol, LispWord value, LispContext* ctx);
-void lisp_env_add_procs(LispWord env, const char** names, LispProc* funcs, LispContext* ctx);
+Lisp lisp_create_env(Lisp parent, int capacity, LispContext* ctx);
+void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContext* ctx);
+void lisp_env_add_procs(Lisp env, const char** names, LispProc* funcs, LispContext* ctx);
 
 // Maxwell's equations of Software. REP
-LispWord lisp_read(const char* program, LispContext* ctx);
-LispWord lisp_eval(LispWord symbol, LispWord env, LispContext* ctx);
-void lisp_print(LispWord word);
-void lisp_printf(FILE* file, LispWord word);
+Lisp lisp_read(const char* program, LispContext* ctx);
+Lisp lisp_eval(Lisp symbol, Lisp env, LispContext* ctx);
+void lisp_print(Lisp l);
+void lisp_printf(FILE* file, Lisp l);
 
 // memory managment/garbage collection
 int lisp_init(LispContext* ctx);

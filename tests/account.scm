@@ -1,3 +1,5 @@
+; test closure's and enviornment garbage collection
+
 (define make-account 
   (lambda (val) 
     (lambda (action) 
