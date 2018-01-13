@@ -1,8 +1,8 @@
 ; test large memory allocations
 ; and stack recursion
 
-(define build-list 
-  (lambda (n) 
+(def build-list 
+  (fn (n) 
     (if (= n 0) 
       null 
       (cons n (build-list (- n 1))))))
@@ -15,5 +15,4 @@
 
 (display "1000")
 (build-list 1000)
-
 
