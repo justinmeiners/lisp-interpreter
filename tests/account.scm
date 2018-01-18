@@ -4,17 +4,18 @@
   (lambda (val) 
     (lambda (action) 
       (if (eq? action 'deposit) 
-        (lambda (n) (set! val (+ val n))) 
-        (lambda (n) (set! val (- val n)))))))
+        (lambda (n) (set! val (+ val n)) n) 
+        (lambda (n) (set! val (- val n)) n)))))
 
 (define justin (make-account 100))
 (define ryan (make-account 200))
 
 
-(display ((justin 'deposit) 20))
-(newline)
+((justin 'deposit) 20)
+((ryan 'withdraw) 20)
 
-(display ((ryan 'withdraw) 20))
-(newline)
+(assert (= ((justin 'withdraw) 0) 120))
+(assert (= ((ryan 'deposity) 0) 180))
+
 
 

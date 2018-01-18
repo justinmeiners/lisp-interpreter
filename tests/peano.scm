@@ -6,5 +6,5 @@
       b
       (peano (- a 1) (+ b 1)))))
 
-(display (peano 100 200))
+(assert (= (peano 100 200) 300))
  

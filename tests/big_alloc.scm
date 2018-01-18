@@ -7,12 +7,12 @@
       null 
       (cons n (build-list (- n 1))))))
 
-(display "10")
+(display "Alloc 10")
 (build-list 10)
 
-(display "100")
+(display "Alloc 100")
 (build-list 100)
 
-(display "1000")
+(display "Alloc 1000")
 (build-list 1000)
 

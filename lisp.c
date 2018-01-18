@@ -1329,6 +1329,12 @@ static Lisp proc_newline(Lisp args, LispContextRef ctx)
     printf("\n"); return lisp_null(); 
 }
 
+static Lisp proc_assert(Lisp args, LispContextRef ctx)
+{
+   assert(lisp_int(lisp_car(args)) == 1);
+   return lisp_null();
+}
+
 static Lisp proc_equals(Lisp args, LispContextRef ctx)
 {
     return lisp_make_int(lisp_car(args).int_val == lisp_car(lisp_cdr(args)).int_val);
@@ -1397,6 +1403,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         "EQ?",
         "DISPLAY",
         "NEWLINE",
+        "ASSERT",
         "LOAD",
         "READ",
         "=",
@@ -1413,6 +1420,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         proc_eq,
         proc_display,
         proc_newline,
+        proc_assert,
         proc_load,
         proc_read,
         proc_equals,
