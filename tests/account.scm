@@ -4,8 +4,8 @@
   (lambda (val) 
     (lambda (action) 
       (if (eq? action 'deposit) 
-        (lambda (n) (set! val (+ val n)) n) 
-        (lambda (n) (set! val (- val n)) n)))))
+        (lambda (n) (set! val (+ val n))) 
+        (lambda (n) (set! val (- val n)))))))
 
 (define justin (make-account 100))
 (define ryan (make-account 200))
