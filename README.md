@@ -24,3 +24,8 @@ $ ./lisp_i
 > (set! area (sqr length))
 1600
 ```
+
+### Status ###
+
+This project is in progress and is not stable. However, most of the lisp features have been implemented and work properly. You can find a list of todos on the project page.
+

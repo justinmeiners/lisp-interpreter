@@ -1,7 +1,7 @@
 ; Test tail call optimization
 
-(def peano
-  (fn (a b)
+(define peano
+  (lambda (a b)
     (if (= a 0)
       b
       (peano (- a 1) (+ b 1)))))

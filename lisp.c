@@ -691,7 +691,7 @@ Lisp lisp_read(const char* program, LispContextRef ctx)
     if (begin != end)
     {
         Lisp previous = lisp_cons(result, lisp_null(), ctx);
-        Lisp list = lisp_cons(lisp_make_symbol("DO", ctx), previous, ctx);
+        Lisp list = lisp_cons(lisp_make_symbol("BEGIN", ctx), previous, ctx);
 
         while (begin != end)
         {
@@ -1000,7 +1000,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     x = lisp_eval(alt, env, ctx);
                 }
             }
-            else if (op && strcmp(op, "DO") == 0)
+            else if (op && strcmp(op, "BEGIN") == 0)
             {
                 Lisp it = lisp_cdr(x);
                 Lisp result = lisp_null();
@@ -1017,7 +1017,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
             {
                 return lisp_at_index(x, 1);
             }
-            else if (op && strcmp(op, "DEF") == 0)
+            else if (op && strcmp(op, "DEFINE") == 0)
             {
                 // variable definitions
                 Lisp symbol = lisp_at_index(x, 1); 
@@ -1047,7 +1047,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     return lisp_null();
                 }
             }
-            else if (op && strcmp(op, "FN") == 0)
+            else if (op && strcmp(op, "LAMBDA") == 0)
             {
                 // lambda defintions (compound procedures)
                 Lisp args = lisp_at_index(x, 1);
