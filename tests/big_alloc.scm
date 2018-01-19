@@ -13,6 +13,6 @@
 (display "Alloc 100")
 (build-list 100)
 
-(display "Alloc 1000")
-(build-list 1000)
+;(display "Alloc 1000")
+;(build-list 1000)
 

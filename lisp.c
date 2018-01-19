@@ -960,6 +960,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
         if (type == LISP_INT ||
             type == LISP_FLOAT ||
             type == LISP_STRING ||
+            type == LISP_LAMBDA ||
             type == LISP_NULL)
         {
             // atom
@@ -993,11 +994,11 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
 
                 if (lisp_int(lisp_eval(predicate, env, ctx)) != 0)
                 {
-                    x = lisp_eval(conseq, env, ctx);
+                    x = conseq; // while will eval
                 } 
                 else
                 {
-                    x = lisp_eval(alt, env, ctx);
+                    x = alt; // while will eval
                 }
             }
             else if (op && strcmp(op, "BEGIN") == 0)
@@ -1007,11 +1008,20 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
 
                 while (!lisp_is_null(it))
                 {
-                    result = lisp_eval(lisp_car(it), env, ctx);
-                    it = lisp_cdr(it);
+                    Lisp next = lisp_cdr(it);
+                    
+                    if (lisp_is_null(next))
+                    {
+                        x = result; // while will eval
+                        break;
+                    }
+                    else
+                    {
+                        result = lisp_eval(lisp_car(it), env, ctx);
+                    }
+                    
+                    it = next;
                 } 
-
-                x = result;
             }
             else if (op && strcmp(op, "QUOTE") == 0)
             {
@@ -1081,7 +1091,9 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                             valIt = lisp_cdr(valIt);
                         }
                         
-                        x = lisp_eval(lambda.body, new_env, ctx);
+                        // normally we would eval the body here
+                        // but while will eval
+                        x = lambda.body;
                         env = new_env;
                         break;
                     }
