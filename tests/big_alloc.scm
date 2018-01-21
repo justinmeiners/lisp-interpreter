@@ -1,11 +1,10 @@
 ; test large memory allocations
 ; and stack recursion
 
-(define build-list 
-  (lambda (n) 
-    (if (= n 0) 
-      null 
-      (cons n (build-list (- n 1))))))
+(define (build-list n)
+  (if (= n 0) 
+    null 
+    (cons n (build-list (- n 1)))))
 
 (display "Alloc 10")
 (build-list 10)

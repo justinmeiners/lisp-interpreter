@@ -1,11 +1,10 @@
 ; test closure's and enviornment garbage collection
 
-(define make-account 
-  (lambda (val) 
+(define (make-account val)
     (lambda (action) 
       (if (eq? action 'deposit) 
         (lambda (n) (set! val (+ val n))) 
-        (lambda (n) (set! val (- val n)))))))
+        (lambda (n) (set! val (- val n))))))
 
 (define justin (make-account 100))
 (define ryan (make-account 200))

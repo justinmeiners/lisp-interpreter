@@ -18,6 +18,7 @@
 #include <ctype.h>
 #include <memory.h>
 #include <assert.h>
+#include <stdarg.h>
 #include "lisp.h"
 
 typedef struct
@@ -132,6 +133,21 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx)
     return l;
 }
 
+static void back_append(Lisp* front, Lisp* back, Lisp item, LispContextRef ctx)
+{
+    Lisp new_l = lisp_cons(item, lisp_null(), ctx);
+    if (lisp_is_null(*back))
+    {
+        *back = new_l;
+        *front = *back;
+    }
+    else
+    {
+        lisp_cdr(*back) = new_l;
+        *back = new_l;
+    }
+}
+
 Lisp lisp_at_index(Lisp l, int i)
 {
     while (i > 0)
@@ -141,6 +157,27 @@ Lisp lisp_at_index(Lisp l, int i)
         --i;
     }
     return lisp_car(l);
+}
+
+Lisp lisp_make_list(LispContextRef ctx, Lisp first, ...)
+{
+    Lisp front = lisp_cons(first, lisp_null(), ctx);
+    Lisp back = front;
+
+    va_list args;
+    va_start(args, first);
+
+    Lisp it = lisp_null();
+    do
+    {
+        it = va_arg(args, Lisp);
+        if (!lisp_is_null(it))
+            back_append(&front, &back, it, ctx);
+    } while (!lisp_is_null(it));
+
+    va_end(args);
+
+    return front;
 }
 
 Lisp lisp_for_key(Lisp l, Lisp symbol)
@@ -589,7 +626,7 @@ static Token* tokenize(const char* program, int* count)
 
 #define SCRATCH_MAX 128
 
-static Lisp read_atom(const Token** pointer, LispContextRef ctx) 
+static Lisp parse_atom(const Token** pointer, LispContextRef ctx) 
 {
     const Token* token = *pointer;
     
@@ -624,7 +661,7 @@ static Lisp read_atom(const Token** pointer, LispContextRef ctx)
 }
 
 // read tokens and construct S-expresions
-static Lisp read_list_r(const Token** begin, const Token* end, LispContextRef ctx)
+static Lisp parse_list_r(const Token** begin, const Token* end, LispContextRef ctx)
 { 
     const Token* token = *begin;
     
@@ -633,27 +670,17 @@ static Lisp read_list_r(const Token** begin, const Token* end, LispContextRef ct
         fprintf(stderr, "read error - expected: )\n");
     }
 
-    Lisp start = lisp_null();
+    Lisp front = lisp_null();
 
     if (token->type == TOKEN_L_PAREN)
     {
         ++token;
-        Lisp previous = lisp_null();
+        Lisp back = lisp_null();
 
         while (token->type != TOKEN_R_PAREN)
         {
-            Lisp l = lisp_cons(read_list_r(&token, end, ctx), lisp_null(), ctx);
-
-            if (!lisp_is_null(previous))
-            {
-                lisp_cdr(previous) = l;
-            }
-            else
-            {
-                start = l;
-            }
- 
-            previous = l;
+            Lisp l = parse_list_r(&token, end, ctx);
+            back_append(&front, &back, l, ctx);
         }
 
         ++token;
@@ -665,47 +692,197 @@ static Lisp read_list_r(const Token** begin, const Token* end, LispContextRef ct
     else if (token->type == TOKEN_QUOTE)
     {
          ++token;
-         Lisp l = lisp_cons(read_list_r(&token, end, ctx), lisp_null(), ctx);
-         start = lisp_cons(lisp_make_symbol("QUOTE", ctx), l, ctx);
+         Lisp l = lisp_cons(parse_list_r(&token, end, ctx), lisp_null(), ctx);
+         front = lisp_cons(lisp_make_symbol("QUOTE", ctx), l, ctx);
     }
     else
     {
-        start = read_atom(&token, ctx);
+        front = parse_atom(&token, ctx);
     }
 
     *begin = token;
-    return start;
+    return front;
 }
 
-Lisp lisp_read(const char* program, LispContextRef ctx)
+Lisp lisp_parse(const char* program, LispContextRef ctx)
 {
+    // parse tokens into Lisps
     int token_count;
-
     Token* tokens = tokenize(program, &token_count);
 
     const Token* begin = tokens;
     const Token* end = tokens + token_count;
 
-    Lisp result = read_list_r(&begin, end, ctx);
+    Lisp result = parse_list_r(&begin, end, ctx);
 
     if (begin != end)
     {
-        Lisp previous = lisp_cons(result, lisp_null(), ctx);
-        Lisp list = lisp_cons(lisp_make_symbol("BEGIN", ctx), previous, ctx);
-
+        Lisp back = lisp_cons(result, lisp_null(), ctx);
+        Lisp front = lisp_cons(lisp_make_symbol("BEGIN", ctx), back, ctx);
+        
         while (begin != end)
         {
-            Lisp next_result = lisp_cons(read_list_r(&begin, end, ctx), lisp_null(), ctx);
-
-            lisp_cdr(previous) = next_result;
-            previous = next_result;
+            Lisp next_result = parse_list_r(&begin, end, ctx);
+            back_append(&front, &back, next_result, ctx);
         } 
 
-       result = list;
+       result = front;
     }
 
     free(tokens);
     return result;
+}
+
+static Lisp expand_r(Lisp l, LispContextRef ctx)
+{
+    // 1. expand extended syntax into primitive syntax
+    // 2. perform optimizations
+    // 3. check syntax
+    
+    if (l.type == LISP_SYMBOL &&
+        lisp_eq(l, lisp_make_symbol("QUOTE", ctx)))
+    {
+        // don't expand quotes
+        return l;
+    }
+    if (l.type == LISP_PAIR)
+    {
+        const char* op = NULL;
+        if (lisp_type(lisp_car(l)) == LISP_SYMBOL)
+            op = lisp_symbol(lisp_car(l));
+
+        if (op && strcmp(op, "DEFINE") == 0)
+        {
+            Lisp def = lisp_at_index(l, 1);
+            
+            if (def.type == LISP_PAIR)
+            {
+                // (define (<name> <arg0> ... <argn>) <body>)
+                // -> (define <name> ((lambda <arg0> ... <argn>) <body>))
+                Lisp name = lisp_at_index(def, 0);
+                Lisp body = expand_r(lisp_at_index(l, 2), ctx);
+                
+                Lisp lambda = lisp_make_list(ctx,
+                                                  lisp_make_symbol("LAMBDA", ctx),
+                                                  lisp_cdr(def), // args
+                                                  body,
+                                                  lisp_null());
+                
+                lisp_cdr(l) = lisp_make_list(ctx,
+                                             name,
+                                             lambda,
+                                             lisp_null());
+                return l;
+            }
+            else
+            {
+                assert(def.type == LISP_SYMBOL);
+                lisp_cdr(l) = expand_r(lisp_cdr(l), ctx);
+                return l;
+            }
+        }
+        else if (op && strcmp(op, "AND") == 0)
+        {
+            // (AND <pred0> <pred1>) -> (IF <pred0> (IF <pred1 t f) f)
+            Lisp predicate0 = expand_r(lisp_at_index(l, 1), ctx);
+            Lisp predicate1 = expand_r(lisp_at_index(l, 2), ctx);
+
+            Lisp inner = lisp_make_list(ctx, 
+                                        lisp_make_symbol("IF", ctx),
+                                        predicate1,
+                                        lisp_make_int(1), 
+                                        lisp_make_int(0),
+                                        lisp_null());
+
+            Lisp outer = lisp_make_list(ctx,
+                                        lisp_make_symbol("IF", ctx),
+                                        predicate0,
+                                        inner,
+                                        lisp_make_int(0),
+                                        lisp_null());
+
+            return outer;
+        }
+        else if (op && strcmp(op, "OR") == 0)
+        {
+            // (OR <pred0> <pred1>) -> (IF (<pred0>) t (IF <pred1> t f))
+            Lisp predicate0 = expand_r(lisp_at_index(l, 1), ctx);
+            Lisp predicate1 = expand_r(lisp_at_index(l, 2), ctx);
+            
+            Lisp inner = lisp_make_list(ctx,
+                                        lisp_make_symbol("IF", ctx),
+                                        predicate1,
+                                        lisp_make_int(1),
+                                        lisp_make_int(0),
+                                        lisp_null());
+            
+            Lisp outer = lisp_make_list(ctx,
+                                        lisp_make_symbol("IF", ctx),
+                                        predicate0,
+                                        lisp_make_int(1),
+                                        inner,
+                                        lisp_null());
+            
+            return outer;
+
+        }
+        else if (op && strcmp(op, "LET") == 0)
+        {
+            // (LET ((<var0> <expr0>) .. <varn> <expr1>) <body> )
+            //  -> ((LAMBDA (<var0> ... <varn>) <body>) expr0 .. expr1)
+            
+            Lisp pairs = lisp_at_index(l, 1);
+            Lisp body = expand_r(lisp_at_index(l, 2), ctx);
+
+            Lisp vars_front = lisp_null();
+            Lisp vars_back = vars_front;
+            
+            Lisp exprs_front = lisp_null();
+            Lisp exprs_back = exprs_front;
+            
+            while (!lisp_is_null(pairs))
+            {
+                Lisp var = lisp_at_index(lisp_car(pairs), 0);
+                assert(var.type == LISP_SYMBOL);
+                back_append(&vars_front, &vars_back, var, ctx);
+
+                Lisp val = expand_r(lisp_at_index(lisp_car(pairs), 1), ctx);
+                back_append(&exprs_front, &exprs_back, val, ctx);
+                pairs = lisp_cdr(pairs);
+            }
+            
+            Lisp lambda = lisp_make_list(ctx, lisp_make_symbol("LAMBDA", ctx), vars_front, body, lisp_null());
+            return lisp_cons(lambda, exprs_front, ctx);
+        }
+        else
+        {
+            Lisp it = l;
+
+            while (!lisp_is_null(it))
+            {
+                lisp_car(it) = expand_r(lisp_car(it), ctx);
+                it = lisp_cdr(it);
+            }
+
+            return l;
+        }
+    } 
+    else 
+    {
+        return l;
+    }
+}
+
+Lisp lisp_read(const char* program, LispContextRef ctx)
+{
+    Lisp data = lisp_parse(program, ctx);
+//    printf("data: \n");
+ //   lisp_print(data);
+ 
+    Lisp code = expand_r(data, ctx);
+//    printf("code: \n");
+ //   lisp_print(code);
+    return code;
 }
 
 static const char* lisp_type_name[] = {
@@ -925,32 +1102,6 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
-static Lisp eval_list(Lisp list, Lisp env, LispContextRef ctx)
-{
-    Lisp start = lisp_null();
-    Lisp previous = lisp_null();
-
-    while (!lisp_is_null(list))
-    {
-        Lisp new_l = lisp_cons(lisp_eval(lisp_car(list), env, ctx), lisp_null(), ctx);
-
-        if (lisp_is_null(previous))
-        {
-            start = new_l;
-            previous = new_l;
-        }
-        else
-        {
-            lisp_cdr(previous) = new_l;
-            previous = new_l;
-        }
-
-        list = lisp_cdr(list);
-    }
-
-    return start;
-}
-
 Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
 {
     while (1)
@@ -1068,7 +1219,17 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
             {
                 // operator application
                 Lisp proc = lisp_eval(lisp_car(x), env, ctx);
-                Lisp args = eval_list(lisp_cdr(x), env, ctx);
+                Lisp arg_expr = lisp_cdr(x);
+                
+                Lisp args_front = lisp_null();
+                Lisp args_back = lisp_null();
+                
+                while (!lisp_is_null(arg_expr))
+                {
+                    Lisp new_arg = lisp_eval(lisp_car(arg_expr), env, ctx);
+                    back_append(&args_front, &args_back, new_arg, ctx);
+                    arg_expr = lisp_cdr(arg_expr);
+                }
                 
                 switch (lisp_type(proc))
                 {
@@ -1082,7 +1243,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                         // bind parameters to arguments
                         // to pass into function call
                         Lisp keyIt = lambda.args;
-                        Lisp valIt = args;
+                        Lisp valIt = args_front;
                         
                         while (!lisp_is_null(keyIt))
                         {
@@ -1102,7 +1263,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                         // call into C functions
                         // no environment required 
                         Lisp (*func)(Lisp,LispContextRef) = proc.val;
-                        return func(args, ctx); 
+                        return func(args_front, ctx);
                     }
                     default:
                     {
@@ -1445,5 +1606,4 @@ Lisp lisp_make_default_env(LispContextRef ctx)
     lisp_env_add_procs(env, names, funcs, ctx);
     return env;
 }
-
 

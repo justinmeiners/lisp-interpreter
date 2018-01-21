@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define LISP_DEBUG 1
+#define LISP_DEBUG 0
 
 typedef enum
 {
@@ -62,6 +62,9 @@ const char* lisp_symbol(Lisp l);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
 Lisp lisp_at_index(Lisp l, int n);
 
+// convience function for cons'ing together items. arguments must be null terminated
+Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
+
 // Dictionaries
 Lisp lisp_for_key(Lisp l, Lisp symbol);
 
@@ -75,6 +78,7 @@ void lisp_env_add_procs(Lisp env, const char** names, LispProc* funcs, LispConte
 Lisp lisp_make_default_env(struct LispContext* ctx);
 
 // Maxwell's equations of Software. REP
+Lisp lisp_parse(const char* program, LispContextRef ctx);
 Lisp lisp_read(const char* program, LispContextRef ctx);
 Lisp lisp_eval(Lisp symbol, Lisp env, LispContextRef ctx);
 void lisp_print(Lisp l);
