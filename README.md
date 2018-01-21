@@ -1,11 +1,11 @@
 lisp-interpreter
 ===============
 
-### About ###
+## About
 
 A single header + source Lisp intepreter, that is closest to the Scheme dialect. I wrote this to improve my knowledge of lisp and to make an implementation that is easily embedded into C programs.
 
-### Features ###
+### Features
 
 - One header and source file.
 - Scheme-like syntax (if, let, and, or, etc)
@@ -16,7 +16,7 @@ A single header + source Lisp intepreter, that is closest to the Scheme dialect.
 - REPL command line tool.
 - Support for static data
 
-### Example ###
+### Example
 
 ```
 $ ./lisp_i
@@ -28,11 +28,11 @@ $ ./lisp_i
 ```
 
 
-### Data ###
+## Data
 
 Lisp s-expressions can be used as a lightweight substitute to JSON or XML. 
 
-JSON
+### JSON
 ```
 {
    "name" : "bob jones",
@@ -42,14 +42,14 @@ JSON
 
 ```
 
-Lisp
+### Lisp
 ```
 
 ((name "bob jones") (age 54) (city "SLC"))
 
 ```
 
-Reading
+### Reading
 ```
 LispContextRef ctx = lisp_init(...);
 Lisp data = lisp_parse(program, ctx);
@@ -61,7 +61,7 @@ printf("%s\n", lisp_string(name));
 ```
 
 
-### Status ###
+## Status
 
 This project is in progress and is not stable. However, most of the lisp features have been implemented and work properly. You can find a list of todos on the project page.
 
