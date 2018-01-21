@@ -45,7 +45,7 @@ JSON
 Lisp
 ```
 
-((name "bob jones") (age 54) (city "slc"))
+((name "bob jones") (age 54) (city "SLC"))
 
 ```
 
@@ -56,7 +56,7 @@ Lisp data = lisp_parse(program, ctx);
 
 // search for name
 Lisp name = lisp_for_key(data, lisp_make_symbol("NAME", ctx));
-printf("%s\n", lisp_symbol(name));
+printf("%s\n", lisp_string(name));
 
 ```
 
