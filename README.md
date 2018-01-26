@@ -3,7 +3,7 @@ lisp-interpreter
 
 ## About
 
-A single header + source Lisp intepreter, that is closest to the Scheme dialect. I wrote this to improve my knowledge of lisp and to make an implementation that is easily embedded into C programs.
+An embeddable lisp interepreter written in C. The lisp dialect is close to Scheme, but is not complete or confined to Scheme. I created this while reading SICP to improve my knowledge of lisp and to make an implementation that I can easily embed into my C programs.
 
 
 ### Philosophy
