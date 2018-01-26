@@ -8,10 +8,10 @@ A single header + source Lisp intepreter, that is closest to the Scheme dialect.
 
 ### Philosophy
 
-- **Simple**: An interpreter is something that can get really complicated by cool extra features. This doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation. Just a robust foundation for embedded scripting.
+- **Simple**: An interpreter is something that can get really complicated by fancy features. This project doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation, just a robust scripting foundation.
 - **Data & Code**: Lisp is undervalued as a JSON or XML alternative. This implementation provides support for working with data or code.
 - **Unintrusive**: Just copy in the header and source file. Source code should be portable between major platforms.
-- **Unsuprising**: You should be able to read the source code and understand how it works. The header API should work how you expect.
+- **Unsurprising**: You should be able to read the source code and understand how it works. The header API should work how you expect.
 
 ### Features
 
@@ -41,7 +41,7 @@ $ ./lisp_i
 
 Lisp s-expressions can be used as a lightweight substitute to JSON or XML. 
 
-### JSON
+### JSON 
 ```
 {
    "name" : "bob jones",
@@ -59,7 +59,7 @@ Lisp s-expressions can be used as a lightweight substitute to JSON or XML.
 
 ```
 
-### Reading
+### C Parsing
 ```
 LispContextRef ctx = lisp_init(...);
 // The parse function bypasses the usual syntax expansion phase for code
