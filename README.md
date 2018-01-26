@@ -3,7 +3,7 @@ lisp-interpreter
 
 ## About
 
-An embeddable lisp interepreter written in C. The lisp dialect is close to Scheme, but is not complete or confined to Scheme. I created this while reading SICP to improve my knowledge of lisp and to make an implementation that I can easily embed into my C programs.
+An embeddable lisp interepreter written in C. I created this while reading SICP to improve my knowledge of lisp and to make an implementation that allows me to easily add scripting to my own programs.
 
 
 ### Philosophy
@@ -15,7 +15,7 @@ An embeddable lisp interepreter written in C. The lisp dialect is close to Schem
 
 ### Features
 
-- Scheme-like syntax (if, let, and, or, etc)
+- Scheme-like (but not confined to) syntax. if, let, and, or, etc.
 - Closures
 - Cheney garbage collection with explicit invocation.
 - Symbol table
