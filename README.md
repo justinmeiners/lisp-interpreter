@@ -24,8 +24,10 @@ A single header + source Lisp intepreter, that is closest to the Scheme dialect.
 - Data loading and manipulation.
 - Single header and source file.
 
-### Example
+## Examples
 
+
+Read, eval, print loop:
 ```
 $ ./lisp_i
 > (define (sqr x) (* x x)))
@@ -34,7 +36,6 @@ $ ./lisp_i
 > (set! area (sqr length))
 1600
 ```
-
 
 ## Data
 
@@ -61,6 +62,7 @@ Lisp s-expressions can be used as a lightweight substitute to JSON or XML.
 ### Reading
 ```
 LispContextRef ctx = lisp_init(...);
+// The parse function bypasses the usual syntax expansion phase for code
 Lisp data = lisp_parse(program, ctx);
 
 // search for name
