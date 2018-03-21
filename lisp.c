@@ -1451,7 +1451,7 @@ static inline Lisp gc_move(Lisp l, Heap* to)
     return l;
 }
 
-Lisp lisp_collect(LispContextRef ctx, Lisp root)
+Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
 {
     Heap* from = &ctx->heap;
     int capacity = ctx->symbols.capacity;
@@ -1480,7 +1480,7 @@ Lisp lisp_collect(LispContextRef ctx, Lisp root)
     heap_init(&to, from->capacity);
  
     // move root object
-    Lisp result = gc_move(root, &to);
+    Lisp result = gc_move(root_to_save, &to);
 
     // move references
     int passes = 0;

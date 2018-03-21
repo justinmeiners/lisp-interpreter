@@ -1,3 +1,18 @@
+/* EXAMPLE
+
+   Lisp for scripting:
+   -------------------------
+
+
+   Lisp for data:
+   -------------------------
+   lisp_init(1048576); // setup lisp with 1 MB of heap
+   Lisp data = lisp_parse_file(file, ctx); // load lisp structure
+   
+   lisp_collect(ctx, env);
+*/
+
+
 #ifndef LISP_H
 #define LISP_H
 
@@ -62,7 +77,7 @@ const char* lisp_symbol(Lisp l);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
 Lisp lisp_at_index(Lisp l, int n);
 
-// convience function for cons'ing together items. arguments must be null terminated
+// conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
 
 // Dictionaries
@@ -72,23 +87,32 @@ Lisp lisp_for_key(Lisp l, Lisp symbol);
 Lisp lisp_make_proc(LispProc proc);
 
 // evaluation environments
+// these store variable state and function names
 Lisp lisp_make_env(Lisp parent, int capacity, LispContextRef ctx);
 void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
 void lisp_env_add_procs(Lisp env, const char** names, LispProc* funcs, LispContextRef ctx);
 Lisp lisp_make_default_env(struct LispContext* ctx);
 
 // Maxwell's equations of Software. REP
-Lisp lisp_parse_file(FILE* file, LispContextRef ctx);
+// parse reads the text into raw s-expressions. But does not apply any syntax expansions. This is primarily for using Lisp as JSON/XML
 Lisp lisp_parse(const char* program, LispContextRef ctx);
+Lisp lisp_parse_file(FILE* file, LispContextRef ctx);
+// read performs a parse ans then syntax expansion. This is for Lisp code.
 Lisp lisp_read_file(FILE* file, LispContextRef ctx);
 Lisp lisp_read(const char* program, LispContextRef ctx);
-Lisp lisp_eval(Lisp symbol, Lisp env, LispContextRef ctx);
+// evaluate a lisp expression
+Lisp lisp_eval(Lisp expr, Lisp env, LispContextRef ctx);
+// print out a lisp structure
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 
-// memory managment/garbage collection
+// memory managment and garbage collection
 LispContextRef lisp_init(unsigned int heap_size);
 void lisp_shutdown(LispContextRef ctx);
-Lisp lisp_collect(LispContextRef ctx, Lisp root);
+
+// garbage collection. free up memory from unused objects. 
+// this will free all objects which are not reachable from root_to_save
+// usually the root environment should be this parameter
+Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx);
 
 #endif

@@ -27,7 +27,7 @@ int main(int argc, const char* argv[])
         fclose(file);
     
         lisp_eval(list, env, ctx);
-        lisp_collect(ctx, env);
+        lisp_collect(env, ctx);
     }
     else
     {
@@ -49,7 +49,7 @@ int main(int argc, const char* argv[])
                 printf("us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
             start_time = clock();
-            env = lisp_collect(ctx, env);
+            env = lisp_collect(env, ctx);
             end_time = clock();
             
             if (LISP_DEBUG)
