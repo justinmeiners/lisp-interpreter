@@ -22,21 +22,10 @@ int main(int argc, const char* argv[])
             return 2;
         }
 
-        fseek(file, 0, SEEK_END);
-        size_t length = ftell(file);
-        fseek(file, 0, SEEK_SET);
+        Lisp list = lisp_read_file(file, ctx);
 
-        char* contents = malloc(length);
-        
-        if (!contents)
-        {
-            return 3;
-        }
-
-        fread(contents, 1, length, file);
         fclose(file);
-
-        Lisp list = lisp_read(contents, ctx);
+    
         lisp_eval(list, env, ctx);
         lisp_collect(ctx, env);
     }

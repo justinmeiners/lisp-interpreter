@@ -78,7 +78,9 @@ void lisp_env_add_procs(Lisp env, const char** names, LispProc* funcs, LispConte
 Lisp lisp_make_default_env(struct LispContext* ctx);
 
 // Maxwell's equations of Software. REP
+Lisp lisp_parse_file(FILE* file, LispContextRef ctx);
 Lisp lisp_parse(const char* program, LispContextRef ctx);
+Lisp lisp_read_file(FILE* file, LispContextRef ctx);
 Lisp lisp_read(const char* program, LispContextRef ctx);
 Lisp lisp_eval(Lisp symbol, Lisp env, LispContextRef ctx);
 void lisp_print(Lisp l);
