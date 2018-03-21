@@ -601,7 +601,7 @@ static int read_token(const char* c,
 static Token* tokenize(const char* program, int* count)
 {
     // growing vector of tokens
-    int buffer_size = 512;
+    int buffer_size = 1024;
     Token* tokens = malloc(sizeof(Token) * buffer_size);
     int token_count = 0;
 
@@ -619,6 +619,48 @@ static Token* tokenize(const char* program, int* count)
 
     *count = token_count;
     return tokens;
+}
+
+
+#define BLOCK_SIZE 4096
+static Token* tokenize_file(FILE* programFile)
+{
+    // double input buffering
+    int buff_index = 0;
+    char* buffers[2];
+    buffers[0] = malloc(BLOCK_SIZE + 1);
+    buffers[1] = malloc(BLOCK_SIZE + 1);
+
+    // growing vector of tokens
+    int token_capacity = 1024;
+    Token* tokens = malloc(sizeof(Token) * token_capacity);
+    int token_count = 0;
+
+    while (!feof(programFile))
+    {
+        // read a block
+        fread(buffers[buff_index], 1, BLOCK_SIZE, programFile);
+        buffer[buff_index][BLOCK_SIZE] = '\0';
+
+        const char* c = buffers[buff_index];
+
+        while (*c != '\0' && read_token(c, &c, tokens + token_count))
+        {
+            ++token_count; 
+            if (token_count + 1 == token_capacity)
+            {
+                token_capacity = (token_capacity * 3) / 2;
+                tokens = realloc(tokens, sizeof(Token) * token_capacity);
+            } 
+        } 
+
+        // flip the buffer
+        buff_index = !buff_index;
+    }
+
+
+    free(buffers[0]);
+    free(buffers[1]);
 }
 
 #pragma mark Read
