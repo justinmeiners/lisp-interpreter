@@ -966,42 +966,62 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
     }
 }
 
-Lisp lisp_parse_file(FILE* file, LispContextRef ctx)
-{
-    Lexer lex;
-    lexer_init_file(&lex, file);
-    Lisp result = parse(&lex, ctx);
-    lexer_shutdown(&lex);
-    return result;
-}
-
 Lisp lisp_parse(const char* program, LispContextRef ctx)
 {
     Lexer lex;
     lexer_init(&lex, program);
-    Lisp result = parse(&lex, ctx);
+    Lisp l = parse(&lex, ctx);
     lexer_shutdown(&lex);
-    return result;
+    return l;
 }
 
-Lisp lisp_read_file(FILE* file, LispContextRef ctx)
+Lisp lisp_parse_file(FILE* file, LispContextRef ctx)
 {
-    Lisp data = lisp_parse_file(file, ctx);
-    return expand_r(data, ctx);
+    Lexer lex;
+    lexer_init_file(&lex, file);
+    Lisp l = parse(&lex, ctx);
+    lexer_shutdown(&lex);
+    return l;
+}
+
+Lisp lisp_parse_path(const char* path, LispContextRef ctx)
+{
+    FILE* file = fopen(path, "r");
+
+    if (!file)
+    {
+        return lisp_null();
+    }
+
+    Lisp l = lisp_parse_file(file, ctx);
+    fclose(file);
+    return l;
 }
 
 Lisp lisp_read(const char* program, LispContextRef ctx)
 {
-    Lisp data = lisp_parse(program, ctx);
+    Lisp raw_data = lisp_parse(program, ctx);
 //    printf("data: \n");
  //   lisp_print(data);
  
-    Lisp code = expand_r(data, ctx);
+    Lisp code = expand_r(raw_data, ctx);
 //    printf("code: \n");
  //   lisp_print(code);
     return code;
 }
 
+Lisp lisp_read_file(FILE* file, LispContextRef ctx)
+{
+    Lisp raw_data = lisp_parse_file(file, ctx);
+    return expand_r(raw_data, ctx);
+}
+
+Lisp lisp_read_path(const char* path, LispContextRef ctx)
+{
+    Lisp raw_data = lisp_parse_path(path, ctx);
+    return expand_r(raw_data, ctx);
+}
+ 
 static const char* lisp_type_name[] = {
     "FLOAT",
     "INT",

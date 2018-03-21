@@ -97,9 +97,12 @@ Lisp lisp_make_default_env(struct LispContext* ctx);
 // parse reads the text into raw s-expressions. But does not apply any syntax expansions. This is primarily for using Lisp as JSON/XML
 Lisp lisp_parse(const char* program, LispContextRef ctx);
 Lisp lisp_parse_file(FILE* file, LispContextRef ctx);
+Lisp lisp_parse_path(const char* path, LispContextRef ctx);
+
 // read performs a parse ans then syntax expansion. This is for Lisp code.
-Lisp lisp_read_file(FILE* file, LispContextRef ctx);
 Lisp lisp_read(const char* program, LispContextRef ctx);
+Lisp lisp_read_file(FILE* file, LispContextRef ctx);
+Lisp lisp_read_path(const char* path, LispContextRef ctx);
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, Lisp env, LispContextRef ctx);
 // print out a lisp structure
