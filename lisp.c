@@ -1723,38 +1723,16 @@ static Lisp proc_mult(Lisp args, LispContextRef ctx)
     return lisp_make_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
 }
 
-static Lisp proc_load(Lisp args, LispContextRef ctx)
+static Lisp proc_parse(Lisp args, LispContextRef ctx)
 {
     const char* path = lisp_string(lisp_car(args));
-    FILE* file = fopen(path, "r");
-    
-    if (!file)
-    {
-        fprintf(stderr, "failed to open: %s", path);
-        return lisp_null();
-    }
-    
-    fseek(file, 0, SEEK_END);
-    size_t length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char* contents = malloc(length);
-    
-    if (!contents) return lisp_null();
-    
-    fread(contents, 1, length, file);
-    fclose(file);
-
-    Lisp result = lisp_make_string(contents, ctx);
-    free(contents);
-    
-    return result;
+    return lisp_parse_path(path, ctx); 
 }
 
 static Lisp proc_read(Lisp args, LispContextRef ctx)
 {
-    const char* text = lisp_string(lisp_car(args));
-    return lisp_read(text, ctx);
+    const char* path = lisp_string(lisp_car(args));
+    return lisp_read_path(path, ctx);
 }
 
 Lisp lisp_make_default_env(LispContextRef ctx)
@@ -1772,7 +1750,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         "DISPLAY",
         "NEWLINE",
         "ASSERT",
-        "LOAD",
+        "PARSE",
         "READ",
         "=",
         "+",
@@ -1789,7 +1767,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         proc_display,
         proc_newline,
         proc_assert,
-        proc_load,
+        proc_parse,
         proc_read,
         proc_equals,
         proc_add,
