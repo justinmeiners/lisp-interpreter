@@ -19,6 +19,7 @@
 #include <memory.h>
 #include <assert.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include "lisp.h"
 
 typedef struct
@@ -509,14 +510,16 @@ static int lexer_step(Lexer* lex)
             // next block is older. so read a new one
             if (lex->buff_number[new_index] < lex->buff_number[previous_index])
             {
-                if (feof(lex->file))
+                if (!feof(lex->file))
+                {
+                    size_t read = fread(lex->buffs[new_index], 1, lex->buff_size, lex->file);
+                    lex->buff_number[new_index] = lex->buff_number[previous_index] + 1;
+                    lex->buffs[new_index][read] = '\0';
+                }
+                else
                 {
                     return 0;
                 }
-                
-                size_t read = fread(lex->buffs[new_index], 1, lex->buff_size, lex->file);
-                lex->buff_number[new_index] = lex->buff_number[previous_index] + 1;
-                lex->buffs[new_index][read] = '\0';
             }
 
 			lex->c_buff_index = new_index;
@@ -597,7 +600,7 @@ static int lexer_match_float(Lexer* lex)
     while (isdigit(*lex->c) || *lex->c == '.')
     {
         if (*lex->c == '.') found_decimal = 1;
-        ++lex->c;
+        lexer_step(lex);
     }
 
     if (!found_decimal) return 0;
@@ -864,7 +867,6 @@ static Lisp parse(Lexer* lex, LispContextRef ctx)
 {
     lexer_next_token(lex);
     Lisp result = parse_list_r(lex, ctx);
-    lisp_print(result);
     
     if (lex->token != TOKEN_NONE)
     {

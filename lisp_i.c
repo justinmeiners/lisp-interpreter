@@ -1,37 +1,59 @@
 #include <stdlib.h>
-#include "lisp.h"
 #include <time.h>
+#include <string.h>
+#include "lisp.h"
 
 #define LINE_MAX 2048
 
 int main(int argc, const char* argv[])
 {
-    //printf("word-size: %lu\n", sizeof(LispWord));
-    //printf("block-size: %lu\n", sizeof(LispBlock));
+    int quote = 0;
+    const char* file_path = NULL;
+    
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--quote") == 0)
+        {
+            quote = 1;
+        }
+        else if (strcmp(argv[i], "--file") == 0)
+        {
+            file_path = argv[i + 1];
+        }
+    }
     
     LispContextRef ctx = lisp_init(20971520);
     Lisp env = lisp_make_default_env(ctx);
-
-    if (argc > 1)
+    
+    if (file_path)
     {
-        FILE* file = fopen(argv[1], "r");
-
+        FILE* file = fopen(file_path, "r");
+        
         if (!file)
         {
             fprintf(stderr, "failed to open: %s", argv[1]);
             return 2;
         }
-
-        Lisp list = lisp_parse_file(file, ctx);
-
-       // Lisp list = lisp_read_file(file, ctx);
-
+        
+        clock_t start_time = clock();
+        
+        Lisp l = lisp_null();
+        if (quote)
+        {
+            l = lisp_parse_file(file, ctx);
+        }
+        else
+        {
+            l = lisp_read_file(file, ctx);
+        }
+        clock_t end_time = clock();
+        
         fclose(file);
-
-        lisp_print(list);
-    
-        //lisp_eval(list, env, ctx);
-        //lisp_collect(env, ctx);
+        
+        if (LISP_DEBUG)
+            printf("us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+        
+        lisp_collect(l, ctx);
     }
     else
     {
