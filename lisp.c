@@ -251,6 +251,8 @@ static void symbol_table_shutdown(SymbolTable* table)
     free(table->symbols);
 }
 
+#define strncasecmp _stricmp
+
 static LispBlock* symbol_table_get(SymbolTable* table, const char* string, unsigned int max_length, unsigned int hash)
 {
     unsigned int index = hash % table->capacity;
@@ -498,7 +500,7 @@ static int lexer_step(Lexer* lex)
         {
             // flip the buffer
             int previous_index = lex->c_buff_index;
-            int new_index = !lex->c_buff_index;
+            int new_index = !previous_index;
 
             if (new_index == lex->sc_buff_index)
             {
@@ -513,6 +515,7 @@ static int lexer_step(Lexer* lex)
                 lex->buff_number[new_index] = lex->buff_number[previous_index] + 1;
             }
 
+			lex->c_buff_index = new_index;
             lex->c = lex->buffs[new_index];
         }  
         else

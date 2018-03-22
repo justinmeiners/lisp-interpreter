@@ -10,7 +10,8 @@ def lisp_dump(data):
     elif isinstance(data, float):
         return str(data) 
     elif isinstance(data, str):
-        return "\"" + data + "\""
+        escaped_string = data.encode("unicode_escape").decode("utf-8")
+        return "\"" + escaped_string + "\""
     elif isinstance(data, list):
         result = "("
         for i, item in enumerate(data):

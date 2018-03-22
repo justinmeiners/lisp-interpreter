@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for file in tests/*.scm
+for file in test_code/*.scm
 do
     ./lisp_i $file
     printf "\n"
