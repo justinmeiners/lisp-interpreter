@@ -251,8 +251,6 @@ static void symbol_table_shutdown(SymbolTable* table)
     free(table->symbols);
 }
 
-#define strncasecmp _stricmp
-
 static LispBlock* symbol_table_get(SymbolTable* table, const char* string, unsigned int max_length, unsigned int hash)
 {
     unsigned int index = hash % table->capacity;
@@ -468,8 +466,8 @@ static void lexer_init_file(Lexer* lex, FILE* file)
     lex->scan_length = 0;
 
     // read a new block
-    fread(lex->buffs[0], lex->buff_size, 1, lex->file);
-    lex->buffs[0][lex->buff_size] = '\0';
+    size_t read = fread(lex->buffs[0], 1, lex->buff_size, lex->file);
+    lex->buffs[0][read] = '\0';
 
     lex->buff_number[0] = 0;
     lex->buff_number[1] = -1;
@@ -496,7 +494,7 @@ static int lexer_step(Lexer* lex)
 
     if (*lex->c == '\0')
     { 
-        if (lex->file && !feof(lex->file))
+        if (lex->file)
         {
             // flip the buffer
             int previous_index = lex->c_buff_index;
@@ -511,8 +509,14 @@ static int lexer_step(Lexer* lex)
             // next block is older. so read a new one
             if (lex->buff_number[new_index] < lex->buff_number[previous_index])
             {
-                fread(lex->buffs[new_index], lex->buff_size, 1, lex->file);
+                if (feof(lex->file))
+                {
+                    return 0;
+                }
+                
+                size_t read = fread(lex->buffs[new_index], 1, lex->buff_size, lex->file);
                 lex->buff_number[new_index] = lex->buff_number[previous_index] + 1;
+                lex->buffs[new_index][read] = '\0';
             }
 
 			lex->c_buff_index = new_index;
@@ -549,8 +553,21 @@ static void lexer_skip_empty(Lexer* lex)
 static int lexer_match_int(Lexer* lex)
 {
     lexer_restart_scan(lex);
-    // need at least one digit
-    if (!isdigit(*lex->c)) return 0;
+    
+    // need at least one digit or -
+    if (!isdigit(*lex->c))
+    {
+        if (*lex->c == '-')
+        {
+            lexer_step(lex);
+            if (!isdigit(*lex->c)) return 0;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
     lexer_step(lex);
     // + any other digits
     while (isdigit(*lex->c)) lexer_step(lex);
@@ -560,8 +577,21 @@ static int lexer_match_int(Lexer* lex)
 static int lexer_match_float(Lexer* lex)
 {
     lexer_restart_scan(lex);
-    // need at least one digit
-    if (!isdigit(*lex->c)) return 0;
+    
+    // need at least one digit or -
+    if (!isdigit(*lex->c))
+    {
+        if (*lex->c == '-')
+        {
+            lexer_step(lex);
+            if (!isdigit(*lex->c)) return 0;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+    lexer_step(lex);
 
     int found_decimal = 0;
     while (isdigit(*lex->c) || *lex->c == '.')
@@ -620,20 +650,38 @@ static int lexer_match_string(Lexer* lex)
 
 static void lexer_copy_token(Lexer* lex, unsigned int start_index, unsigned int length, char* dest)
 {
-    lexer_restart_scan(lex);
+    int token_length = lex->scan_length;
+    assert((start_index + length) <= token_length);
 
-    // skip start
-    while (start_index > 0)
+    if (lex->c_buff_index == lex->sc_buff_index)
     {
-        lexer_step(lex);
-        --start_index;
+        // both pointers are in the same buffer
+        memcpy(dest, lex->sc + start_index, length);
     }
-
-    // copy n characters
-    for (int i = 0; i < length; ++i)
+    else
     {
-        dest[i] = *lex->c;
-        lexer_step(lex);
+        // the pointers are split across buffers. So do two copies.
+        const char* sc_end = lex->buffs[lex->sc_buff_index] + lex->buff_size;
+        const char* sc = (lex->sc + start_index);
+        
+        ptrdiff_t first_part_length = sc_end - sc;
+        
+        if (first_part_length < 0) first_part_length = 0;
+        if (first_part_length > length) first_part_length = length;
+        
+        if (first_part_length > 0)
+        {
+            // copy from sc to the end of its buffer (or to length)
+            memcpy(dest, sc, first_part_length);
+        }
+        
+        ptrdiff_t last_part = length - first_part_length;
+        
+        if (last_part > 0)
+        {
+            // copy from the start of c's buffer
+            memcpy(dest + first_part_length, lex->buffs[lex->c_buff_index], length - first_part_length);
+        }
     }
 }
 
@@ -642,7 +690,11 @@ static void lexer_next_token(Lexer* lex)
     lexer_skip_empty(lex);
     lexer_advance_start(lex);
 
-    if (*lex->c == '(')
+    if (*lex->c == '\0')
+    {
+        lex->token = TOKEN_NONE;
+    }
+    else if (*lex->c == '(')
     {
         lex->token = TOKEN_L_PAREN;
         lexer_step(lex);
@@ -711,8 +763,8 @@ static Lisp parse_atom(Lexer* lex, LispContextRef ctx)
             // -2 length to skip quotes
             LispBlock* block = heap_alloc(length - 1, LISP_STRING, &ctx->heap);
             lexer_copy_token(lex, 1, length - 2, block->data);
-            block->data[length - 1] = '\0';
-
+            block->data[length - 2] = '\0';
+            
             l.type = block->type;
             l.val = block;
             break;
@@ -722,7 +774,7 @@ static Lisp parse_atom(Lexer* lex, LispContextRef ctx)
             // always convert symbols to uppercase
             lexer_copy_token(lex, 0, length, scratch);
             scratch[length] = '\0';
-
+            
             unsigned int hash = hash_string(scratch, length);
             LispBlock* block = (LispBlock*)symbol_table_get(&ctx->symbols, scratch, length, hash);
 
@@ -769,7 +821,7 @@ static Lisp parse_list_r(Lexer* lex, LispContextRef ctx)
     {
         case TOKEN_NONE:
         {
-            fprintf(stderr, "read error - expected: )\n");
+            fprintf(stderr, "parse error - expected: )\n");
             return lisp_null();
         }
         case TOKEN_L_PAREN:
@@ -790,7 +842,7 @@ static Lisp parse_list_r(Lexer* lex, LispContextRef ctx)
         }
         case TOKEN_R_PAREN:
         {
-            fprintf(stderr, "read error - unexpected: )\n");
+            fprintf(stderr, "parse error - unexpected: )\n");
             lexer_next_token(lex);
             return lisp_null();
         }
@@ -812,6 +864,7 @@ static Lisp parse(Lexer* lex, LispContextRef ctx)
 {
     lexer_next_token(lex);
     Lisp result = parse_list_r(lex, ctx);
+    lisp_print(result);
     
     if (lex->token != TOKEN_NONE)
     {

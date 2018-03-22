@@ -94,7 +94,8 @@ void lisp_env_add_procs(Lisp env, const char** names, LispProc* funcs, LispConte
 Lisp lisp_make_default_env(struct LispContext* ctx);
 
 // Maxwell's equations of Software. REP
-// parse reads the text into raw s-expressions. But does not apply any syntax expansions. This is primarily for using Lisp as JSON/XML
+// parse reads the text into raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
+// This is primarily for using Lisp as JSON/XML
 Lisp lisp_parse(const char* program, LispContextRef ctx);
 Lisp lisp_parse_file(FILE* file, LispContextRef ctx);
 Lisp lisp_parse_path(const char* path, LispContextRef ctx);

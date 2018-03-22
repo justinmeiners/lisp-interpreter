@@ -9,7 +9,7 @@ int main(int argc, const char* argv[])
     //printf("word-size: %lu\n", sizeof(LispWord));
     //printf("block-size: %lu\n", sizeof(LispBlock));
     
-    LispContextRef ctx = lisp_init(2097152);
+    LispContextRef ctx = lisp_init(20971520);
     Lisp env = lisp_make_default_env(ctx);
 
     if (argc > 1)
@@ -22,12 +22,16 @@ int main(int argc, const char* argv[])
             return 2;
         }
 
-        Lisp list = lisp_read_file(file, ctx);
+        Lisp list = lisp_parse_file(file, ctx);
+
+       // Lisp list = lisp_read_file(file, ctx);
 
         fclose(file);
+
+        lisp_print(list);
     
-        lisp_eval(list, env, ctx);
-        lisp_collect(env, ctx);
+        //lisp_eval(list, env, ctx);
+        //lisp_collect(env, ctx);
     }
     else
     {
