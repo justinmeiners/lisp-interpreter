@@ -141,11 +141,16 @@ lisp_env_set(env, lisp_make_symbol("SUM-OF-SQAURES", ctx), func, ctx);
 
 In Lisp
 ```
-
-; returns 1 + 4 + 9 = 14
 (sum-of-squares 1 2 3)
+; returns 1 + 4 + 9 = 14
 ```
 
+Constants can also be stored in the enviornment in a similar fashion.
+
+```
+Lisp pi = lisp_make_float(3.1415);
+lisp_env_set(env, lisp_make_symbol("PI", ctx), ctx);
+```
 
 ## Status
 
