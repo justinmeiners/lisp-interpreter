@@ -37,6 +37,31 @@ $ ./lisp_i
 1600
 ```
 
+
+## Embedding in a program
+
+```
+// setup lisp with 1 MB of heap
+LispContextRef ctx = lisp_init(1048576);    
+Lisp env = lisp_make_default_env(ctx);
+
+// load lisp program (add 1 and 2)
+Lisp program = lisp_expand(lisp_read("(+ 1 2)", ctx), ctx);    
+
+// execute program
+Lisp result = lisp_eval(program, env, ctx); 
+
+// prints 3
+lisp_print(result);
+
+// you are responsible for garbage collection
+lisp_collect(ctx, env);     
+...
+// shutdown also garbage collects
+lisp_shutdown(ctx, enve); 
+
+```
+
 ## Data
 
 Lisp s-expressions can be used as a lightweight substitute to JSON or XML. 
@@ -60,14 +85,14 @@ Lisp s-expressions can be used as a lightweight substitute to JSON or XML.
 ```
 
 ### C Parsing
-```
-LispContextRef ctx = lisp_init(...);
-// The parse function bypasses the usual syntax expansion phase for code
-Lisp data = lisp_parse(program, ctx);
 
-// search for name
-Lisp name = lisp_for_key(data, lisp_make_symbol("NAME", ctx));
-printf("%s\n", lisp_string(name));
+```
+// setup lisp with 1 MB of heap
+LispContextRef ctx = lisp_init(1048576); 
+// load lisp structure
+Lisp data = lisp_read_file(file, ctx); 
+// get value for age
+Lisp age = lisp_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
 
 ```
 

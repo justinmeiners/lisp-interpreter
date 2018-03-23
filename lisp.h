@@ -1,20 +1,36 @@
 /* EXAMPLE
 
-   Lisp for scripting:
+   SCRIPTING EXAMPLE
    -------------------------
-   LispContextRef ctx = lisp_init(1048576); // setup lisp with 1 MB of heap
+   // setup lisp with 1 MB of heap
+   LispContextRef ctx = lisp_init(1048576);    
    Lisp env = lisp_make_default_env(ctx);
-   Lisp program = lisp_expand(lisp_read_file(file, ctx), ctx); // load lisp structure
-   lisp_eval(program, env, ctx); 
-   lisp_collect(ctx, env);
+
+   // load lisp program (add 1 and 2)
+   Lisp program = lisp_expand(lisp_read("(+ 1 2)", ctx), ctx);    
+
+   // execute program
+   Lisp result = lisp_eval(program, env, ctx); 
+
+   lisp_print(result)'
+
+   // you are responsible for garbage collection
+   lisp_collect(ctx, env);     
+   ...
+   // shutdown also garbage collects
+   lisp_shutdown(ctx, enve); 
 
 
-   Lisp for data:
+   DATA EXAMPLE
    -------------------------
-   lisp_init(1048576); // setup lisp with 1 MB of heap
-   Lisp data = lisp_read_file(file, ctx); // load lisp structure
+   // setup lisp with 1 MB of heap
+   LispContextRef ctx = lisp_init(1048576); 
+   // load lisp structure
+   Lisp data = lisp_read_file(file, ctx); 
+   // get value for id 
+   Lisp id = lisp_for_key(data, lisp_make_symbol("ID", ctx), ctx)
    
-   lisp_collect(ctx, env);
+   lisp_shutdown(ctx, env);
 */
 
 
@@ -28,8 +44,8 @@
 
 typedef enum
 {
-    LISP_FLOAT,
-    LISP_INT,
+    LISP_FLOAT,  // decimal/floating point type
+    LISP_INT,    // integer type
     LISP_PAIR,   // cons pair (car, cdr)
     LISP_SYMBOL, // unquoted strings
     LISP_STRING, // quoted strings
@@ -49,13 +65,18 @@ typedef struct
         int int_val;  
         void* val;
     };
-} Lisp;
+} Lisp; // holds all lisp values
 
 typedef struct
 {
-    unsigned short gc_flags;
-    unsigned short type;
-    unsigned int data_size;
+    unsigned char gc_flags;
+    unsigned char type;
+    /* 32Kb limit for a single allocation
+       the token length limit is 4k, so
+       unless someone is allocating large arbitray
+       buffers this shouldn't be a problem.
+      If you need larger change to int. */
+    unsigned short data_size;     
     char data[];
 } LispBlock;
 
