@@ -137,6 +137,14 @@ Lisp func = lisp_make_func(sum_of_squares);
 
 // add to enviornment with symbol SUM-OF-SQUARES
 lisp_env_set(env, lisp_make_symbol("SUM-OF-SQAURES", ctx), func, ctx);
+
+```
+
+In Lisp
+```
+
+; returns 1 + 4 + 9 = 14
+(sum-of-squares 1 2 3)
 ```
 
 
