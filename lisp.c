@@ -1729,6 +1729,13 @@ static Lisp func_equals(Lisp args, LispContextRef ctx)
     return lisp_make_int(lisp_car(args).int_val == lisp_car(lisp_cdr(args)).int_val);
 }
 
+static Lisp func_nth(Lisp args, LispContextRef ctx)
+{
+    Lisp index = lisp_car(args);
+    Lisp list = lisp_car(lisp_cdr(args));
+    return lisp_at_index(list, lisp_int(index));
+}
+
 static Lisp func_length(Lisp args, LispContextRef ctx)
 {
     return lisp_make_int(lisp_length(lisp_car(args)));
@@ -1778,6 +1785,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         "CAR",
         "CDR",
         "EQ?",
+        "NTH",
         "LENGTH",
         "ASSOC",
         "DISPLAY",
@@ -1797,6 +1805,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         func_car,
         func_cdr,
         func_eq,
+        func_nth,
         func_length,
         func_assoc,
         func_display,
