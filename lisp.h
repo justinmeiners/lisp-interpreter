@@ -2,6 +2,11 @@
 
    Lisp for scripting:
    -------------------------
+   LispContextRef ctx = lisp_init(1048576); // setup lisp with 1 MB of heap
+   Lisp env = lisp_make_default_env(ctx);
+   Lisp program = lisp_expand(lisp_read_file(file, ctx), ctx); // load lisp structure
+   lisp_eval(program, env, ctx); 
+   lisp_collect(ctx, env);
 
 
    Lisp for data:
@@ -75,16 +80,18 @@ const char* lisp_symbol(Lisp l);
 #define lisp_car(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[0] )
 #define lisp_cdr(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[1] )
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
+// O(n)
 Lisp lisp_at_index(Lisp list, int n);
+// O(n)
 int lisp_length(Lisp list);
 
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
 
-// Dictionaries (like assoc)
+// Dictionaries (like assoc) O(n)
 Lisp lisp_for_key(Lisp list, Lisp key_symbol);
 
-// funcedures
+// C functions
 Lisp lisp_make_func(LispFunc func);
 
 // evaluation environments
@@ -102,7 +109,7 @@ Lisp lisp_read(const char* program, LispContextRef ctx);
 Lisp lisp_read_file(FILE* file, LispContextRef ctx);
 Lisp lisp_read_path(const char* path, LispContextRef ctx);
 
-// expands this expands lisp syntax
+// expands Lisp syntax (For code)
 Lisp lisp_expand(Lisp lisp, LispContextRef ctx);
 
 // evaluate a lisp expression
