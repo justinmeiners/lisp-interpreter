@@ -951,27 +951,29 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
             
             if (def.type == LISP_PAIR)
             {
-                // (define (<name> <arg0> ... <argn>) <body>)
-                // -> (define <name> ((lambda <arg0> ... <argn>) <body>))
+                // (define (<name> <arg0> ... <argn>) <body0> ... <bodyN>)
+                // -> (define <name> (lambda (<arg0> ... <argn>) <body> ... <bodyN>))
                 Lisp name = lisp_at_index(def, 0);
-                Lisp body = lisp_at_index(l, 2);
-                
+                Lisp body = lisp_cdr(lisp_cdr(l));
+  
                 Lisp lambda = lisp_make_list(ctx,
                                              lisp_make_symbol("LAMBDA", ctx),
                                              lisp_cdr(def), // args
-                                             body,
-                                             lisp_null());
-                
+                                             lisp_null()); 
+
+                lisp_cdr(lisp_cdr(lambda)) = body;
+  
                 lisp_cdr(l) = lisp_make_list(ctx,
                                              name,
                                              expand_r(lambda, ctx),
+                                             body,
                                              lisp_null());
                 return l;
             }
             else
             {
                 assert(def.type == LISP_SYMBOL);
-                lisp_cdr(l) = expand_r(lisp_cdr(l), ctx);
+                lisp_cdr(lisp_cdr(l)) = expand_r(lisp_cdr(lisp_cdr(l)), ctx);
                 return l;
             }
         }
@@ -1834,32 +1836,118 @@ static Lisp func_assoc(Lisp args, LispContextRef ctx)
 
 static Lisp func_add(Lisp args, LispContextRef ctx)
 {
-    return lisp_make_int(lisp_car(args).int_val + lisp_car(lisp_cdr(args)).int_val);
+    Lisp accum = lisp_car(args);
+    args = lisp_cdr(args);
+
+    while (!lisp_is_null(args))
+    {
+        if (lisp_type(accum) == LISP_INT)
+        {
+            accum.int_val += lisp_int(lisp_car(args));
+        }
+        else if (lisp_type(accum) == LISP_FLOAT)
+        {
+            accum.float_val += lisp_float(lisp_car(args));
+        }
+        args = lisp_cdr(args);
+    }
+    return accum;
 }
 
 static Lisp func_sub(Lisp args, LispContextRef ctx)
 {
-    return lisp_make_int(lisp_car(args).int_val - lisp_car(lisp_cdr(args)).int_val);
+    Lisp accum = lisp_car(args);
+    args = lisp_cdr(args);
+
+    while (!lisp_is_null(args))
+    {
+        if (lisp_type(accum) == LISP_INT)
+        {
+            accum.int_val -= lisp_int(lisp_car(args));
+        }
+        else if (lisp_type(accum) == LISP_FLOAT)
+        {
+            accum.float_val -= lisp_float(lisp_car(args));
+        }
+        args = lisp_cdr(args);
+    }
+    return accum;
 }
 
 static Lisp func_mult(Lisp args, LispContextRef ctx)
 {
-    return lisp_make_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
+    Lisp accum = lisp_car(args);
+    args = lisp_cdr(args);
+
+    while (!lisp_is_null(args))
+    {
+        if (lisp_type(accum) == LISP_INT)
+        {
+            accum.int_val *= lisp_int(lisp_car(args));
+        }
+        else if (lisp_type(accum) == LISP_FLOAT)
+        {
+            accum.float_val *= lisp_float(lisp_car(args));
+        }
+        args = lisp_cdr(args);
+    }
+    return accum;
 }
 
 static Lisp func_divide(Lisp args, LispContextRef ctx)
 {
-    return lisp_make_int(lisp_car(args).int_val / lisp_car(lisp_cdr(args)).int_val);
+    Lisp accum = lisp_car(args);
+    args = lisp_cdr(args);
+
+    while (!lisp_is_null(args))
+    {
+        if (lisp_type(accum) == LISP_INT)
+        {
+            accum.int_val /= lisp_int(lisp_car(args));
+        }
+        else if (lisp_type(accum) == LISP_FLOAT)
+        {
+            accum.float_val /= lisp_float(lisp_car(args));
+        }
+        args = lisp_cdr(args);
+    }
+    return accum;
 }
 
 static Lisp func_less(Lisp args, LispContextRef ctx)
 {
-    return lisp_make_int(lisp_car(args).int_val < lisp_car(lisp_cdr(args)).int_val);
+    Lisp accum = lisp_car(args);
+    args = lisp_cdr(args);
+    int result = 0;
+
+    if (lisp_type(accum) == LISP_INT)
+    {
+        result = lisp_int(accum) < lisp_int(lisp_car(args));
+    }
+    else if (lisp_type(accum) == LISP_FLOAT)
+    {
+        result = lisp_float(accum) < lisp_float(lisp_car(args));
+    }
+    
+    return lisp_make_int(result);
 }
 
 static Lisp func_greater(Lisp args, LispContextRef ctx)
 {
-    return lisp_make_int(lisp_car(args).int_val > lisp_car(lisp_cdr(args)).int_val);
+    Lisp accum = lisp_car(args);
+    args = lisp_cdr(args);
+    int result = 0;
+
+    if (lisp_type(accum) == LISP_INT)
+    {
+        result = lisp_int(accum) > lisp_int(lisp_car(args));
+    }
+    else if (lisp_type(accum) == LISP_FLOAT)
+    {
+        result = lisp_float(accum) > lisp_float(lisp_car(args));
+    }
+    
+    return lisp_make_int(result);
 }
 
 static Lisp func_read_path(Lisp args, LispContextRef ctx)

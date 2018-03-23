@@ -48,4 +48,8 @@
     (if (< (abs (- guess guess2)) epsilon) guess2
         (newton guess2 function derivative epsilon)))
 
+(define (square-root a)
+    (newton 1.0 (lambda (x) (- (* x x) a)) (lambda (x) (* 2.0 x)) 0.001))
+
+(display (square-root 200.0))
 
