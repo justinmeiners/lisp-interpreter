@@ -149,7 +149,7 @@ Constants can also be stored in the enviornment in a similar fashion.
 
 ```
 Lisp pi = lisp_make_float(3.1415);
-lisp_env_set(env, lisp_make_symbol("PI", ctx), ctx);
+lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
 ```
 
 ## Status
