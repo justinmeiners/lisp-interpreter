@@ -28,7 +28,7 @@ An embeddable lisp interepreter written in C. I created this while reading SICP 
 
 
 ### Interactive programming with Read, eval, print loop.
-```Bash
+```bash
 $ ./lisp_i
 > (define (sqr x) (* x x)))
 > (define length 40)
@@ -37,10 +37,9 @@ $ ./lisp_i
 1600
 ```
 
-
 ### Embedding in a program
 
-```C
+```c
 // setup lisp with 1 MB of heap
 LispContextRef ctx = lisp_init(1048576);    
 Lisp env = lisp_make_default_env(ctx);
@@ -56,10 +55,9 @@ lisp_print(result);
 
 // you are responsible for garbage collection
 lisp_collect(ctx, env);     
-...
+// ...
 // shutdown also garbage collects
 lisp_shutdown(ctx, enve); 
-
 ```
 
 ### Loading Data
@@ -67,26 +65,23 @@ lisp_shutdown(ctx, enve);
 Lisp s-expressions can be used as a lightweight substitute to JSON or XML. 
 
 JSON 
-```JSON
+```json
 {
    "name" : "bob jones",
    "age" : 54,
    "city" : "SLC",
 }
-
 ```
 
 Lisp
-```Scheme
+```scheme
 ((name "bob jones") 
     (age 54) 
     (city "SLC"))
-
 ```
-
 Loading the structure in C.
 
-```C
+```c
 // setup lisp with 1 MB of heap
 LispContextRef ctx = lisp_init(1048576); 
 // load lisp structure
@@ -95,14 +90,13 @@ Lisp data = lisp_read_file(file, ctx);
 Lisp age = lisp_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
 ...
 lisp_shutdown(ctx);
-
 ```
 
 ### Calling C functions
 
 C functions can be used to extend the interpreter, or call into C code.
 
-```C
+```c
 Lisp sum_of_squares(Lisp args, LispContextRef ctx)
 {
     // first argument
@@ -136,18 +130,16 @@ Lisp func = lisp_make_func(sum_of_squares);
 
 // add to enviornment with symbol SUM-OF-SQUARES
 lisp_env_set(env, lisp_make_symbol("SUM-OF-SQAURES", ctx), func, ctx);
-
 ```
 
 In Lisp
-```Scheme
+```scheme
 (sum-of-squares 1 2 3)
 ; returns 1 + 4 + 9 = 14
 ```
-
 Constants can also be stored in the enviornment in a similar fashion.
 
-```C
+```c
 Lisp pi = lisp_make_float(3.1415);
 lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
 ```
