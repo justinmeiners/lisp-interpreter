@@ -57,7 +57,7 @@ lisp_print(result);
 lisp_collect(ctx, env);     
 // ...
 // shutdown also garbage collects
-lisp_shutdown(ctx, enve); 
+lisp_shutdown(ctx, env); 
 ```
 
 ### Loading Data
@@ -88,7 +88,7 @@ LispContextRef ctx = lisp_init(1048576);
 Lisp data = lisp_read_file(file, ctx); 
 // get value for age
 Lisp age = lisp_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
-...
+// ...
 lisp_shutdown(ctx);
 ```
 
