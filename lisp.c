@@ -951,7 +951,7 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         }
         else if (op && strcmp(op, "AND") == 0)
         {
-            // (AND <pred0> <pred1>) -> (IF <pred0> (IF <pred1 t f) f)
+            // (AND <pred0> <pred1>) -> (IF <pred0> (IF <pred1> t f) f)
             Lisp predicate0 = expand_r(lisp_at_index(l, 1), ctx);
             Lisp predicate1 = expand_r(lisp_at_index(l, 2), ctx);
 
@@ -1030,8 +1030,7 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         else if (op && strcmp(op, "LAMBDA") == 0)
         {
             // (LAMBDA (<var0> ... <varN>) <expr0> ... <exprN>)
-            // (LAMBDA (<var0> ... <varN>) (BEGIN <expr0> ... <expr1>))
-           
+            // (LAMBDA (<var0> ... <varN>) (BEGIN <expr0> ... <expr1>)) 
             int length = lisp_length(l);
             if (length > 3)
             {
@@ -1357,9 +1356,8 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
             if (lisp_type(lisp_car(x)) == LISP_SYMBOL)
                 op_name = lisp_symbol(lisp_car(x));
 
-            if (op_name && strcmp(op_name, "IF") == 0)
+            if (op_name && strcmp(op_name, "IF") == 0) // if conditional statemetns
             {
-                // if conditional statemetns
                 Lisp predicate = lisp_at_index(x, 1);
                 Lisp conseq = lisp_at_index(x, 2);
                 Lisp alt = lisp_at_index(x, 3);
@@ -1378,21 +1376,21 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                 Lisp it = lisp_cdr(x);
                 if (lisp_is_null(it)) return it;
 
+                // eval all but last
                 while (!lisp_is_null(lisp_cdr(it)))
                 {
                     lisp_eval(lisp_car(it), env, ctx);
                     it = lisp_cdr(it);
                 }
                 
-                x = lisp_car(it);
+                x = lisp_car(it); // while will eval last
             }
             else if (op_name && strcmp(op_name, "QUOTE") == 0)
             {
                 return lisp_at_index(x, 1);
             }
-            else if (op_name && strcmp(op_name, "DEFINE") == 0)
+            else if (op_name && strcmp(op_name, "DEFINE") == 0) // variable definitions
             {
-                // variable definitions
                 Lisp symbol = lisp_at_index(x, 1); 
                 Lisp value = lisp_eval(lisp_at_index(x, 2), env, ctx);
                 lisp_env_set(env, symbol, value, ctx);
@@ -1420,16 +1418,15 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     return lisp_null();
                 }
             }
-            else if (op_name && strcmp(op_name, "LAMBDA") == 0)
+            else if (op_name && strcmp(op_name, "LAMBDA") == 0) // lambda defintions (compound procedures)
+
             {
-                // lambda defintions (compound procedures)
                 Lisp args = lisp_at_index(x, 1);
                 Lisp body = lisp_at_index(x, 2);
                 return lisp_make_lambda(args, body, env, ctx);
             }
-            else
+            else // operator application
             {
-                // operator application
                 Lisp operator = lisp_eval(lisp_car(x), env, ctx);
                 Lisp arg_expr = lisp_cdr(x);
                 
@@ -1445,9 +1442,8 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                 
                 switch (lisp_type(operator))
                 {
-                    case LISP_LAMBDA:
+                    case LISP_LAMBDA: // lambda call (compound procedure)
                     {
-                        // lambda call (compound procedure)
                         // construct a new environment
                         Lambda lambda = lisp_lambda(operator);
                         Lisp new_env = lisp_make_env(lambda.env, 128, ctx);
@@ -1470,9 +1466,8 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                         env = new_env;
                         break;
                     }
-                    case LISP_FUNC:
+                    case LISP_FUNC: // call into C functions
                     {
-                        // call into C functions
                         // no environment required 
                         LispFunc func = operator.val;
                         return func(args_front, ctx);

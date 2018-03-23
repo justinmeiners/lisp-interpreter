@@ -6,9 +6,9 @@
     (display (length data))
     (newline)
     (let ((record (car data)))
-        (assert (eq? (assoc record 'index) 0)
-        (assert (eq? (assoc record 'isActive) 'True)))
-        (assert (eq? (assoc record 'age) 26))))
+        (assert (eq? (car (cdr (assoc record 'index))) 0)
+        (assert (eq? (car (cdr (assoc record 'isActive))) 'True)))
+        (assert (eq? (car (cdr (assoc record 'age))) 26))))
    
 (display "done")
 (newline)
