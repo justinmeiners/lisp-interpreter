@@ -1,7 +1,7 @@
 (define (sqr x) (* x x))
 
-(define length 40)
+(define len 40)
 (define area 0)
-(set! area (sqr length))
+(set! area (sqr len))
 
 (assert (= area 1600))

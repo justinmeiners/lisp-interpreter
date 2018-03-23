@@ -9,7 +9,6 @@
 (define justin (make-account 100))
 (define ryan (make-account 200))
 
-
 ((justin 'deposit) 20)
 ((ryan 'withdraw) 20)
 

@@ -65,7 +65,7 @@ typedef Lisp (*LispFunc)(Lisp, LispContextRef);
 // Primitive types
 #define lisp_type(l) ((l).type)
 #define lisp_is_null(l) ((l).type == LISP_NULL)
-int lisp_eq(Lisp a, Lisp b);
+#define lisp_eq(a, b) ((a).val == (b).val)
 Lisp lisp_null();
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp l);

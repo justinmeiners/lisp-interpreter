@@ -83,8 +83,6 @@ static unsigned int hash_string(const char* buffer, unsigned int length)
     return (s2 << 16) | s1;
 }
 
-int lisp_eq(Lisp a, Lisp b) { return a.val == b.val; }
-
 Lisp lisp_null()
 {
     Lisp l;
@@ -423,7 +421,6 @@ static const char* token_type_name[] = {
     "NONE", "L_PAREN", "R_PAREN", "QUOTE", "SYMBOL", "STRING", "INT", "FLOAT",
 }; */
 
-
 typedef struct
 {
     FILE* file;
@@ -626,7 +623,6 @@ static int lexer_match_float(Lexer* lex)
 static int is_symbol(char c)
 {
     if (c < '!' || c > 'z') return 0;
-
     const char* illegal= "()#;";
     const char* x = illegal;
 
@@ -1000,11 +996,10 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         }
         else if (op && strcmp(op, "LET") == 0)
         {
-            // (LET ((<var0> <expr0>) ... <varN> <expr1>) <body> )
-            //  -> ((LAMBDA (<var0> ... <varN>) <body>) expr0 .. expr1)
-            
+            // (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
+            //  -> ((LAMBDA (<var0> ... <varN>) <body0> ... <bodyN>) <expr0> ... <expr1>)            
             Lisp pairs = lisp_at_index(l, 1);
-            Lisp body = lisp_at_index(l, 2);
+            Lisp body = lisp_cdr(lisp_cdr(l));
 
             Lisp vars_front = lisp_null();
             Lisp vars_back = vars_front;
@@ -1023,7 +1018,13 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
                 pairs = lisp_cdr(pairs);
             }
             
-            Lisp lambda = lisp_make_list(ctx, lisp_make_symbol("LAMBDA", ctx), vars_front, body, lisp_null());
+            Lisp lambda = lisp_make_list(ctx, 
+                                        lisp_make_symbol("LAMBDA", ctx), 
+                                        vars_front, 
+                                        lisp_null());
+
+            lisp_cdr(lisp_cdr(lambda)) = body;
+
             return lisp_cons(expand_r(lambda, ctx), exprs_front, ctx);
         }
         else if (op && strcmp(op, "LAMBDA") == 0)
@@ -1375,24 +1376,15 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
             else if (op_name && strcmp(op_name, "BEGIN") == 0)
             {
                 Lisp it = lisp_cdr(x);
-                Lisp result = lisp_null();
+                if (lisp_is_null(it)) return it;
 
-                while (!lisp_is_null(it))
+                while (!lisp_is_null(lisp_cdr(it)))
                 {
-                    Lisp next = lisp_cdr(it);
-                    
-                    if (lisp_is_null(next))
-                    {
-                        x = result; // while will eval
-                        break;
-                    }
-                    else
-                    {
-                        result = lisp_eval(lisp_car(it), env, ctx);
-                    }
-                    
-                    it = next;
-                } 
+                    lisp_eval(lisp_car(it), env, ctx);
+                    it = lisp_cdr(it);
+                }
+                
+                x = lisp_car(it);
             }
             else if (op_name && strcmp(op_name, "QUOTE") == 0)
             {
@@ -1714,7 +1706,16 @@ static Lisp func_eq(Lisp args, LispContextRef ctx)
 
 static Lisp func_display(Lisp args, LispContextRef ctx)
 {
-    lisp_print(lisp_car(args)); return lisp_null();
+    Lisp l = lisp_car(args);
+    if (lisp_type(l) == LISP_STRING)
+    {
+        printf("%s", lisp_string(l));
+    }
+    else
+    {
+        lisp_print(l); 
+    }
+    return lisp_null();
 }
 
 static Lisp func_newline(Lisp args, LispContextRef ctx)
