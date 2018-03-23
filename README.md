@@ -100,10 +100,9 @@ lisp_shutdown(ctx);
 
 ### Calling C functions
 
-C functions can be used to extend the interperter, or to call into C code.
+C functions can be used to extend the interpreter, or call into C code.
 
 ```
-// decaration 
 Lisp sum_of_squares(Lisp args, LispContextRef ctx)
 {
     // first argument
