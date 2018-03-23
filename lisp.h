@@ -7,7 +7,7 @@
    Lisp for data:
    -------------------------
    lisp_init(1048576); // setup lisp with 1 MB of heap
-   Lisp data = lisp_parse_file(file, ctx); // load lisp structure
+   Lisp data = lisp_read_file(file, ctx); // load lisp structure
    
    lisp_collect(ctx, env);
 */
@@ -29,7 +29,7 @@ typedef enum
     LISP_SYMBOL, // unquoted strings
     LISP_STRING, // quoted strings
     LISP_LAMBDA, // user defined lambda
-    LISP_PROC,   // C function
+    LISP_FUNC,   // C function
     LISP_ENV,    // evaluation environment
     LISP_NULL,
 } LispType;
@@ -55,7 +55,7 @@ typedef struct
 } LispBlock;
 
 typedef struct LispContext* LispContextRef;
-typedef Lisp (*LispProc)(Lisp, LispContextRef);
+typedef Lisp (*LispFunc)(Lisp, LispContextRef);
 
 // Primitive types
 #define lisp_type(l) ((l).type)
@@ -75,35 +75,36 @@ const char* lisp_symbol(Lisp l);
 #define lisp_car(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[0] )
 #define lisp_cdr(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[1] )
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
-Lisp lisp_at_index(Lisp l, int n);
+Lisp lisp_at_index(Lisp list, int n);
+int lisp_length(Lisp list);
 
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
 
-// Dictionaries
-Lisp lisp_for_key(Lisp l, Lisp symbol);
+// Dictionaries (like assoc)
+Lisp lisp_for_key(Lisp list, Lisp key_symbol);
 
-// procedures
-Lisp lisp_make_proc(LispProc proc);
+// funcedures
+Lisp lisp_make_func(LispFunc func);
 
 // evaluation environments
 // these store variable state and function names
 Lisp lisp_make_env(Lisp parent, int capacity, LispContextRef ctx);
 void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
-void lisp_env_add_procs(Lisp env, const char** names, LispProc* funcs, LispContextRef ctx);
+void lisp_env_add_funcs(Lisp env, const char** names, LispFunc* funcs, LispContextRef ctx);
 Lisp lisp_make_default_env(struct LispContext* ctx);
 
 // Maxwell's equations of Software. REP
-// parse reads the text into raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
+// reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
 // This is primarily for using Lisp as JSON/XML
-Lisp lisp_parse(const char* program, LispContextRef ctx);
-Lisp lisp_parse_file(FILE* file, LispContextRef ctx);
-Lisp lisp_parse_path(const char* path, LispContextRef ctx);
-
-// read performs a parse ans then syntax expansion. This is for Lisp code.
+// For code call expand after reading
 Lisp lisp_read(const char* program, LispContextRef ctx);
 Lisp lisp_read_file(FILE* file, LispContextRef ctx);
 Lisp lisp_read_path(const char* path, LispContextRef ctx);
+
+// expands this expands lisp syntax
+Lisp lisp_expand(Lisp lisp, LispContextRef ctx);
+
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, Lisp env, LispContextRef ctx);
 // print out a lisp structure

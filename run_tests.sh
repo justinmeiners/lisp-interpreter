@@ -1,15 +1,11 @@
 #!/bin/bash
 
-for file in test_code/*.scm
+cd tests/
+
+for file in *.scm
 do
-    ./lisp_i --file $file
+    ../lisp_i --load $file
     printf "\n"
     echo "FINISHED {$file}"
 done
 
-for file in test_data/*.scm
-do
-    ./lisp_i --quote --file $file
-    printf "\n"
-    echo "FINISHED {$file}"
-done

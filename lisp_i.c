@@ -7,16 +7,11 @@
 
 int main(int argc, const char* argv[])
 {
-    int quote = 0;
     const char* file_path = NULL;
     
     for (int i = 1; i < argc; ++i)
     {
-        if (strcmp(argv[i], "--quote") == 0)
-        {
-            quote = 1;
-        }
-        else if (strcmp(argv[i], "--file") == 0)
+        if (strcmp(argv[i], "--load") == 0)
         {
             file_path = argv[i + 1];
         }
@@ -27,6 +22,9 @@ int main(int argc, const char* argv[])
     
     if (file_path)
     {
+        printf("loading: %s\n", file_path);
+
+        clock_t start_time = clock();        
         FILE* file = fopen(file_path, "r");
         
         if (!file)
@@ -34,25 +32,23 @@ int main(int argc, const char* argv[])
             fprintf(stderr, "failed to open: %s", argv[1]);
             return 2;
         }
-        
-        clock_t start_time = clock();
-        
-        Lisp l = lisp_null();
-        if (quote)
-        {
-            l = lisp_parse_file(file, ctx);
-        }
-        else
-        {
-            l = lisp_read_file(file, ctx);
-        }
-        clock_t end_time = clock();
-        
+     
+        Lisp l = lisp_read_file(file, ctx);
         fclose(file);
-        
+        clock_t end_time = clock();
+
         if (LISP_DEBUG)
-            printf("us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
-        
+            printf("read time us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+
+
+        start_time = clock();
+        Lisp code = lisp_expand(l, ctx);
+        end_time = clock();
+
+        if (LISP_DEBUG)
+            printf("expand time us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+
+        lisp_eval(code, env, ctx);  
         lisp_collect(l, ctx);
     }
     else
@@ -65,10 +61,10 @@ int main(int argc, const char* argv[])
             fgets(line, LINE_MAX, stdin);
 
             clock_t start_time = clock();
-            Lisp contents = lisp_read(line, ctx);
-            Lisp result = lisp_eval(contents, env, ctx);
+            Lisp code = lisp_expand(lisp_read(line, ctx), ctx);
+            Lisp l = lisp_eval(code, env, ctx);
             clock_t end_time = clock();
-            lisp_print(result);
+            lisp_print(l);
             printf("\n");
             
             if (LISP_DEBUG)
