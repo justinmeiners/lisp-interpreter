@@ -1,19 +1,19 @@
 lisp-interpreter
 ===============
 
-## About
+# About
 
 An embeddable lisp interepreter written in C. I created this while reading SICP to improve my knowledge of lisp and to make an implementation that allows me to easily add scripting to my own programs.
 
 
-### Philosophy
+## Philosophy
 
 - **Simple**: An interpreter is something that can easily get complicated with fancy features. This project doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation. It is just a robust foundation for scripting.
 - **Data & Code**: Lisp is undervalued as an alternative to JSON or XML. This implementation provides first-class support for working with data or code.
 - **Unintrusive**: Just copy in the header and source file. Source code should be portable between major platforms.
 - **Unsurprising**: You should be able to read the source code and understand how it works. The header API should work how you expect.
 
-### Features
+## Features
 
 - Scheme-like (but not confined to) syntax. if, let, and, or, etc.
 - Closures
@@ -24,10 +24,10 @@ An embeddable lisp interepreter written in C. I created this while reading SICP 
 - Data loading and manipulation.
 - Single header and source file.
 
-## Examples
+# Examples
 
 
-Read, eval, print loop:
+## Interactive programming with Read, eval, print loop.
 ```
 $ ./lisp_i
 > (define (sqr x) (* x x)))
@@ -62,7 +62,7 @@ lisp_shutdown(ctx, enve);
 
 ```
 
-## Data
+## Loading Data
 
 Lisp s-expressions can be used as a lightweight substitute to JSON or XML. 
 
@@ -97,7 +97,7 @@ Lisp age = lisp_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
 ```
 
 
-## Status
+# Status
 
 This project is in progress and is not stable. However, most of the lisp features have been implemented and work properly. You can find a list of todos on the project page.
 
