@@ -147,6 +147,26 @@ static void back_append(Lisp* front, Lisp* back, Lisp item, LispContextRef ctx)
     }
 }
 
+Lisp lisp_append(Lisp l, Lisp l2, LispContextRef ctx)
+{
+    if (lisp_is_null(l)) return l;
+
+    Lisp tail = lisp_cons(lisp_car(l), lisp_null(), ctx);
+    Lisp start = tail;
+    l = lisp_cdr(l);
+
+    while (!lisp_is_null(l))
+    {
+        Lisp cell = lisp_cons(lisp_car(l), lisp_null(), ctx);
+        lisp_cdr(tail) = cell;
+        tail = cell;
+        l = lisp_cdr(l);
+    }
+
+    lisp_cdr(tail) = l2;
+    return start;
+}
+
 Lisp lisp_at_index(Lisp l, int i)
 {
     while (i > 0)
@@ -190,7 +210,7 @@ Lisp lisp_make_list(LispContextRef ctx, Lisp first, ...)
     return front;
 }
 
-Lisp lisp_for_key(Lisp list, Lisp key_symbol)
+Lisp lisp_assoc(Lisp list, Lisp key_symbol)
 {
     while (list.type == LISP_PAIR)
     {
@@ -203,6 +223,12 @@ Lisp lisp_for_key(Lisp list, Lisp key_symbol)
     }
 
     return lisp_null();
+}
+
+Lisp lisp_for_key(Lisp list, Lisp key_symbol)
+{
+    Lisp pair = lisp_assoc(list, key_symbol);
+    return lisp_car(lisp_cdr(pair));
 }
 
 Lisp lisp_make_string(const char* string, LispContextRef ctx)
@@ -1049,6 +1075,20 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
                 return l;
             }
         }
+        else if (op && strcmp(op, "ASSERT") == 0)
+        {
+            Lisp statement = lisp_car(lisp_cdr(l));
+            Lisp quoted = lisp_make_list(ctx,
+                                         lisp_make_symbol("QUOTE", ctx),
+                                         statement,
+                                         lisp_null());
+            return lisp_make_list(ctx,
+                                  lisp_at_index(l, 0),
+                                  expand_r(statement, ctx),
+                                  quoted,
+                                  lisp_null());
+                                  
+        }
         else
         {
             Lisp it = l;
@@ -1699,6 +1739,16 @@ static Lisp func_eq(Lisp args, LispContextRef ctx)
     return lisp_make_int(a == b);
 }
 
+static Lisp func_is_null(Lisp args, LispContextRef ctx)
+{
+    while (!lisp_is_null(args))
+    {
+        if (!lisp_is_null(lisp_car(args))) return lisp_make_int(0);
+        args = lisp_cdr(args);
+    }
+    return lisp_make_int(1);
+}
+
 static Lisp func_display(Lisp args, LispContextRef ctx)
 {
     Lisp l = lisp_car(args);
@@ -1720,13 +1770,49 @@ static Lisp func_newline(Lisp args, LispContextRef ctx)
 
 static Lisp func_assert(Lisp args, LispContextRef ctx)
 {
-   assert(lisp_int(lisp_car(args)) == 1);
+   if (lisp_int(lisp_car(args)) != 1)
+   {
+       fprintf(stderr, "assertion: ");
+       lisp_printf(stderr, lisp_car(lisp_cdr(args)));
+       fprintf(stderr, "\n");
+       assert(0);
+   }
+
    return lisp_null();
 }
 
 static Lisp func_equals(Lisp args, LispContextRef ctx)
 {
-    return lisp_make_int(lisp_car(args).int_val == lisp_car(lisp_cdr(args)).int_val);
+    Lisp to_check  = lisp_car(args);
+    if (lisp_is_null(to_check)) return lisp_make_int(1);
+    
+    args = lisp_cdr(args);
+    while (!lisp_is_null(args))
+    {
+        if (lisp_int(lisp_car(args)) != lisp_int(to_check)) return lisp_make_int(0);
+        args = lisp_cdr(args);
+    }
+    
+    return lisp_make_int(1);
+}
+
+static Lisp func_list(Lisp args, LispContextRef ctx)
+{
+    return args;
+}
+
+static Lisp func_append(Lisp args, LispContextRef ctx)
+{
+    Lisp l = lisp_car(args);
+
+    args = lisp_cdr(args);
+    while (!lisp_is_null(args))
+    {
+        l = lisp_append(l, lisp_car(args), ctx);
+        args = lisp_cdr(args);
+    }
+
+    return l;
 }
 
 static Lisp func_nth(Lisp args, LispContextRef ctx)
@@ -1743,7 +1829,7 @@ static Lisp func_length(Lisp args, LispContextRef ctx)
 
 static Lisp func_assoc(Lisp args, LispContextRef ctx)
 {
-    return lisp_for_key(lisp_car(args), lisp_car(lisp_cdr(args)));
+    return lisp_assoc(lisp_car(args), lisp_car(lisp_cdr(args)));
 }
 
 static Lisp func_add(Lisp args, LispContextRef ctx)
@@ -1759,6 +1845,11 @@ static Lisp func_sub(Lisp args, LispContextRef ctx)
 static Lisp func_mult(Lisp args, LispContextRef ctx)
 {
     return lisp_make_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
+}
+
+static Lisp func_divide(Lisp args, LispContextRef ctx)
+{
+    return lisp_make_int(lisp_car(args).int_val / lisp_car(lisp_cdr(args)).int_val);
 }
 
 static Lisp func_less(Lisp args, LispContextRef ctx)
@@ -1795,6 +1886,9 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         "CAR",
         "CDR",
         "EQ?",
+        "NULL?",
+        "LIST",
+        "APPEND",
         "NTH",
         "LENGTH",
         "ASSOC",
@@ -1807,6 +1901,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         "+",
         "-",
         "*",
+        "/",
         "<",
         ">",
         NULL,
@@ -1817,6 +1912,9 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         func_car,
         func_cdr,
         func_eq,
+        func_is_null,
+        func_list,
+        func_append,
         func_nth,
         func_length,
         func_assoc,
@@ -1829,6 +1927,7 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         func_add,
         func_sub,
         func_mult,
+        func_divide,
         func_less,
         func_greater,
         NULL,

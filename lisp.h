@@ -80,16 +80,17 @@ const char* lisp_symbol(Lisp l);
 #define lisp_car(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[0] )
 #define lisp_cdr(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[1] )
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
-// O(n)
-Lisp lisp_at_index(Lisp list, int n);
-// O(n)
-int lisp_length(Lisp list);
-
+Lisp lisp_append(Lisp l, Lisp tail, LispContextRef ctx);
+Lisp lisp_at_index(Lisp l, int n); // O(n)
+int lisp_length(Lisp l); // O(n)
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
 
-// Dictionaries (like assoc) O(n)
-Lisp lisp_for_key(Lisp list, Lisp key_symbol);
+// Dictionaries 
+// given a list of pairs, returns the pair where (eq? (car key_symbol))
+Lisp lisp_assoc(Lisp list, Lisp key_symbol); // O(n)
+// given a list of pairs returns the (car (cdr pair)) where (eq? (car key_symbol))
+Lisp lisp_for_key(Lisp list, Lisp key_symbol); // O(n)
 
 // C functions
 Lisp lisp_make_func(LispFunc func);
