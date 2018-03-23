@@ -1761,6 +1761,16 @@ static Lisp func_mult(Lisp args, LispContextRef ctx)
     return lisp_make_int(lisp_car(args).int_val * lisp_car(lisp_cdr(args)).int_val);
 }
 
+static Lisp func_less(Lisp args, LispContextRef ctx)
+{
+    return lisp_make_int(lisp_car(args).int_val < lisp_car(lisp_cdr(args)).int_val);
+}
+
+static Lisp func_greater(Lisp args, LispContextRef ctx)
+{
+    return lisp_make_int(lisp_car(args).int_val > lisp_car(lisp_cdr(args)).int_val);
+}
+
 static Lisp func_read_path(Lisp args, LispContextRef ctx)
 {
     const char* path = lisp_string(lisp_car(args));
@@ -1797,6 +1807,8 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         "+",
         "-",
         "*",
+        "<",
+        ">",
         NULL,
     };
 
@@ -1817,6 +1829,8 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         func_add,
         func_sub,
         func_mult,
+        func_less,
+        func_greater,
         NULL,
     };
 
