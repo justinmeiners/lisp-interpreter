@@ -19,7 +19,7 @@ int main(int argc, const char* argv[])
     
     LispContextRef ctx = lisp_init(20971520);
     Lisp env = lisp_make_default_env(ctx);
-    
+        
     if (file_path)
     {
         printf("loading: %s\n", file_path);

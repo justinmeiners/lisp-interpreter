@@ -5,5 +5,9 @@
     b
     (peano (- a 1) (+ b 1))))
 
-(assert (= (peano 10000 20000) 30000))
+
+(define val (peano 10000 20000))
+
+(display val)
+(assert (= val 30000))
  

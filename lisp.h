@@ -51,7 +51,7 @@ typedef enum
     LISP_STRING, // quoted strings
     LISP_LAMBDA, // user defined lambda
     LISP_FUNC,   // C function
-    LISP_ENV,    // evaluation environment
+    LISP_TABLE,    // evaluation environment
     LISP_NULL,
 } LispType;
 
@@ -100,6 +100,8 @@ const char* lisp_symbol(Lisp l);
 // Lists
 #define lisp_car(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[0] )
 #define lisp_cdr(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[1] )
+#define lisp_set_car(l, x) (lisp_car((l)) = (x))
+#define lisp_set_cdr(l, x) (lisp_cdr((l)) = (x))
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
 Lisp lisp_append(Lisp l, Lisp tail, LispContextRef ctx);
 Lisp lisp_at_index(Lisp l, int n); // O(n)
@@ -116,12 +118,19 @@ Lisp lisp_for_key(Lisp list, Lisp key_symbol); // O(n)
 // C functions
 Lisp lisp_make_func(LispFunc func);
 
+// tables
+Lisp lisp_make_table(unsigned int capacity, LispContextRef ctx);
+void lisp_table_set(Lisp table, Lisp symbol, Lisp value, LispContextRef ctx);
+Lisp lisp_table_get(Lisp table, Lisp symbol, LispContextRef ctx);
+void lisp_table_add_funcs(Lisp table, const char** names, LispFunc* funcs, LispContextRef ctx);
+
 // evaluation environments
-// these store variable state and function names
-Lisp lisp_make_env(Lisp parent, int capacity, LispContextRef ctx);
-void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
-void lisp_env_add_funcs(Lisp env, const char** names, LispFunc* funcs, LispContextRef ctx);
 Lisp lisp_make_default_env(struct LispContext* ctx);
+Lisp lisp_make_env(Lisp table, LispContextRef ctx);
+Lisp lisp_env_extend(Lisp env, Lisp table, LispContextRef ctx);
+Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContextRef ctx);
+void lisp_env_define(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
+void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
 
 // Maxwell's equations of Software. REP
 // reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
