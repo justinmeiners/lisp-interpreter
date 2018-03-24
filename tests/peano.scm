@@ -5,5 +5,5 @@
     b
     (peano (- a 1) (+ b 1))))
 
-(assert (= (peano 100 200) 300))
+(assert (= (peano 10000 20000) 30000))
  
