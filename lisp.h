@@ -40,7 +40,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define LISP_DEBUG 0
+#define LISP_DEBUG 1
 
 typedef enum
 {

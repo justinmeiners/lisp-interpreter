@@ -1442,10 +1442,9 @@ static inline Lisp gc_move(Lisp l, Heap* to)
         case LISP_SYMBOL:
         case LISP_STRING:
         case LISP_LAMBDA:
-        case LISP_TABLE:
         {
             LispBlock* block = l.val;
-    
+            
             if (!(block->gc_flags & GC_MOVED))
             {
                 unsigned int address = to->size;
@@ -1467,7 +1466,6 @@ static inline Lisp gc_move(Lisp l, Heap* to)
             l.val = (LispBlock*)(to->buffer + block->data_size);
             return l;
         }
-            /*
         case LISP_TABLE:
         {
             LispBlock* block = l.val;
@@ -1486,43 +1484,50 @@ static inline Lisp gc_move(Lisp l, Heap* to)
 
                 unsigned int address = to->size;
                 LispBlock* dest = (LispBlock*)(to->buffer + to->size);
+                dest->type = block->type;
                 dest->data_size = sizeof(Table) + new_capacity * sizeof(Lisp);
+                dest->gc_flags = 0;
                 size_t block_size = sizeof(LispBlock) + dest->data_size;
                 to->size += block_size;
                 
-                if (new_capacity == table->capacity)
-                {
-                    // copy the data
-                    memcpy(dest, block, block_size);
-                    assert(dest->data_size == block->data_size);
-                }
+                Table* dest_table = (Table*)dest->data;
+                dest_table->size = table->size;
+                dest_table->capacity = new_capacity;
+                
+                // clear the table
+                for (int i = 0; i < new_capacity; ++i)
+                    dest_table->entries[i] = lisp_null();
                 
                 // save forwarding address (offset in to)
                 block->data_size = address;
-                block->gc_flags |= GC_MOVED;
+                block->gc_flags = GC_MOVED;
                 
-                if (new_capacity != table->capacity)
+
+                if (LISP_DEBUG && new_capacity != table->capacity)
                 {
-                    Table* dest_table = (Table*)dest->data;
-                    dest_table->size = table->size;
-                    dest_table->capacity = new_capacity;
+                    printf("resizing table %i -> %i\n", table->capacity, new_capacity);
+                }
+                
+                for (int i = 0; i < table->capacity; ++i)
+                {
+                    Lisp it = table->entries[i];
                     
-                    // clear the table
-                    for (int i = 0; i < new_capacity; ++i)
-                        dest_table->entries[i] = lisp_null();
-                    
-                    for (int i = 0; i < table->capacity; ++i)
+                    while (!lisp_is_null(it))
                     {
-                        Lisp it = gc_move(table->entries[i], to);
-                    
-                        while (!lisp_is_null(it))
-                        {
-                            Lisp pair = lisp_car(it);
-                            unsigned int new_index = symbol_hash(lisp_car(pair)) % new_capacity;
-                            dest_table->entries[new_index] = heap_cons(pair, dest_table->entries[new_index], to);
-                           
-                            it = lisp_cdr(it);
-                        }
+                        unsigned int new_index = i;
+                        
+                        if (new_capacity != table->capacity)
+                            new_index = symbol_hash(lisp_car(lisp_car(it))) % new_capacity;
+                        
+                        Lisp pair = gc_move(lisp_car(it), to);
+                        
+                        Lisp new_cell = heap_cons(pair, dest_table->entries[new_index], to);
+                        dest_table->entries[new_index] = new_cell;
+                        
+                        LispBlock* block = new_cell.val;
+                        block->gc_flags = GC_VISITED;
+                        
+                        it = lisp_cdr(it);
                     }
                 }
             }
@@ -1531,7 +1536,6 @@ static inline Lisp gc_move(Lisp l, Heap* to)
             l.val = (LispBlock*)(to->buffer + block->data_size);
             return l;
         }
-             */
         default:
             return l;
     }
@@ -1582,19 +1586,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
                     lambda->env = gc_move(lambda->env, &to);
                     done = 0;
                 }
-                else if (block->type == LISP_TABLE)
-                {
-                    // save all references in environments
-                    Table* table = (Table*)block->data;
                 
-                    for (int i = 0; i < table->capacity; ++i)
-                    {
-                        if (lisp_is_null(table->entries[i])) continue;
-                        table->entries[i] = gc_move(table->entries[i], &to);
-                    }
-                    done = 0;
-                }
-
                 block->gc_flags |= GC_VISITED;
             }
 
@@ -1607,7 +1599,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
     if (LISP_DEBUG)
         printf("gc passes: %i\n", passes);
 
-    assert(passes <= 2);
+    //assert(passes <= 2);
  
     {
         // clear the flags
