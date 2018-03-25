@@ -108,24 +108,26 @@ Lisp lisp_at_index(Lisp l, int n); // O(n)
 int lisp_length(Lisp l); // O(n)
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
-
-// Dictionaries 
-// given a list of pairs, returns the pair where (eq? (car key_symbol))
+// given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN)) 
+// returns the pair with the given key or null of none
 Lisp lisp_assoc(Lisp list, Lisp key_symbol); // O(n)
-// given a list of pairs returns the (car (cdr pair)) where (eq? (car key_symbol))
+// given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
 Lisp lisp_for_key(Lisp list, Lisp key_symbol); // O(n)
 
+// if you want to progromatically generate compound procedures
+Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContextRef ctx);
 // C functions
 Lisp lisp_make_func(LispFunc func);
 
 // tables
 Lisp lisp_make_table(unsigned int capacity, LispContextRef ctx);
 void lisp_table_set(Lisp table, Lisp symbol, Lisp value, LispContextRef ctx);
+// returns the key value pair, or null if not found
 Lisp lisp_table_get(Lisp table, Lisp symbol, LispContextRef ctx);
 void lisp_table_add_funcs(Lisp table, const char** names, LispFunc* funcs, LispContextRef ctx);
 
 // evaluation environments
-Lisp lisp_make_default_env(struct LispContext* ctx);
+Lisp lisp_make_default_env(LispContextRef ctx);
 Lisp lisp_make_env(Lisp table, LispContextRef ctx);
 Lisp lisp_env_extend(Lisp env, Lisp table, LispContextRef ctx);
 Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContextRef ctx);
