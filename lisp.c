@@ -1570,30 +1570,35 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
 
             if (!(block->gc_flags & GC_VISITED))
             {
-                // these add to the buffer!
-                // so lists are handled in a single pass
-                if (block->type == LISP_PAIR)
+                switch (block->type)
                 {
-                    // move the CAR and CDR
-                    Lisp* ptrs = (Lisp*)block->data;
-                    for (int i = 0; i < 2; ++i)
+                    block->gc_flags |= GC_VISITED;
+                    // these add to the buffer!
+                    // so lists are handled in a single pass 
+                    case LISP_PAIR:
                     {
-                        if (!lisp_is_null(ptrs[i]))
-                            ptrs[i] = gc_move(ptrs[i], &to);
+                       // move the CAR and CDR
+                        Lisp* ptrs = (Lisp*)block->data;
+                        for (int i = 0; i < 2; ++i)
+                        {
+                            if (!lisp_is_null(ptrs[i]))
+                                ptrs[i] = gc_move(ptrs[i], &to);
+                        }
+                        done = 0;
+                        break;
                     }
-                    done = 0;
+                    case LISP_LAMBDA:
+                    {
+                        // move the body and args
+                        Lambda* lambda = (Lambda*)block->data;
+                        lambda->args = gc_move(lambda->args, &to);
+                        lambda->body = gc_move(lambda->body, &to);
+                        lambda->env = gc_move(lambda->env, &to);
+                        done = 0;
+                        break; 
+                    }
+                    default: break;
                 }
-                else if (block->type == LISP_LAMBDA)
-                {
-                    // move the body and args
-                    Lambda* lambda = (Lambda*)block->data;
-                    lambda->args = gc_move(lambda->args, &to);
-                    lambda->body = gc_move(lambda->body, &to);
-                    lambda->env = gc_move(lambda->env, &to);
-                    done = 0;
-                }
-                
-                block->gc_flags |= GC_VISITED;
             }
 
             offset += sizeof(LispBlock) + block->data_size;
@@ -1862,6 +1867,20 @@ static Lisp func_greater(Lisp args, LispContextRef ctx)
     return lisp_make_int(result);
 }
 
+static Lisp func_less_equal(Lisp args, LispContextRef ctx)
+{
+    // a <= b = !(a > b)
+    Lisp l = func_greater(args, ctx);
+    return  lisp_make_int(!lisp_int(l));
+}
+
+static Lisp func_greater_equal(Lisp args, LispContextRef ctx)
+{
+    // a >= b = !(a < b)
+    Lisp l = func_less(args, ctx);
+    return  lisp_make_int(!lisp_int(l));
+}
+
 static Lisp func_read_path(Lisp args, LispContextRef ctx)
 {
     const char* path = lisp_string(lisp_car(args));
@@ -1905,6 +1924,8 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         "/",
         "<",
         ">",
+        "<=",
+        ">=",
         NULL,
     };
 
@@ -1931,6 +1952,8 @@ Lisp lisp_make_default_env(LispContextRef ctx)
         func_divide,
         func_less,
         func_greater,
+        func_less_equal,
+        func_greater_equal,
         NULL,
     };
 
