@@ -29,6 +29,14 @@ typedef struct
     unsigned int capacity;
 } Heap;
 
+typedef struct
+{
+    unsigned int hash;
+    char string[];
+} Symbol;
+
+
+
 static void heap_init(Heap* heap, unsigned int capacity)
 {
     heap->capacity = capacity;
@@ -63,6 +71,27 @@ static Lisp heap_cons(Lisp car, Lisp cdr, Heap* heap)
     lisp_set_car(l, car);
     lisp_set_cdr(l, cdr);
     return l;
+}
+
+static LispBlock* heap_alloc_symbol(const char* string, size_t string_length, unsigned int hash, Heap* heap)
+{
+    // allocate a new block
+    LispBlock* block = heap_alloc(sizeof(Symbol) + string_length, LISP_SYMBOL, heap);
+    
+    Symbol* symbol = (Symbol*)block->data;
+    symbol->hash = hash;
+    memcpy(symbol->string, string, string_length);
+
+    // always convert symbols to uppercase
+    char* c = symbol->string;
+    
+    while (*c)
+    {
+        *c = toupper(*c);
+        ++c;
+    }
+
+    return block;
 }
 
 // hash table
@@ -264,12 +293,6 @@ const char* lisp_string(Lisp l)
     return block->data;
 }
 
-typedef struct
-{
-    unsigned int hash;
-    char string[];
-} Symbol;
-
 const char* lisp_symbol(Lisp l)
 {
     assert(l.type == LISP_SYMBOL);
@@ -322,26 +345,9 @@ Lisp lisp_make_symbol(const char* string, LispContextRef ctx)
     
     if (lisp_is_null(pair))
     {
-        // allocate a new block
-        LispBlock* block = heap_alloc(sizeof(Symbol) + string_length, LISP_SYMBOL, &ctx->heap);
-        
-        Symbol* symbol = (Symbol*)block->data;
-        symbol->hash = hash;
-        memcpy(symbol->string, string, string_length);
-
-        // always convert symbols to uppercase
-        char* c = symbol->string;
-        
-        while (*c)
-        {
-            *c = toupper(*c);
-            ++c;
-        }
-
         Lisp l;
-        l.type = block->type;
-        l.val = block;
-
+        l.type = LISP_SYMBOL;
+        l.val = heap_alloc_symbol(string, string_length, hash, &ctx->heap);
         lisp_table_set(ctx->symbol_table, l, lisp_null(), ctx);
         return l;
     }
@@ -1599,7 +1605,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
     if (LISP_DEBUG)
         printf("gc passes: %i\n", passes);
 
-    //assert(passes <= 2);
+    assert(passes <= 2);
  
     {
         // clear the flags
