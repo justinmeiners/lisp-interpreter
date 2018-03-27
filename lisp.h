@@ -152,12 +152,14 @@ void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 
 // memory managment and garbage collection
-LispContextRef lisp_init(unsigned int heap_size);
+LispContextRef lisp_init_default(unsigned int heap_size);
 void lisp_shutdown(LispContextRef ctx);
+
+Lisp lisp_get_global_env(LispContextRef ctx);
 
 // garbage collection. free up memory from unused objects. 
 // this will free all objects which are not reachable from root_to_save
 // usually the root environment should be this parameter
-Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx);
+void lisp_collect(LispContextRef ctx);
 
 #endif

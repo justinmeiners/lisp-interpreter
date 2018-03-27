@@ -35,7 +35,22 @@ typedef struct
     char string[];
 } Symbol;
 
+// hash table
+// linked list chaining
+typedef struct 
+{
+    unsigned short size;
+    unsigned short capacity;
+    Lisp entries[];
+} Table;
 
+struct LispContext
+{
+    Heap heap;
+    Lisp symbol_table;
+    Lisp global_env;
+    int lambda_counter;
+};
 
 static void heap_init(Heap* heap, unsigned int capacity)
 {
@@ -50,7 +65,6 @@ static LispBlock* heap_alloc(unsigned int data_size, LispType type, Heap* heap)
 {
     if (heap->size + data_size + sizeof(LispBlock) > heap->capacity)
     {
-        fprintf(stderr, "heap full\n");
         return NULL;
     }
     
@@ -62,60 +76,26 @@ static LispBlock* heap_alloc(unsigned int data_size, LispType type, Heap* heap)
     return block;
 }
 
-static Lisp heap_cons(Lisp car, Lisp cdr, Heap* heap)
+static LispBlock* gc_alloc(unsigned int data_size, LispType type, LispContextRef ctx)
 {
-    LispBlock* block = heap_alloc(sizeof(Lisp) * 2, LISP_PAIR, heap);
-    Lisp l;
-    l.type = block->type;
-    l.val = block;
-    lisp_set_car(l, car);
-    lisp_set_cdr(l, cdr);
-    return l;
-}
+    LispBlock* block = heap_alloc(data_size, type, &ctx->heap);
 
-static LispBlock* heap_alloc_symbol(const char* string, size_t string_length, unsigned int hash, Heap* heap)
-{
-    // allocate a new block
-    LispBlock* block = heap_alloc(sizeof(Symbol) + string_length, LISP_SYMBOL, heap);
-    
-    Symbol* symbol = (Symbol*)block->data;
-    symbol->hash = hash;
-    memcpy(symbol->string, string, string_length);
-
-    // always convert symbols to uppercase
-    char* c = symbol->string;
-    
-    while (*c)
+    if (!block)
     {
-        *c = toupper(*c);
-        ++c;
+        printf("collecting\n");
+        lisp_collect(ctx);
+
+        block = heap_alloc(data_size, type, &ctx->heap);
+
+        if (!block)
+        {
+            fprintf(stderr, "heap is full\n");
+            return NULL;
+        }
     }
 
     return block;
 }
-
-// hash table
-// linked list chaining
-typedef struct 
-{
-    unsigned short size;
-    unsigned short capacity;
-    Lisp entries[];
-} Table;
-
-static Table* lisp_table(Lisp l)
-{
-    assert(lisp_type(l) == LISP_TABLE);
-    LispBlock* block = l.val;
-    return (Table*)block->data;
-}
-
-struct LispContext
-{
-    Heap heap;
-    Lisp symbol_table;
-    int lambda_counter;
-};
 
 static unsigned int hash_string(const char* buffer, unsigned int length)
 {     
@@ -138,6 +118,13 @@ Lisp lisp_null()
     l.type = LISP_NULL;
     l.int_val = 0;
     return l;
+}
+
+static Table* lisp_table(Lisp l)
+{
+    assert(lisp_type(l) == LISP_TABLE);
+    LispBlock* block = l.val;
+    return (Table*)block->data;
 }
 
 Lisp lisp_make_int(int n)
@@ -172,7 +159,14 @@ float lisp_float(Lisp l)
 
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx)
 {
-    return heap_cons(car, cdr, &ctx->heap);
+    LispBlock* block = gc_alloc(sizeof(Lisp) * 2, LISP_PAIR, ctx);
+    Lisp l;
+    l.type = block->type;
+    l.val = block;
+    lisp_set_car(l, car);
+    lisp_set_cdr(l, cdr);
+    return l;
+
 }
 
 static void back_append(Lisp* front, Lisp* back, Lisp item, LispContextRef ctx)
@@ -277,7 +271,7 @@ Lisp lisp_for_key(Lisp list, Lisp key_symbol)
 Lisp lisp_make_string(const char* string, LispContextRef ctx)
 {
     unsigned int length = (unsigned int)strlen(string) + 1;
-    LispBlock* block = heap_alloc(length, LISP_STRING, &ctx->heap);
+    LispBlock* block = gc_alloc(length, LISP_STRING, ctx);
     memcpy(block->data, string, length);
     
     Lisp l;
@@ -345,9 +339,25 @@ Lisp lisp_make_symbol(const char* string, LispContextRef ctx)
     
     if (lisp_is_null(pair))
     {
+        // allocate a new block
+        LispBlock* block = gc_alloc(sizeof(Symbol) + string_length, LISP_SYMBOL, ctx);
+        
+        Symbol* symbol = (Symbol*)block->data;
+        symbol->hash = hash;
+        memcpy(symbol->string, string, string_length);
+
+        // always convert symbols to uppercase
+        char* c = symbol->string;
+        
+        while (*c)
+        {
+            *c = toupper(*c);
+            ++c;
+        }
+
         Lisp l;
-        l.type = LISP_SYMBOL;
-        l.val = heap_alloc_symbol(string, string_length, hash, &ctx->heap);
+        l.type = block->type;
+        l.val = block;
         lisp_table_set(ctx->symbol_table, l, lisp_null(), ctx);
         return l;
     }
@@ -375,7 +385,7 @@ typedef struct
 
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContextRef ctx)
 {
-    LispBlock* block = heap_alloc(sizeof(Lambda), LISP_LAMBDA, &ctx->heap);
+    LispBlock* block = gc_alloc(sizeof(Lambda), LISP_LAMBDA, ctx);
 
     Lambda data;
     data.identifier = ctx->lambda_counter++;
@@ -771,7 +781,7 @@ static Lisp parse_atom(Lexer* lex, LispContextRef ctx)
         case TOKEN_STRING:
         {
             // -2 length to skip quotes
-            LispBlock* block = heap_alloc(length - 1, LISP_STRING, &ctx->heap);
+            LispBlock* block = gc_alloc(length - 1, LISP_STRING, ctx);
             lexer_copy_token(lex, 1, length - 2, block->data);
             block->data[length - 2] = '\0';
             
@@ -1103,7 +1113,7 @@ static const char* lisp_type_name[] = {
 Lisp lisp_make_table(unsigned int capacity, LispContextRef ctx)
 {
     unsigned int size = sizeof(Table) + sizeof(Lisp) * capacity;
-    LispBlock* block = heap_alloc(size, LISP_TABLE, &ctx->heap);
+    LispBlock* block = gc_alloc(size, LISP_TABLE, ctx);
 
     Table* table = (Table*)block->data;
     table->size = 0;
@@ -1373,7 +1383,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     {
                         Lambda lambda = lisp_lambda(operator);
                         // make a new environment
-                        Lisp new_table = lisp_make_table(19, ctx);                       
+                        Lisp new_table = lisp_make_table(17, ctx);                       
                         // bind parameters to arguments
                         // to pass into function call
                         Lisp keyIt = lambda.args;
@@ -1414,22 +1424,6 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
             return lisp_null();
         }
     }
-}
-
-LispContextRef lisp_init(unsigned int heap_size)
-{
-    LispContextRef ctx = malloc(sizeof(struct LispContext));
-    ctx->lambda_counter = 0;
-    heap_init(&ctx->heap, heap_size);
-
-    ctx->symbol_table = lisp_make_table(2048, ctx);
-    return ctx;
-}
-
-void lisp_shutdown(LispContextRef ctx)
-{
-    heap_shutdown(&ctx->heap);
-    free(ctx);
 }
 
 #pragma Garbage Collection
@@ -1508,7 +1502,6 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                 block->data_size = address;
                 block->gc_flags = GC_MOVED;
                 
-
                 if (LISP_DEBUG && new_capacity != table->capacity)
                 {
                     printf("resizing table %i -> %i\n", table->capacity, new_capacity);
@@ -1526,13 +1519,20 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                             new_index = symbol_hash(lisp_car(lisp_car(it))) % new_capacity;
                         
                         Lisp pair = gc_move(lisp_car(it), to);
-                        
-                        Lisp new_cell = heap_cons(pair, dest_table->entries[new_index], to);
+
+                        // allocate a new cell in the to space
+                        LispBlock* cons_block = heap_alloc(sizeof(Lisp) * 2, LISP_PAIR, to);
+                        cons_block->gc_flags = GC_VISITED;
+
+                        Lisp new_cell;
+                        new_cell.type = cons_block->type;
+                        new_cell.val = cons_block;
+    
+                        // (pair, entry)
+                        lisp_set_car(new_cell, pair);
+                        lisp_set_cdr(new_cell, dest_table->entries[new_index]); 
                         dest_table->entries[new_index] = new_cell;
-                        
-                        LispBlock* block = new_cell.val;
-                        block->gc_flags = GC_VISITED;
-                        
+                         
                         it = lisp_cdr(it);
                     }
                 }
@@ -1547,7 +1547,7 @@ static inline Lisp gc_move(Lisp l, Heap* to)
     }
 }
 
-Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
+void lisp_collect(LispContextRef ctx)
 {
     Heap* from = &ctx->heap;
     Heap to;
@@ -1555,7 +1555,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
  
     // move root object
     ctx->symbol_table = gc_move(ctx->symbol_table, &to);
-    Lisp result = gc_move(root_to_save, &to);
+    ctx->global_env = gc_move(ctx->global_env, &to);
 
     // move references
     int passes = 0;
@@ -1572,12 +1572,11 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
             {
                 switch (block->type)
                 {
-                    block->gc_flags |= GC_VISITED;
                     // these add to the buffer!
                     // so lists are handled in a single pass 
                     case LISP_PAIR:
                     {
-                       // move the CAR and CDR
+                        // move the CAR and CDR
                         Lisp* ptrs = (Lisp*)block->data;
                         for (int i = 0; i < 2; ++i)
                         {
@@ -1599,6 +1598,8 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
                     }
                     default: break;
                 }
+
+                block->gc_flags |= GC_VISITED;
             }
 
             offset += sizeof(LispBlock) + block->data_size;
@@ -1629,11 +1630,20 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %i\n", diff, ctx->heap.size);
-
-    return result;
 }
 
-#pragma mark Default Enviornment
+Lisp lisp_get_global_env(LispContextRef ctx)
+{
+    return ctx->global_env;
+}
+
+void lisp_shutdown(LispContextRef ctx)
+{
+    heap_shutdown(&ctx->heap);
+    free(ctx);
+}
+
+#pragma mark Default Interpreter
 
 static Lisp func_cons(Lisp args, LispContextRef ctx)
 {
@@ -1893,13 +1903,16 @@ static Lisp func_expand(Lisp args, LispContextRef ctx)
     return lisp_expand(expr, ctx);
 }
 
-Lisp lisp_make_default_env(LispContextRef ctx)
+LispContextRef lisp_init_default(unsigned int heap_size)
 {
-    Lisp table = lisp_make_table(15, ctx);
-    Lisp env = lisp_make_env(table, ctx); 
+    LispContextRef ctx = malloc(sizeof(struct LispContext));
+    ctx->lambda_counter = 0;
+    heap_init(&ctx->heap, heap_size);
 
+    ctx->symbol_table = lisp_make_table(512, ctx);
+
+    Lisp table = lisp_make_table(256, ctx);
     lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_null(), ctx);
-    //lisp_table_set(table, lisp_make_symbol("global-env", ctx), env, ctx);
 
     const char* names[] = {
         "CONS",
@@ -1958,6 +1971,9 @@ Lisp lisp_make_default_env(LispContextRef ctx)
     };
 
     lisp_table_add_funcs(table, names, funcs, ctx);
-    return env;
+    ctx->global_env = lisp_make_env(table, ctx); 
+
+    return ctx;
 }
+
 

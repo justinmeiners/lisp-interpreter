@@ -1,7 +1,9 @@
 *.out
 lisp_i
-
+*.exe
+*.stackdump
 temp/
+
 
 # Xcode
 .DS_Store

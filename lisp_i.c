@@ -17,14 +17,15 @@ int main(int argc, const char* argv[])
         }
     }
     
-    LispContextRef ctx = lisp_init(20971520);
-    Lisp env = lisp_make_default_env(ctx);
+    LispContextRef ctx = lisp_init_default(20000000);
+
+    clock_t start_time, end_time;
         
     if (file_path)
     {
         printf("loading: %s\n", file_path);
 
-        clock_t start_time = clock();        
+        start_time = clock();        
         FILE* file = fopen(file_path, "r");
         
         if (!file)
@@ -35,21 +36,25 @@ int main(int argc, const char* argv[])
      
         Lisp l = lisp_read_file(file, ctx);
         fclose(file);
-        clock_t end_time = clock();
+        end_time = clock();
 
         if (LISP_DEBUG)
-            printf("read time us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
-
+            printf("read (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
         start_time = clock();
         Lisp code = lisp_expand(l, ctx);
         end_time = clock();
 
         if (LISP_DEBUG)
-            printf("expand time us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+            printf("expand (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
-        lisp_eval(code, env, ctx);  
-        lisp_collect(l, ctx);
+
+        start_time = clock(); 
+        lisp_eval(code, lisp_get_global_env(ctx), ctx);  
+        end_time = clock();
+
+        if (LISP_DEBUG)
+            printf("eval (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
     }
     else
     {
@@ -62,21 +67,14 @@ int main(int argc, const char* argv[])
 
             clock_t start_time = clock();
             Lisp code = lisp_expand(lisp_read(line, ctx), ctx);
-            Lisp l = lisp_eval(code, env, ctx);
+            Lisp l = lisp_eval(code, lisp_get_global_env(ctx), ctx);
             clock_t end_time = clock();
             lisp_print(l);
             printf("\n");
             
             if (LISP_DEBUG)
-                printf("us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
-
-            start_time = clock();
-            env = lisp_collect(env, ctx);
-            end_time = clock();
-            
-            if (LISP_DEBUG)
-                printf("gc us: %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
-        }
+                printf("(us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
+       }
     }
 
     return 1;

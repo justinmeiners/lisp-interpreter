@@ -20,6 +20,7 @@
 (define fact (lambda (n) (if (< n 2) 1 (* n (fact (- n 1))))))
 (assert (= (fact 3) 6))
 (define abs (lambda (n) ((if (> n 0) + -) 0 n)))
+
 (assert (= (car (list (abs -3) (abs 0) (abs 3))) 3))
 
 (define combine (lambda (f)
@@ -42,14 +43,23 @@
 (display ((repeat riff-shuffle) (list 1 2 3 4 5 6 7 8)))
 (newline)
 (display (riff-shuffle (riff-shuffle (riff-shuffle (list 1 2 3 4 5 6 7 8)))))
+(newline)
+
+
+(define fabs (lambda (n) ((if (> n 0.0) + -) 0.0 n)))
 
 (define (newton guess function derivative epsilon)
     (define guess2 (- guess (/ (function guess) (derivative guess))))
-    (if (< (abs (- guess guess2)) epsilon) guess2
+    (if (< (fabs (- guess guess2)) epsilon) guess2
         (newton guess2 function derivative epsilon)))
 
 (define (square-root a)
-    (newton 1.0 (lambda (x) (- (* x x) a)) (lambda (x) (* 2.0 x)) 0.001))
+    (newton 1.0 (lambda (x) (- (* x x) a)) (lambda (x) (* 2.0 x)) 0.0001))
 
+(display "sqrt(2)=")
+(display (square-root 2.0))
+(newline)
+
+(display "sqrt(200)=")
 (display (square-root 200.0))
-
+(newline)
