@@ -49,6 +49,7 @@ struct LispContext
     Heap heap;
     Lisp symbol_table;
     Lisp global_env;
+    Lisp env_reuse;
     int lambda_counter;
 };
 
@@ -82,9 +83,6 @@ static LispBlock* gc_alloc(unsigned int data_size, LispType type, LispContextRef
 
     if (!block)
     {
-        printf("collecting\n");
-        lisp_collect(ctx);
-
         block = heap_alloc(data_size, type, &ctx->heap);
 
         if (!block)
@@ -166,7 +164,6 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx)
     lisp_set_car(l, car);
     lisp_set_cdr(l, cdr);
     return l;
-
 }
 
 static void back_append(Lisp* front, Lisp* back, Lisp item, LispContextRef ctx)
@@ -1272,156 +1269,168 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
+
+static Lisp make_call_table(LispContextRef ctx)
+{
+    if (lisp_is_null(ctx->env_reuse))
+    {
+        return lisp_make_table(13, ctx);                       
+    }
+    else
+    {
+        // we can reuse any table which is not in the current env
+        // or is captured
+        
+        Lisp result = lisp_car(ctx->env_reuse);
+        ctx->env_reuse = lisp_cdr(ctx->env_reuse);
+        return result;
+    }
+}
+
 Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
 {
     while (1)
     {
         assert(!lisp_is_null(env));
-        LispType type = lisp_type(x);
         
-        if (type == LISP_INT ||
-            type == LISP_FLOAT ||
-            type == LISP_STRING ||
-            type == LISP_LAMBDA ||
-            type == LISP_NULL)
+        switch (lisp_type(x))
         {
-            // atom
-            return x;
-        }
-        else if (type == LISP_SYMBOL)
-        {
-            // variable reference
-            Lisp pair = lisp_env_lookup(env, x, ctx);
-            
-            if (lisp_is_null(pair))
+            case LISP_INT:
+            case LISP_FLOAT:
+            case LISP_STRING:
+            case LISP_LAMBDA:
+            case LISP_NULL: 
+                return x; // atom
+            case LISP_SYMBOL: // variable reference
             {
-                fprintf(stderr, "cannot find variable: %s\n", lisp_symbol(x));
-                return lisp_null();
-            }
-            return lisp_cdr(pair);
-        }
-        else if (type == LISP_PAIR) 
-        { 
-            const char* op_name = NULL;
-            if (lisp_type(lisp_car(x)) == LISP_SYMBOL)
-                op_name = lisp_symbol(lisp_car(x));
-
-            if (op_name && strcmp(op_name, "IF") == 0) // if conditional statemetns
-            {
-                Lisp predicate = lisp_at_index(x, 1);
-                Lisp conseq = lisp_at_index(x, 2);
-                Lisp alt = lisp_at_index(x, 3);
-
-                if (lisp_int(lisp_eval(predicate, env, ctx)) != 0)
+                Lisp pair = lisp_env_lookup(env, x, ctx);
+                
+                if (lisp_is_null(pair))
                 {
-                    x = conseq; // while will eval
-                } 
-                else
-                {
-                    x = alt; // while will eval
+                    fprintf(stderr, "cannot find variable: %s\n", lisp_symbol(x));
+                    return lisp_null();
                 }
+                return lisp_cdr(pair);
             }
-            else if (op_name && strcmp(op_name, "BEGIN") == 0)
+            case LISP_PAIR:
             {
-                Lisp it = lisp_cdr(x);
-                if (lisp_is_null(it)) return it;
-
-                // eval all but last
-                while (!lisp_is_null(lisp_cdr(it)))
+                const char* op_name = NULL;
+                if (lisp_type(lisp_car(x)) == LISP_SYMBOL)
+                    op_name = lisp_symbol(lisp_car(x));
+                
+                if (op_name && strcmp(op_name, "IF") == 0) // if conditional statemetns
                 {
-                    lisp_eval(lisp_car(it), env, ctx);
-                    it = lisp_cdr(it);
-                }
-                
-                x = lisp_car(it); // while will eval last
-            }
-            else if (op_name && strcmp(op_name, "QUOTE") == 0)
-            {
-                return lisp_at_index(x, 1);
-            }
-            else if (op_name && strcmp(op_name, "DEFINE") == 0) // variable definitions
-            {
-                Lisp symbol = lisp_at_index(x, 1); 
-                Lisp value = lisp_eval(lisp_at_index(x, 2), env, ctx);
-                lisp_env_define(env, symbol, value, ctx);
-                return lisp_null();
-            }
-            else if (op_name && strcmp(op_name, "SET!") == 0)
-            {
-                // mutablity
-                // like def, but requires existence
-                // and will search up the environment chain
-                Lisp symbol = lisp_at_index(x, 1);
-                lisp_env_set(env, symbol, lisp_eval(lisp_at_index(x, 2), env, ctx), ctx);
-                return lisp_null();
-            }
-            else if (op_name && strcmp(op_name, "LAMBDA") == 0) // lambda defintions (compound procedures)
-
-            {
-                Lisp args = lisp_at_index(x, 1);
-                Lisp body = lisp_at_index(x, 2);
-                return lisp_make_lambda(args, body, env, ctx);
-            }
-            else // operator application
-            {
-                Lisp operator = lisp_eval(lisp_car(x), env, ctx);
-                Lisp arg_expr = lisp_cdr(x);
-                
-                Lisp args_front = lisp_null();
-                Lisp args_back = lisp_null();
-                
-                while (!lisp_is_null(arg_expr))
-                {
-                    Lisp new_arg = lisp_eval(lisp_car(arg_expr), env, ctx);
-                    back_append(&args_front, &args_back, new_arg, ctx);
-                    arg_expr = lisp_cdr(arg_expr);
-                }
-                
-                switch (lisp_type(operator))
-                {
-                    case LISP_LAMBDA: // lambda call (compound procedure)
+                    Lisp predicate = lisp_at_index(x, 1);
+                    Lisp conseq = lisp_at_index(x, 2);
+                    Lisp alt = lisp_at_index(x, 3);
+                    
+                    if (lisp_int(lisp_eval(predicate, env, ctx)) != 0)
                     {
-                        Lambda lambda = lisp_lambda(operator);
-                        // make a new environment
-                        Lisp new_table = lisp_make_table(17, ctx);                       
-                        // bind parameters to arguments
-                        // to pass into function call
-                        Lisp keyIt = lambda.args;
-                        Lisp valIt = args_front;
-                        
-                        while (!lisp_is_null(keyIt))
+                        x = conseq; // while will eval
+                    }
+                    else
+                    {
+                        x = alt; // while will eval
+                    }
+                }
+                else if (op_name && strcmp(op_name, "BEGIN") == 0)
+                {
+                    Lisp it = lisp_cdr(x);
+                    if (lisp_is_null(it)) return it;
+                    
+                    // eval all but last
+                    while (!lisp_is_null(lisp_cdr(it)))
+                    {
+                        lisp_eval(lisp_car(it), env, ctx);
+                        it = lisp_cdr(it);
+                    }
+                    
+                    x = lisp_car(it); // while will eval last
+                }
+                else if (op_name && strcmp(op_name, "QUOTE") == 0)
+                {
+                    return lisp_at_index(x, 1);
+                }
+                else if (op_name && strcmp(op_name, "DEFINE") == 0) // variable definitions
+                {
+                    Lisp symbol = lisp_at_index(x, 1);
+                    Lisp value = lisp_eval(lisp_at_index(x, 2), env, ctx);
+                    lisp_env_define(env, symbol, value, ctx);
+                    return lisp_null();
+                }
+                else if (op_name && strcmp(op_name, "SET!") == 0)
+                {
+                    // mutablity
+                    // like def, but requires existence
+                    // and will search up the environment chain
+                    Lisp symbol = lisp_at_index(x, 1);
+                    lisp_env_set(env, symbol, lisp_eval(lisp_at_index(x, 2), env, ctx), ctx);
+                    return lisp_null();
+                }
+                else if (op_name && strcmp(op_name, "LAMBDA") == 0) // lambda defintions (compound procedures)
+                    
+                {
+                    Lisp args = lisp_at_index(x, 1);
+                    Lisp body = lisp_at_index(x, 2);
+                    return lisp_make_lambda(args, body, env, ctx);
+                }
+                else // operator application
+                {
+                    Lisp operator = lisp_eval(lisp_car(x), env, ctx);
+                    Lisp arg_expr = lisp_cdr(x);
+                    
+                    Lisp args_front = lisp_null();
+                    Lisp args_back = lisp_null();
+                    
+                    while (!lisp_is_null(arg_expr))
+                    {
+                        Lisp new_arg = lisp_eval(lisp_car(arg_expr), env, ctx);
+                        back_append(&args_front, &args_back, new_arg, ctx);
+                        arg_expr = lisp_cdr(arg_expr);
+                    }
+                    
+                    switch (lisp_type(operator))
+                    {
+                        case LISP_LAMBDA: // lambda call (compound procedure)
                         {
-                            lisp_table_set(new_table, lisp_car(keyIt), lisp_car(valIt), ctx);
-                            keyIt = lisp_cdr(keyIt);
-                            valIt = lisp_cdr(valIt);
+                            Lambda lambda = lisp_lambda(operator);
+                            // make a new environment
+                            Lisp new_table = make_call_table(ctx);
+                            // bind parameters to arguments
+                            // to pass into function call
+                            Lisp keyIt = lambda.args;
+                            Lisp valIt = args_front;
+                            
+                            while (!lisp_is_null(keyIt))
+                            {
+                                lisp_table_set(new_table, lisp_car(keyIt), lisp_car(valIt), ctx);
+                                keyIt = lisp_cdr(keyIt); valIt = lisp_cdr(valIt);
+                            }
+                            
+                            // normally we would eval the body here
+                            // but while will eval
+                            x = lambda.body;
+                            
+                            // extend the environment
+                            env = lisp_env_extend(lambda.env, new_table, ctx);
+                            break;
                         }
- 
-                        // normally we would eval the body here
-                        // but while will eval
-                        x = lambda.body;
-
-                        // extend the environment
-                        env = lisp_env_extend(lambda.env, new_table, ctx);
-                        break;
-                    }
-                    case LISP_FUNC: // call into C functions
-                    {
-                        // no environment required 
-                        LispFunc func = operator.val;
-                        return func(args_front, ctx);
-                    }
-                    default:
-                    {
-                        fprintf(stderr, "apply error: not an operator %s\n", lisp_type_name[operator.type]);
-                        return lisp_null();
+                        case LISP_FUNC: // call into C functions
+                        {
+                            // no environment required
+                            LispFunc func = operator.val;
+                            return func(args_front, ctx);
+                        }
+                        default:
+                            fprintf(stderr, "apply error: not an operator %s\n", lisp_type_name[operator.type]);
+                            return lisp_null();
                     }
                 }
+                break;
             }
-        }
-        else
-        {
-            fprintf(stderr,"here: %s\n", lisp_type_name[x.type]);
-            return lisp_null();
+            default:
+                fprintf(stderr, "eval got to a weird place: %s\n", lisp_type_name[x.type]);
+                return lisp_null();
         }
     }
 }
@@ -1477,9 +1486,10 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                 
                 unsigned int new_capacity = table->capacity;
                 
-                if (load_factor > 0.6f || load_factor < 0.05f)
+                if (load_factor > 0.75f || load_factor < 0.1f)
                 {
-                    new_capacity = (table->size * 4);
+                    new_capacity = (table->size * 3) - 1;
+                    if (new_capacity < 1) new_capacity = 1;
                 }
 
                 unsigned int address = to->size;
@@ -1547,7 +1557,7 @@ static inline Lisp gc_move(Lisp l, Heap* to)
     }
 }
 
-void lisp_collect(LispContextRef ctx)
+Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
 {
     Heap* from = &ctx->heap;
     Heap to;
@@ -1556,6 +1566,7 @@ void lisp_collect(LispContextRef ctx)
     // move root object
     ctx->symbol_table = gc_move(ctx->symbol_table, &to);
     ctx->global_env = gc_move(ctx->global_env, &to);
+    Lisp result = gc_move(root_to_save, &to);
 
     // move references
     int passes = 0;
@@ -1630,6 +1641,8 @@ void lisp_collect(LispContextRef ctx)
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %i\n", diff, ctx->heap.size);
+
+    return result;
 }
 
 Lisp lisp_get_global_env(LispContextRef ctx)
@@ -1910,6 +1923,7 @@ LispContextRef lisp_init_default(unsigned int heap_size)
     heap_init(&ctx->heap, heap_size);
 
     ctx->symbol_table = lisp_make_table(512, ctx);
+    ctx->env_reuse = lisp_null();
 
     Lisp table = lisp_make_table(256, ctx);
     lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_null(), ctx);

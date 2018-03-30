@@ -8,7 +8,7 @@ An embeddable lisp interepreter written in C. I created this while reading SICP 
 
 ### Philosophy
 
-- **Simple**: An interpreter is something that can easily get complicated with fancy features. This project doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation. It is just a robust foundation for scripting.
+- **Simple**: An interpreter is something that can easily get complicated with fancy features. This project doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation. It is just a robust foundation for scripting. (If you need a more complete implementation try [s7](https://ccrma.stanford.edu/software/snd/snd/s7.html))
 - **Data & Code**: Lisp is undervalued as an alternative to JSON or XML. This implementation provides first-class support for working with data or code.
 - **Unintrusive**: Just copy in the header and source file. Source code should be portable between major platforms.
 - **Unsurprising**: You should be able to read the source code and understand how it works. The header API should work how you expect.

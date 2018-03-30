@@ -53,6 +53,8 @@ int main(int argc, const char* argv[])
         lisp_eval(code, lisp_get_global_env(ctx), ctx);  
         end_time = clock();
 
+        lisp_collect(lisp_null(), ctx);
+
         if (LISP_DEBUG)
             printf("eval (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
     }
@@ -71,6 +73,8 @@ int main(int argc, const char* argv[])
             clock_t end_time = clock();
             lisp_print(l);
             printf("\n");
+            
+            lisp_collect(lisp_null(), ctx);
             
             if (LISP_DEBUG)
                 printf("(us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);

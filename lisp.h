@@ -127,7 +127,6 @@ Lisp lisp_table_get(Lisp table, Lisp symbol, LispContextRef ctx);
 void lisp_table_add_funcs(Lisp table, const char** names, LispFunc* funcs, LispContextRef ctx);
 
 // evaluation environments
-Lisp lisp_make_default_env(LispContextRef ctx);
 Lisp lisp_make_env(Lisp table, LispContextRef ctx);
 Lisp lisp_env_extend(Lisp env, Lisp table, LispContextRef ctx);
 Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContextRef ctx);
@@ -154,12 +153,11 @@ void lisp_printf(FILE* file, Lisp l);
 // memory managment and garbage collection
 LispContextRef lisp_init_default(unsigned int heap_size);
 void lisp_shutdown(LispContextRef ctx);
-
 Lisp lisp_get_global_env(LispContextRef ctx);
 
 // garbage collection. free up memory from unused objects. 
 // this will free all objects which are not reachable from root_to_save
 // usually the root environment should be this parameter
-void lisp_collect(LispContextRef ctx);
+Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx);
 
 #endif
