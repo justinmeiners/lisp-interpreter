@@ -212,6 +212,42 @@ Lisp lisp_at_index(Lisp l, int i)
     return lisp_car(l);
 }
 
+Lisp lisp_nav(Lisp l, const char* c)
+{
+    if (toupper(*c) != 'C') return lisp_null();
+
+    ++c;
+    int i = 0;
+    while (toupper(*c) != 'R' && *c)
+    {
+        ++i;
+        ++c;
+    }
+
+    if (toupper(*c) != 'R') return lisp_null();
+    --c;
+
+    while (i > 0)
+    {
+        if (toupper(*c) == 'D')
+        {
+            l = lisp_cdr(l);
+        }
+        else if (toupper(*c) == 'A')
+        {
+            l = lisp_car(l);
+        }
+        else
+        {
+            return lisp_null();
+        }
+        --c;
+        --i;
+    }
+
+    return l;
+}
+
 int lisp_length(Lisp l)
 {
     int count = 0;
@@ -681,8 +717,7 @@ static void lexer_copy_token(Lexer* lex, unsigned int start_index, unsigned int 
         const char* sc_end = lex->buffs[lex->sc_buff_index] + lex->buff_size;
         const char* sc = (lex->sc + start_index);
         
-        ptrdiff_t first_part_length = sc_end - sc;
-        
+        ptrdiff_t first_part_length = sc_end - sc;  
         if (first_part_length < 0) first_part_length = 0;
         if (first_part_length > length) first_part_length = length;
         
@@ -692,8 +727,7 @@ static void lexer_copy_token(Lexer* lex, unsigned int start_index, unsigned int 
             memcpy(dest, sc, first_part_length);
         }
         
-        ptrdiff_t last_part = length - first_part_length;
-        
+        ptrdiff_t last_part = length - first_part_length;        
         if (last_part > 0)
         {
             // copy from the start of c's buffer
@@ -925,21 +959,75 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
                 return l;
             }
         }
+        else if (op && strcmp(op, "COND") == 0)
+        {
+            // (COND (<pred0> <expr0>)
+            //        <pred1> <expr1>)
+            //        ...
+            //        (else <expr-1>)) ->
+            //
+            //  (IF <pred0> <expr0>
+            //      (if <pred1> <expr1>
+            //          ....
+            //      (if <predN> <exprN> <expr-1>)) ... )
+
+            Lisp else_symbol = lisp_make_symbol("ELSE", ctx);
+            Lisp if_symbol = lisp_make_symbol("IF", ctx);
+
+            Lisp args = lisp_cdr(l);
+
+            Lisp first_if = lisp_null();
+            Lisp last_if = lisp_null();
+            Lisp else_expr = lisp_null();
+
+            while (!lisp_is_null(args))
+            {
+                Lisp pred = expand_r(lisp_car(lisp_car(args)), ctx);
+                Lisp expr = expand_r(lisp_car(lisp_cdr(args)), ctx);
+
+                if ((lisp_type(pred) == LISP_SYMBOL) &&
+                     lisp_eq(else_symbol, pred))
+                {
+                    else_symbol = args;
+                    else_expr = expr;
+                }
+                else
+                {
+                    Lisp f = lisp_make_list(ctx,
+                             if_symbol,
+                             pred,
+                             expr,
+                             lisp_null());
+
+                    if (lisp_is_null(first_if))
+                    {
+                        first_if = f;
+                    }
+
+                    last_if = f; 
+                }
+
+                args = lisp_cdr(args);
+            }
+
+            return first_if;
+        }
         else if (op && strcmp(op, "AND") == 0)
         {
             // (AND <pred0> <pred1>) -> (IF <pred0> (IF <pred1> t f) f)
+            Lisp if_symbol = lisp_make_symbol("IF", ctx);
             Lisp predicate0 = expand_r(lisp_at_index(l, 1), ctx);
             Lisp predicate1 = expand_r(lisp_at_index(l, 2), ctx);
 
             Lisp inner = lisp_make_list(ctx, 
-                                        lisp_make_symbol("IF", ctx),
+                                        if_symbol,
                                         predicate1,
                                         lisp_make_int(1), 
                                         lisp_make_int(0),
                                         lisp_null());
 
             Lisp outer = lisp_make_list(ctx,
-                                        lisp_make_symbol("IF", ctx),
+                                        if_symbol,
                                         predicate0,
                                         inner,
                                         lisp_make_int(0),
@@ -950,18 +1038,19 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         else if (op && strcmp(op, "OR") == 0)
         {
             // (OR <pred0> <pred1>) -> (IF (<pred0>) t (IF <pred1> t f))
+            Lisp if_symbol = lisp_make_symbol("IF", ctx);
             Lisp predicate0 = expand_r(lisp_at_index(l, 1), ctx);
             Lisp predicate1 = expand_r(lisp_at_index(l, 2), ctx);
             
             Lisp inner = lisp_make_list(ctx,
-                                        lisp_make_symbol("IF", ctx),
+                                        if_symbol,
                                         predicate1,
                                         lisp_make_int(1),
                                         lisp_make_int(0),
                                         lisp_null());
             
             Lisp outer = lisp_make_list(ctx,
-                                        lisp_make_symbol("IF", ctx),
+                                        if_symbol,
                                         predicate0,
                                         lisp_make_int(1),
                                         inner,
@@ -1279,8 +1368,7 @@ static Lisp make_call_table(LispContextRef ctx)
     else
     {
         // we can reuse any table which is not in the current env
-        // or is captured
-        
+        // or is captured 
         Lisp result = lisp_car(ctx->env_reuse);
         ctx->env_reuse = lisp_cdr(ctx->env_reuse);
         return result;
@@ -1332,6 +1420,10 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     {
                         x = alt; // while will eval
                     }
+                }
+                else if (op_name && strcmp(op_name, "COND") == 0) // conditionals
+                {
+
                 }
                 else if (op_name && strcmp(op_name, "BEGIN") == 0)
                 {
@@ -1673,6 +1765,14 @@ static Lisp func_cdr(Lisp args, LispContextRef ctx)
     return lisp_cdr(lisp_car(args));
 }
 
+static Lisp func_nav(Lisp args, LispContextRef ctx)
+{
+    Lisp path = lisp_car(args);
+    Lisp l = lisp_car(lisp_cdr(args));
+
+    return lisp_nav(l, lisp_string(path));
+}
+
 static Lisp func_eq(Lisp args, LispContextRef ctx)
 {
     void* a = lisp_car(args).val;
@@ -1932,6 +2032,7 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         "CONS",
         "CAR",
         "CDR",
+        "NAV",
         "EQ?",
         "NULL?",
         "LIST",
@@ -1960,6 +2061,7 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         func_cons,
         func_car,
         func_cdr,
+        func_nav,
         func_eq,
         func_is_null,
         func_list,

@@ -45,7 +45,6 @@
 (display (riff-shuffle (riff-shuffle (riff-shuffle (list 1 2 3 4 5 6 7 8)))))
 (newline)
 
-
 (define fabs (lambda (n) ((if (> n 0.0) + -) 0.0 n)))
 
 (define (newton guess function derivative epsilon)

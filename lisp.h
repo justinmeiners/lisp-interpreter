@@ -105,6 +105,8 @@ const char* lisp_symbol(Lisp l);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
 Lisp lisp_append(Lisp l, Lisp tail, LispContextRef ctx);
 Lisp lisp_at_index(Lisp l, int n); // O(n)
+// more concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
+Lisp lisp_nav(Lisp l, const char* path);
 int lisp_length(Lisp l); // O(n)
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
