@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <setjmp.h>
 #include "lisp.h"
 
 typedef struct
@@ -787,6 +788,13 @@ static void lexer_next_token(Lexer* lex)
 
 #define SCRATCH_MAX 1024
 
+enum
+{
+    PARSE_ERROR_EXPECTED_L_PAREN,
+    PARSE_ERROR_EXPECTED_R_PAREN,
+
+};
+
 static Lisp parse_atom(Lexer* lex, LispContextRef ctx)
 { 
     char scratch[SCRATCH_MAX];
@@ -839,14 +847,13 @@ static Lisp parse_atom(Lexer* lex, LispContextRef ctx)
 }
 
 // read tokens and construct S-expresions
-static Lisp parse_list_r(Lexer* lex, LispContextRef ctx)
+static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
 {  
     switch (lex->token)
     {
         case TOKEN_NONE:
         {
-            fprintf(stderr, "parse error - expected: )\n");
-            return lisp_null();
+            longjmp(error_jmp, PARSE_ERROR_EXPECTED_R_PAREN);
         }
         case TOKEN_L_PAREN:
         {
@@ -857,7 +864,7 @@ static Lisp parse_list_r(Lexer* lex, LispContextRef ctx)
             lexer_next_token(lex);
             while (lex->token != TOKEN_R_PAREN)
             {
-                Lisp l = parse_list_r(lex, ctx);
+                Lisp l = parse_list_r(lex, error_jmp, ctx);
                 back_append(&front, &back, l, ctx);
             }
             // )
@@ -866,15 +873,13 @@ static Lisp parse_list_r(Lexer* lex, LispContextRef ctx)
         }
         case TOKEN_R_PAREN:
         {
-            fprintf(stderr, "parse error - unexpected: )\n");
-            lexer_next_token(lex);
-            return lisp_null();
+            longjmp(error_jmp, PARSE_ERROR_EXPECTED_R_PAREN);
         }
         case TOKEN_QUOTE:
         {
              // '
              lexer_next_token(lex);
-             Lisp l = lisp_cons(parse_list_r(lex, ctx), lisp_null(), ctx);
+             Lisp l = lisp_cons(parse_list_r(lex, error_jmp, ctx), lisp_null(), ctx);
              return lisp_cons(lisp_make_symbol("QUOTE", ctx), l, ctx);
         }
         default:
@@ -886,24 +891,51 @@ static Lisp parse_list_r(Lexer* lex, LispContextRef ctx)
 
 static Lisp parse(Lexer* lex, LispContextRef ctx)
 {
-    lexer_next_token(lex);
-    Lisp result = parse_list_r(lex, ctx);
-    
-    if (lex->token != TOKEN_NONE)
+    jmp_buf error_jmp;
+    if (setjmp(error_jmp) == 0)
     {
-        Lisp back = lisp_cons(result, lisp_null(), ctx);
-        Lisp front = lisp_cons(lisp_make_symbol("BEGIN", ctx), back, ctx);
+        lexer_next_token(lex);
+        Lisp result = parse_list_r(lex, error_jmp, ctx);
         
-        while (lex->token != TOKEN_NONE)
+        if (lex->token != TOKEN_NONE)
         {
-            Lisp next_result = parse_list_r(lex, ctx);
-            back_append(&front, &back, next_result, ctx);
-        } 
+            Lisp back = lisp_cons(result, lisp_null(), ctx);
+            Lisp front = lisp_cons(lisp_make_symbol("BEGIN", ctx), back, ctx);
+            
+            while (lex->token != TOKEN_NONE)
+            {
+                Lisp next_result = parse_list_r(lex, error_jmp, ctx);
+                back_append(&front, &back, next_result, ctx);
+            } 
 
-       result = front;
+           result = front;
+        }
+
+        return result;
     }
-    return result;
+    else
+    {
+        fprintf(stderr, "parse error - expected: )\n");
+    }
+ 
+    return lisp_null();
 }
+
+static Lisp reverse_inplace(Lisp l)
+{
+    Lisp p = lisp_null();
+
+    while (lisp_type(l) == LISP_PAIR)
+    {
+        Lisp next = lisp_cdr(l);
+        lisp_cdr(l) = p;
+        p = l;
+        l = next;        
+    }
+
+    return p;
+}
+
 
 static Lisp expand_r(Lisp l, LispContextRef ctx)
 {
@@ -962,7 +994,7 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         else if (op && strcmp(op, "COND") == 0)
         {
             // (COND (<pred0> <expr0>)
-            //        <pred1> <expr1>)
+            //       (<pred1> <expr1>)
             //        ...
             //        (else <expr-1>)) ->
             //
@@ -971,64 +1003,58 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
             //          ....
             //      (if <predN> <exprN> <expr-1>)) ... )
 
-            Lisp else_symbol = lisp_make_symbol("ELSE", ctx);
-            Lisp if_symbol = lisp_make_symbol("IF", ctx);
+            Lisp conds = reverse_inplace(lisp_cdr(l));
+            Lisp outer = lisp_null();
 
-            Lisp args = lisp_cdr(l);
+            Lisp cond_pair = lisp_car(conds);
+            Lisp cond_pred = lisp_car(cond_pair);
+            Lisp cond_expr = lisp_null();
 
-            Lisp first_if = lisp_null();
-            Lisp last_if = lisp_null();
-            Lisp else_expr = lisp_null();
-
-            while (!lisp_is_null(args))
+            if ((lisp_type(cond_pred) == LISP_SYMBOL) &&
+                 lisp_eq(lisp_make_symbol("ELSE", ctx), cond_pred))
             {
-                Lisp pred = expand_r(lisp_car(lisp_car(args)), ctx);
-                Lisp expr = expand_r(lisp_car(lisp_cdr(args)), ctx);
-
-                if ((lisp_type(pred) == LISP_SYMBOL) &&
-                     lisp_eq(else_symbol, pred))
-                {
-                    else_symbol = args;
-                    else_expr = expr;
-                }
-                else
-                {
-                    Lisp f = lisp_make_list(ctx,
-                             if_symbol,
-                             pred,
-                             expr,
-                             lisp_null());
-
-                    if (lisp_is_null(first_if))
-                    {
-                        first_if = f;
-                    }
-
-                    last_if = f; 
-                }
-
-                args = lisp_cdr(args);
+                cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), ctx);
+                outer = cond_expr;
+                conds = lisp_cdr(conds);
             }
 
-            return first_if;
+            Lisp if_symbol = lisp_make_symbol("IF", ctx);
+       
+            while (!lisp_is_null(conds))
+            {
+                cond_pair = lisp_car(conds);
+                cond_pred = expand_r(lisp_car(cond_pair), ctx);
+                cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), ctx);
+
+                outer = lisp_make_list(ctx,
+                                       if_symbol,
+                                       cond_pred,
+                                       cond_expr,
+                                       outer,
+                                       lisp_null());
+
+                conds = lisp_cdr(conds);
+            }
+
+            return outer;
         }
         else if (op && strcmp(op, "AND") == 0)
         {
             // (AND <pred0> <pred1>) -> (IF <pred0> (IF <pred1> t f) f)
             Lisp if_symbol = lisp_make_symbol("IF", ctx);
-            Lisp predicate0 = expand_r(lisp_at_index(l, 1), ctx);
-            Lisp predicate1 = expand_r(lisp_at_index(l, 2), ctx);
+            Lisp pred0 = expand_r(lisp_at_index(l, 1), ctx);
+            Lisp pred1 = expand_r(lisp_at_index(l, 2), ctx);
 
             Lisp inner = lisp_make_list(ctx, 
                                         if_symbol,
-                                        predicate1,
+                                        pred1,
                                         lisp_make_int(1), 
                                         lisp_make_int(0),
                                         lisp_null());
 
             Lisp outer = lisp_make_list(ctx,
                                         if_symbol,
-                                        predicate0,
+                                        pred0,
                                         inner,
                                         lisp_make_int(0),
                                         lisp_null());
@@ -1039,19 +1065,19 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         {
             // (OR <pred0> <pred1>) -> (IF (<pred0>) t (IF <pred1> t f))
             Lisp if_symbol = lisp_make_symbol("IF", ctx);
-            Lisp predicate0 = expand_r(lisp_at_index(l, 1), ctx);
-            Lisp predicate1 = expand_r(lisp_at_index(l, 2), ctx);
+            Lisp pred0 = expand_r(lisp_at_index(l, 1), ctx);
+            Lisp pred1 = expand_r(lisp_at_index(l, 2), ctx);
             
             Lisp inner = lisp_make_list(ctx,
                                         if_symbol,
-                                        predicate1,
+                                        pred1,
                                         lisp_make_int(1),
                                         lisp_make_int(0),
                                         lisp_null());
             
             Lisp outer = lisp_make_list(ctx,
                                         if_symbol,
-                                        predicate0,
+                                        pred0,
                                         lisp_make_int(1),
                                         inner,
                                         lisp_null());
@@ -1117,6 +1143,8 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         else if (op && strcmp(op, "ASSERT") == 0)
         {
             Lisp statement = lisp_car(lisp_cdr(l));
+            // here we save a quoted version of the code so we can see
+            // what happened to trigger the assertion
             Lisp quoted = lisp_make_list(ctx,
                                          lisp_make_symbol("QUOTE", ctx),
                                          statement,
@@ -1869,6 +1897,11 @@ static Lisp func_length(Lisp args, LispContextRef ctx)
     return lisp_make_int(lisp_length(lisp_car(args)));
 }
 
+static Lisp func_reverse_inplace(Lisp args, LispContextRef ctx)
+{
+    return reverse_inplace(lisp_car(args));
+}
+
 static Lisp func_assoc(Lisp args, LispContextRef ctx)
 {
     return lisp_assoc(lisp_car(args), lisp_car(lisp_cdr(args)));
@@ -2004,6 +2037,28 @@ static Lisp func_greater_equal(Lisp args, LispContextRef ctx)
     return  lisp_make_int(!lisp_int(l));
 }
 
+
+static Lisp func_even(Lisp args, LispContextRef ctx)
+{
+    while (!lisp_is_null(args))
+    {
+        if (lisp_int(lisp_car(args)) & 1) return lisp_make_int(0);
+        args = lisp_cdr(args);
+    } 
+    return lisp_make_int(1);
+}
+
+static Lisp func_odd(Lisp args, LispContextRef ctx)
+{
+    while (!lisp_is_null(args))
+    {
+        if (lisp_int(lisp_car(args)) & 1 == 0) return lisp_make_int(0);
+        args = lisp_cdr(args);
+    } 
+
+    return lisp_make_int(1); 
+}
+
 static Lisp func_read_path(Lisp args, LispContextRef ctx)
 {
     const char* path = lisp_string(lisp_car(args));
@@ -2015,6 +2070,7 @@ static Lisp func_expand(Lisp args, LispContextRef ctx)
     Lisp expr = lisp_car(args);
     return lisp_expand(expr, ctx);
 }
+
 
 LispContextRef lisp_init_default(unsigned int heap_size)
 {
@@ -2039,6 +2095,7 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         "APPEND",
         "NTH",
         "LENGTH",
+        "REVERSE!",
         "ASSOC",
         "DISPLAY",
         "NEWLINE",
@@ -2054,6 +2111,8 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         ">",
         "<=",
         ">=",
+        "EVEN?",
+        "ODD?",
         NULL,
     };
 
@@ -2068,6 +2127,7 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         func_append,
         func_nth,
         func_length,
+        func_reverse_inplace,
         func_assoc,
         func_display,
         func_newline,
@@ -2082,6 +2142,8 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         func_less,
         func_greater,
         func_less_equal,
+        func_odd,
+        func_even,
         func_greater_equal,
         NULL,
     };
