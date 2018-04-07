@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define LISP_DEBUG 1
+#define LISP_DEBUG 0
 
 typedef enum
 {
@@ -24,6 +24,7 @@ typedef enum
     LISP_ERROR_NONE = 0,
     LISP_ERROR_PAREN_UNEXPECTED,
     LISP_ERROR_PAREN_EXPECTED,
+
     LISP_ERROR_BAD_TOKEN,
     LISP_ERROR_BAD_QUOTE,
     LISP_ERROR_BAD_DEFINE,
@@ -33,6 +34,9 @@ typedef enum
     LISP_ERROR_BAD_OR,
     LISP_ERROR_BAD_LET,
     LISP_ERROR_BAD_LAMBDA,
+
+    LISP_ERROR_UNKNOWN_VAR,
+
 } LispError;
 
 typedef struct

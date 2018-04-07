@@ -96,21 +96,6 @@ static LispBlock* gc_alloc(unsigned int data_size, LispType type, LispContextRef
     return block;
 }
 
-static unsigned int hash_string(const char* buffer, unsigned int length)
-{     
-    // adler 32
-    int s1 = 1;
-    int s2 = 0;
-    
-    for (int i = 0; i < length; ++i)
-    {
-        s1 = (s1 + toupper(buffer[i])) % 65521;
-        s2 = (s2 + s1) % 65521;
-    }
-    
-    return (s2 << 16) | s1;
-}
-
 Lisp lisp_null()
 {
     Lisp l;
@@ -380,14 +365,29 @@ static Lisp table_get_string(Lisp l, const char* string, unsigned int hash)
     return lisp_null();
 }
 
+static unsigned int hash_string(const char* c)
+{     
+    // adler 32
+    int s1 = 1;
+    int s2 = 0;
+
+    while (*c)
+    {
+        s1 = (s1 + toupper(*c)) % 65521;
+        s2 = (s2 + s1) % 65521;
+        ++c; 
+    } 
+    return (s2 << 16) | s1;
+}
+
 Lisp lisp_make_symbol(const char* string, LispContextRef ctx)
 {
-    unsigned int string_length = (unsigned int)strlen(string) + 1;
-    unsigned int hash = hash_string(string, string_length);
+    unsigned int hash = hash_string(string);
     Lisp pair = table_get_string(ctx->symbol_table, string, hash);
     
     if (lisp_is_null(pair))
     {
+        size_t string_length = strlen(string) + 1;
         // allocate a new block
         LispBlock* block = gc_alloc(sizeof(Symbol) + string_length, LISP_SYMBOL, ctx);
         
@@ -956,39 +956,44 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
 		}
         else if (op && strcmp(op, "DEFINE") == 0)
         {
-            Lisp def = lisp_at_index(l, 1);
+            if (lisp_length(l) < 3) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
+
+            Lisp rest = lisp_cdr(l);        
+            Lisp sig = lisp_car(rest);
  
-            if (def.type == LISP_PAIR)
+            switch (lisp_type(sig))
             {
-                // (define (<name> <arg0> ... <argn>) <body0> ... <bodyN>)
-                // -> (define <name> (lambda (<arg0> ... <argn>) <body> ... <bodyN>))
-                Lisp name = lisp_at_index(def, 0);
-                if (lisp_type(name) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
+                case LISP_PAIR:
+                {
+                    // (define (<name> <arg0> ... <argn>) <body0> ... <bodyN>)
+                    // -> (define <name> (lambda (<arg0> ... <argn>) <body> ... <bodyN>))
+                    Lisp name = lisp_at_index(sig, 0);
+                    if (lisp_type(name) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
 
-                Lisp body = lisp_cdr(lisp_cdr(l));
-  
-                Lisp lambda = lisp_make_list(ctx,
-                                             lisp_make_symbol("LAMBDA", ctx),
-                                             lisp_cdr(def), // args
-                                             lisp_null()); 
+                    Lisp body = lisp_cdr(lisp_cdr(l));
 
-                lisp_set_cdr(lisp_cdr(lambda), body);
+                    Lisp lambda = lisp_make_list(ctx,
+                            lisp_make_symbol("LAMBDA", ctx),
+                            lisp_cdr(sig), // args
+                            lisp_null()); 
 
-                lisp_set_cdr(l, lisp_make_list(ctx,
-                                              name,
-                                              expand_r(lambda, error_jmp, ctx),
-                                              body,
-                                              lisp_null()));
-                return l;
-            }
-            else if (def.type == LISP_SYMBOL)
-            {
-                lisp_set_cdr(lisp_cdr(l), expand_r(lisp_cdr(lisp_cdr(l)), error_jmp, ctx));
-                return l;
-            }
-            else
-            {
-                longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
+                    lisp_set_cdr(lisp_cdr(lambda), body);
+
+                    lisp_set_cdr(l, lisp_make_list(ctx,
+                                name,
+                                expand_r(lambda, error_jmp, ctx),
+                                body,
+                                lisp_null()));
+                    return l;
+                }
+                case LISP_SYMBOL:
+                {
+                    lisp_set_cdr(rest, expand_r(lisp_cdr(rest), error_jmp, ctx));
+                    return l;
+                }
+                default:
+                    longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
+                    break;
             }
         }
         else if (op && strcmp(op, "SET!") == 0)
@@ -1030,7 +1035,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
             Lisp cond_expr = lisp_null();
 
             if ((lisp_type(cond_pred) == LISP_SYMBOL) &&
-                 lisp_eq(lisp_make_symbol("ELSE", ctx), cond_pred))
+                    strcmp(lisp_symbol(cond_pred), "ELSE") == 0)
             {
                 cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), error_jmp, ctx);
                 outer = cond_expr;
@@ -1223,7 +1228,6 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
         else
         {
             Lisp it = l;
-
             while (!lisp_is_null(it))
             {
                 lisp_set_car(it, expand_r(lisp_car(it), error_jmp, ctx));
@@ -1261,10 +1265,7 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx)
 {
     FILE* file = fopen(path, "r");
 
-    if (!file)
-    {
-        return lisp_null();
-    }
+    if (!file) return lisp_null();
 
     Lisp l = lisp_read_file(file, out_error, ctx);
     fclose(file);
@@ -1525,10 +1526,6 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     {
                         x = alt; // while will eval
                     }
-                }
-                else if (op_name && strcmp(op_name, "COND") == 0) // conditionals
-                {
-
                 }
                 else if (op_name && strcmp(op_name, "BEGIN") == 0)
                 {
@@ -1975,10 +1972,7 @@ static Lisp func_equals(Lisp args, LispContextRef ctx)
     return lisp_make_int(1);
 }
 
-static Lisp func_list(Lisp args, LispContextRef ctx)
-{
-    return args;
-}
+static Lisp func_list(Lisp args, LispContextRef ctx) { return args; }
 
 static Lisp func_append(Lisp args, LispContextRef ctx)
 {
