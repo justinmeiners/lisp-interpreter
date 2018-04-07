@@ -22,6 +22,7 @@ typedef enum
 typedef enum
 {
     LISP_ERROR_NONE = 0,
+    LISP_ERROR_FILE_OPEN,
     LISP_ERROR_PAREN_UNEXPECTED,
     LISP_ERROR_PAREN_EXPECTED,
 
@@ -36,7 +37,8 @@ typedef enum
     LISP_ERROR_BAD_LAMBDA,
 
     LISP_ERROR_UNKNOWN_VAR,
-
+    LISP_ERROR_BAD_OP,
+    LISP_ERROR_UNKNOWN_EVAL,
 } LispError;
 
 typedef struct
@@ -87,14 +89,14 @@ const char* lisp_symbol(Lisp l);
 #define lisp_set_car(l, x) (lisp_car((l)) = (x))
 #define lisp_set_cdr(l, x) (lisp_cdr((l)) = (x))
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
-Lisp lisp_append(Lisp l, Lisp tail, LispContextRef ctx);
+Lisp lisp_append(Lisp l, Lisp tail, LispContextRef ctx); // O(n)
 Lisp lisp_at_index(Lisp l, int n); // O(n)
 // more concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
 Lisp lisp_nav(Lisp l, const char* path);
 int lisp_length(Lisp l); // O(n)
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_make_list(LispContextRef ctx, Lisp first, ...);
-Lisp lisp_reverse_inplace(Lisp l);
+Lisp lisp_reverse_inplace(Lisp l); // O(n)
 
 // given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN)) 
 // returns the pair with the given key or null of none
@@ -125,7 +127,7 @@ void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
 // reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
 // This is primarily for using Lisp as JSON/XML
 // For code call expand after reading
-Lisp lisp_read(const char* program, LispError* out_error, LispContextRef ctx);
+Lisp lisp_read(const char* text, LispError* out_error, LispContextRef ctx);
 Lisp lisp_read_file(FILE* file, LispError* out_error, LispContextRef ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx);
 
@@ -133,7 +135,8 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx);
 Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContextRef ctx);
 
 // evaluate a lisp expression
-Lisp lisp_eval(Lisp expr, Lisp env, LispContextRef ctx);
+Lisp lisp_eval(Lisp expr, Lisp env, LispError* out_error, LispContextRef ctx);
+
 // print out a lisp structure
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);

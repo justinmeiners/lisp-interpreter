@@ -191,7 +191,7 @@ Lisp lisp_at_index(Lisp l, int i)
 {
     while (i > 0)
     {
-        assert(l.type == LISP_PAIR);
+        if (l.type != LISP_PAIR) return lisp_null();
         l = lisp_cdr(l);
         --i;
     }
@@ -845,9 +845,7 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContextRef ctx)
             break;
         }
         default: 
-        {
             longjmp(error_jmp, LISP_ERROR_BAD_TOKEN);
-        }
     }
     
     lexer_next_token(lex);
@@ -860,9 +858,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
     switch (lex->token)
     {
         case TOKEN_NONE:
-        {
             longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
-        }
         case TOKEN_L_PAREN:
         {
             Lisp front = lisp_null();
@@ -880,9 +876,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
             return front;
         }
         case TOKEN_R_PAREN:
-        {
             longjmp(error_jmp, LISP_ERROR_PAREN_UNEXPECTED);
-        }
         case TOKEN_QUOTE:
         {
              // '
@@ -936,13 +930,13 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
     // 1. expand extended syntax into primitive syntax
     // 2. perform optimizations
     // 3. check syntax    
-    if (l.type == LISP_SYMBOL &&
-        lisp_eq(l, lisp_make_symbol("QUOTE", ctx)))
+    if (lisp_type(l) == LISP_SYMBOL &&
+        strcmp(lisp_symbol(l), "QUOTE") == 0)
     {
         // don't expand quotes
         return l;
     }
-    else if (l.type == LISP_PAIR)
+    else if (lisp_type(l) == LISP_PAIR)
     {
         const char* op = NULL;
         if (lisp_type(lisp_car(l)) == LISP_SYMBOL)
@@ -1265,7 +1259,11 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx)
 {
     FILE* file = fopen(path, "r");
 
-    if (!file) return lisp_null();
+    if (!file)
+    {
+        *out_error = LISP_ERROR_FILE_OPEN;
+        return lisp_null();
+    }
 
     Lisp l = lisp_read_file(file, out_error, ctx);
     fclose(file);
@@ -1290,7 +1288,9 @@ Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContextRef ctx)
     }
 }
  
+// TODO?
 static const char* lisp_type_name[] = {
+    "NULL",
     "FLOAT",
     "INT",
     "PAIR",
@@ -1299,7 +1299,6 @@ static const char* lisp_type_name[] = {
     "LAMBDA",
     "PROCEDURE",
     "ENV",
-    "NULL",
 };
 
 Lisp lisp_make_table(unsigned int capacity, LispContextRef ctx)
@@ -1423,7 +1422,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             fprintf(file, "lambda-%i", lisp_lambda(l).identifier);
             break;
         case LISP_FUNC:
-            fprintf(file, "function-%x", (unsigned int)l.val); 
+            fprintf(file, "function-%p", l.val); 
             break;
         case LISP_TABLE:
         {
@@ -1464,7 +1463,6 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
-
 static Lisp make_call_table(LispContextRef ctx)
 {
     if (lisp_is_null(ctx->env_reuse))
@@ -1481,7 +1479,9 @@ static Lisp make_call_table(LispContextRef ctx)
     }
 }
 
-Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
+
+
+static Lisp eval(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
 {
     while (1)
     {
@@ -1502,6 +1502,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                 if (lisp_is_null(pair))
                 {
                     fprintf(stderr, "cannot find variable: %s\n", lisp_symbol(x));
+                    longjmp(error_jmp, LISP_ERROR_UNKNOWN_VAR); 
                     return lisp_null();
                 }
                 return lisp_cdr(pair);
@@ -1518,7 +1519,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     Lisp conseq = lisp_at_index(x, 2);
                     Lisp alt = lisp_at_index(x, 3);
                     
-                    if (lisp_int(lisp_eval(predicate, env, ctx)) != 0)
+                    if (lisp_int(eval(predicate, env, error_jmp, ctx)) != 0)
                     {
                         x = conseq; // while will eval
                     }
@@ -1535,7 +1536,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     // eval all but last
                     while (!lisp_is_null(lisp_cdr(it)))
                     {
-                        lisp_eval(lisp_car(it), env, ctx);
+                        eval(lisp_car(it), env, error_jmp, ctx);
                         it = lisp_cdr(it);
                     }
                     
@@ -1548,7 +1549,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                 else if (op_name && strcmp(op_name, "DEFINE") == 0) // variable definitions
                 {
                     Lisp symbol = lisp_at_index(x, 1);
-                    Lisp value = lisp_eval(lisp_at_index(x, 2), env, ctx);
+                    Lisp value = eval(lisp_at_index(x, 2), env, error_jmp, ctx);
                     lisp_env_define(env, symbol, value, ctx);
                     return lisp_null();
                 }
@@ -1558,7 +1559,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     // like def, but requires existence
                     // and will search up the environment chain
                     Lisp symbol = lisp_at_index(x, 1);
-                    lisp_env_set(env, symbol, lisp_eval(lisp_at_index(x, 2), env, ctx), ctx);
+                    lisp_env_set(env, symbol, eval(lisp_at_index(x, 2), env, error_jmp, ctx), ctx);
                     return lisp_null();
                 }
                 else if (op_name && strcmp(op_name, "LAMBDA") == 0) // lambda defintions (compound procedures)
@@ -1570,7 +1571,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                 }
                 else // operator application
                 {
-                    Lisp operator = lisp_eval(lisp_car(x), env, ctx);
+                    Lisp operator = eval(lisp_car(x), env, error_jmp, ctx);
                     Lisp arg_expr = lisp_cdr(x);
                     
                     Lisp args_front = lisp_null();
@@ -1578,7 +1579,7 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                     
                     while (!lisp_is_null(arg_expr))
                     {
-                        Lisp new_arg = lisp_eval(lisp_car(arg_expr), env, ctx);
+                        Lisp new_arg = eval(lisp_car(arg_expr), env, error_jmp, ctx);
                         back_append(&args_front, &args_back, new_arg, ctx);
                         arg_expr = lisp_cdr(arg_expr);
                     }
@@ -1616,18 +1617,37 @@ Lisp lisp_eval(Lisp x, Lisp env, LispContextRef ctx)
                             return func(args_front, ctx);
                         }
                         default:
+                            
                             fprintf(stderr, "apply error: not an operator %s\n", lisp_type_name[operator.type]);
-                            return lisp_null();
+                            longjmp(error_jmp, LISP_ERROR_BAD_OP);
                     }
                 }
                 break;
             }
             default:
-                fprintf(stderr, "eval got to a weird place: %s\n", lisp_type_name[x.type]);
-                return lisp_null();
+                longjmp(error_jmp, LISP_ERROR_UNKNOWN_EVAL);
         }
     }
 }
+
+Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
+{
+    jmp_buf error_jmp;
+    LispError error = setjmp(error_jmp);
+
+    if (error == LISP_ERROR_NONE)
+    {
+        Lisp result = eval(l, env, error_jmp, ctx);
+        *out_error = error;  
+        return result; 
+    }
+    else
+    {
+        *out_error = error;
+        return lisp_null();
+    }
+}
+
 
 #pragma Garbage Collection
 
@@ -1639,7 +1659,7 @@ enum
 
 static inline Lisp gc_move(Lisp l, Heap* to)
 {
-    switch (l.type)
+    switch (lisp_type(l))
     {
         case LISP_PAIR:
         case LISP_SYMBOL:
@@ -1856,6 +1876,8 @@ const char* lisp_error_string(LispError error)
     {
         case LISP_ERROR_NONE:
             return "none";
+        case LISP_ERROR_FILE_OPEN:
+            return "file error: could not open file";
         case LISP_ERROR_PAREN_UNEXPECTED:
             return "syntax error: unexpected ) paren";
         case LISP_ERROR_PAREN_EXPECTED:
@@ -2261,9 +2283,9 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         func_less,
         func_greater,
         func_less_equal,
-        func_odd,
-        func_even,
         func_greater_equal,
+        func_even,
+        func_odd,
         NULL,
     };
 

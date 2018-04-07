@@ -66,8 +66,13 @@ int main(int argc, const char* argv[])
 
 
         start_time = clock(); 
-        lisp_eval(code, lisp_get_global_env(ctx), ctx);  
+        lisp_eval(code, lisp_get_global_env(ctx), &error, ctx);  
         end_time = clock();
+
+        if (error != LISP_ERROR_NONE)
+        {
+            fprintf(stderr, "%s\n", lisp_error_string(error));
+        }
 
         lisp_collect(lisp_null(), ctx);
 
@@ -99,8 +104,14 @@ int main(int argc, const char* argv[])
                 fprintf(stderr, "%s\n", lisp_error_string(error));
             }
 
-            Lisp l = lisp_eval(code, lisp_get_global_env(ctx), ctx);
+            Lisp l = lisp_eval(code, lisp_get_global_env(ctx), &error, ctx);
             clock_t end_time = clock();
+
+            if (error != LISP_ERROR_NONE)
+            {
+                fprintf(stderr, "%s\n", lisp_error_string(error));
+            }
+
             lisp_print(l);
             printf("\n");
             
