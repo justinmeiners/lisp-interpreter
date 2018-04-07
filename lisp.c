@@ -1064,53 +1064,79 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
         }
         else if (op && strcmp(op, "AND") == 0)
         {
-            // (AND <pred0> <pred1>) -> (IF <pred0> (IF <pred1> t f) f)
-            if (lisp_length(l) != 3) longjmp(error_jmp, LISP_ERROR_BAD_AND);
+            // (AND <pred0> <pred1> ... <predN>) 
+            // -> (IF <pred0> 
+            //      (IF <pred1> ...
+            //          (IF <predN> t f)
+            if (lisp_length(l) < 2) longjmp(error_jmp, LISP_ERROR_BAD_AND);
 
             Lisp if_symbol = lisp_make_symbol("IF", ctx);
-            Lisp pred0 = expand_r(lisp_at_index(l, 1), error_jmp, ctx);
-            Lisp pred1 = expand_r(lisp_at_index(l, 2), error_jmp, ctx);
 
-            Lisp inner = lisp_make_list(ctx, 
-                                        if_symbol,
-                                        pred1,
-                                        lisp_make_int(1), 
-                                        lisp_make_int(0),
-                                        lisp_null());
-
+            Lisp preds = lisp_reverse_inplace(lisp_cdr(l));
+            Lisp p = expand_r(lisp_car(preds), error_jmp, ctx);
+            
             Lisp outer = lisp_make_list(ctx,
                                         if_symbol,
-                                        pred0,
-                                        inner,
+                                        p,
+                                        lisp_make_int(1),
                                         lisp_make_int(0),
                                         lisp_null());
 
-            return outer;
+            preds = lisp_cdr(preds);
+
+            while (!lisp_is_null(preds))
+            {
+                p = expand_r(lisp_car(preds), error_jmp, ctx);
+
+                outer = lisp_make_list(ctx,
+                        if_symbol,
+                        p,
+                        outer,
+                        lisp_make_int(0),
+                        lisp_null());
+
+                preds = lisp_cdr(preds);
+            }
+                      
+           return outer;
         }
         else if (op && strcmp(op, "OR") == 0)
         {
-            // (OR <pred0> <pred1>) -> (IF (<pred0>) t (IF <pred1> t f))
-            if (lisp_length(l) != 3) longjmp(error_jmp, LISP_ERROR_BAD_OR);
+            // (OR <pred0> <pred1> ... <predN>)
+            // -> (IF (<pred0>) t
+            //      (IF <pred1> t ...
+            //          (if <predN> t f))
+            if (lisp_length(l) < 2) longjmp(error_jmp, LISP_ERROR_BAD_OR);
 
             Lisp if_symbol = lisp_make_symbol("IF", ctx);
-            Lisp pred0 = expand_r(lisp_at_index(l, 1), error_jmp, ctx);
-            Lisp pred1 = expand_r(lisp_at_index(l, 2), error_jmp, ctx);
-            
-            Lisp inner = lisp_make_list(ctx,
-                                        if_symbol,
-                                        pred1,
-                                        lisp_make_int(1),
-                                        lisp_make_int(0),
-                                        lisp_null());
+
+            Lisp preds = lisp_reverse_inplace(lisp_cdr(l));
+            Lisp p = expand_r(lisp_car(preds), error_jmp, ctx);
             
             Lisp outer = lisp_make_list(ctx,
                                         if_symbol,
-                                        pred0,
+                                        p,
                                         lisp_make_int(1),
-                                        inner,
+                                        lisp_make_int(0),
                                         lisp_null());
-            
-            return outer;
+
+            preds = lisp_cdr(preds);
+
+            while (!lisp_is_null(preds))
+            {
+                p = expand_r(lisp_car(preds), error_jmp, ctx);
+
+                outer = lisp_make_list(ctx,
+                        if_symbol,
+                        p,
+                        lisp_make_int(1),
+                        outer,
+                        lisp_null());
+
+                preds = lisp_cdr(preds);
+            }
+                      
+           return outer;
 
         }
         else if (op && strcmp(op, "LET") == 0)

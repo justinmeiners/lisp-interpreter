@@ -16,7 +16,7 @@ typedef enum
     LISP_STRING, // quoted strings
     LISP_LAMBDA, // user defined lambda
     LISP_FUNC,   // C function
-    LISP_TABLE,    // evaluation environment
+    LISP_TABLE,  // key/value storage
 } LispType;
 
 typedef enum
