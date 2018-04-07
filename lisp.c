@@ -281,6 +281,21 @@ Lisp lisp_make_list(LispContextRef ctx, Lisp first, ...)
     return front;
 }
 
+Lisp lisp_reverse_inplace(Lisp l)
+{
+    Lisp p = lisp_null();
+
+    while (lisp_type(l) == LISP_PAIR)
+    {
+        Lisp next = lisp_cdr(l);
+        lisp_cdr(l) = p;
+        p = l;
+        l = next;        
+    }
+
+    return p;
+}
+
 Lisp lisp_assoc(Lisp l, Lisp key_symbol)
 {
     while (!lisp_is_null(l))
@@ -788,14 +803,7 @@ static void lexer_next_token(Lexer* lex)
 
 #define SCRATCH_MAX 1024
 
-enum
-{
-    PARSE_ERROR_EXPECTED_L_PAREN,
-    PARSE_ERROR_EXPECTED_R_PAREN,
-
-};
-
-static Lisp parse_atom(Lexer* lex, LispContextRef ctx)
+static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContextRef ctx)
 { 
     char scratch[SCRATCH_MAX];
     int length = lex->scan_length;
@@ -835,10 +843,10 @@ static Lisp parse_atom(Lexer* lex, LispContextRef ctx)
             scratch[length] = '\0';
             l = lisp_make_symbol(scratch, ctx);
             break;
-       }
+        }
         default: 
         {
-            fprintf(stderr, "read error - unknown l: %s\n", lex->sc);
+            longjmp(error_jmp, LISP_ERROR_BAD_TOKEN);
         }
     }
     
@@ -853,7 +861,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
     {
         case TOKEN_NONE:
         {
-            longjmp(error_jmp, PARSE_ERROR_EXPECTED_R_PAREN);
+            longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
         }
         case TOKEN_L_PAREN:
         {
@@ -873,7 +881,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
         }
         case TOKEN_R_PAREN:
         {
-            longjmp(error_jmp, PARSE_ERROR_EXPECTED_R_PAREN);
+            longjmp(error_jmp, LISP_ERROR_PAREN_UNEXPECTED);
         }
         case TOKEN_QUOTE:
         {
@@ -884,15 +892,17 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
         }
         default:
         {
-            return parse_atom(lex, ctx);
+            return parse_atom(lex, error_jmp, ctx);
         } 
     }
 }
 
-static Lisp parse(Lexer* lex, LispContextRef ctx)
+static Lisp parse(Lexer* lex, LispError* out_error, LispContextRef ctx)
 {
     jmp_buf error_jmp;
-    if (setjmp(error_jmp) == 0)
+    LispError error = setjmp(error_jmp);
+
+    if (error == LISP_ERROR_NONE)
     {
         lexer_next_token(lex);
         Lisp result = parse_list_r(lex, error_jmp, ctx);
@@ -911,33 +921,17 @@ static Lisp parse(Lexer* lex, LispContextRef ctx)
            result = front;
         }
 
+        if (out_error) *out_error = error;
         return result;
     }
     else
     {
-        fprintf(stderr, "parse error - expected: )\n");
-    }
- 
-    return lisp_null();
+        if (out_error) *out_error = error;
+        return lisp_null();
+    } 
 }
 
-static Lisp reverse_inplace(Lisp l)
-{
-    Lisp p = lisp_null();
-
-    while (lisp_type(l) == LISP_PAIR)
-    {
-        Lisp next = lisp_cdr(l);
-        lisp_cdr(l) = p;
-        p = l;
-        l = next;        
-    }
-
-    return p;
-}
-
-
-static Lisp expand_r(Lisp l, LispContextRef ctx)
+static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
 {
     // 1. expand extended syntax into primitive syntax
     // 2. perform optimizations
@@ -956,18 +950,21 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
 
 		if (op && strcmp(op, "QUOTE") == 0)
 		{
+            if (lisp_length(l) != 2) longjmp(error_jmp, LISP_ERROR_BAD_QUOTE);
 			// don't expand quotes
 			return l;
 		}
         else if (op && strcmp(op, "DEFINE") == 0)
         {
             Lisp def = lisp_at_index(l, 1);
-            
+ 
             if (def.type == LISP_PAIR)
             {
                 // (define (<name> <arg0> ... <argn>) <body0> ... <bodyN>)
                 // -> (define <name> (lambda (<arg0> ... <argn>) <body> ... <bodyN>))
                 Lisp name = lisp_at_index(def, 0);
+                if (lisp_type(name) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
+
                 Lisp body = lisp_cdr(lisp_cdr(l));
   
                 Lisp lambda = lisp_make_list(ctx,
@@ -979,17 +976,34 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
 
                 lisp_set_cdr(l, lisp_make_list(ctx,
                                               name,
-                                              expand_r(lambda, ctx),
+                                              expand_r(lambda, error_jmp, ctx),
                                               body,
                                               lisp_null()));
                 return l;
             }
-            else
+            else if (def.type == LISP_SYMBOL)
             {
-                assert(def.type == LISP_SYMBOL);
-                lisp_set_cdr(lisp_cdr(l), expand_r(lisp_cdr(lisp_cdr(l)), ctx));
+                lisp_set_cdr(lisp_cdr(l), expand_r(lisp_cdr(lisp_cdr(l)), error_jmp, ctx));
                 return l;
             }
+            else
+            {
+                longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
+            }
+        }
+        else if (op && strcmp(op, "SET!") == 0)
+        {
+            if (lisp_length(l) != 3) longjmp(error_jmp, LISP_ERROR_BAD_SET);
+
+            Lisp var = lisp_at_index(l, 1);
+            if (lisp_type(var) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_SET);
+            Lisp expr = expand_r(lisp_at_index(l, 2), error_jmp, ctx);
+
+            return lisp_make_list(ctx,
+                    lisp_at_index(l, 0), // SET!
+                    var,
+                    expr,
+                    lisp_null());
         }
         else if (op && strcmp(op, "COND") == 0)
         {
@@ -1003,17 +1017,22 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
             //          ....
             //      (if <predN> <exprN> <expr-1>)) ... )
 
-            Lisp conds = reverse_inplace(lisp_cdr(l));
+            Lisp conds = lisp_reverse_inplace(lisp_cdr(l));
             Lisp outer = lisp_null();
 
             Lisp cond_pair = lisp_car(conds);
+
+            // error checks
+            if (lisp_type(cond_pair) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_COND);
+            if (lisp_length(cond_pair) != 2) longjmp(error_jmp, LISP_ERROR_BAD_COND);
+
             Lisp cond_pred = lisp_car(cond_pair);
             Lisp cond_expr = lisp_null();
 
             if ((lisp_type(cond_pred) == LISP_SYMBOL) &&
                  lisp_eq(lisp_make_symbol("ELSE", ctx), cond_pred))
             {
-                cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), ctx);
+                cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), error_jmp, ctx);
                 outer = cond_expr;
                 conds = lisp_cdr(conds);
             }
@@ -1023,8 +1042,13 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
             while (!lisp_is_null(conds))
             {
                 cond_pair = lisp_car(conds);
-                cond_pred = expand_r(lisp_car(cond_pair), ctx);
-                cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), ctx);
+
+                // error checks
+                if (lisp_type(cond_pair) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_COND);
+                if (lisp_length(cond_pair) != 2) longjmp(error_jmp, LISP_ERROR_BAD_COND);
+
+                cond_pred = expand_r(lisp_car(cond_pair), error_jmp, ctx);
+                cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), error_jmp, ctx);
 
                 outer = lisp_make_list(ctx,
                                        if_symbol,
@@ -1041,9 +1065,11 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         else if (op && strcmp(op, "AND") == 0)
         {
             // (AND <pred0> <pred1>) -> (IF <pred0> (IF <pred1> t f) f)
+            if (lisp_length(l) != 3) longjmp(error_jmp, LISP_ERROR_BAD_AND);
+
             Lisp if_symbol = lisp_make_symbol("IF", ctx);
-            Lisp pred0 = expand_r(lisp_at_index(l, 1), ctx);
-            Lisp pred1 = expand_r(lisp_at_index(l, 2), ctx);
+            Lisp pred0 = expand_r(lisp_at_index(l, 1), error_jmp, ctx);
+            Lisp pred1 = expand_r(lisp_at_index(l, 2), error_jmp, ctx);
 
             Lisp inner = lisp_make_list(ctx, 
                                         if_symbol,
@@ -1064,9 +1090,11 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
         else if (op && strcmp(op, "OR") == 0)
         {
             // (OR <pred0> <pred1>) -> (IF (<pred0>) t (IF <pred1> t f))
+            if (lisp_length(l) != 3) longjmp(error_jmp, LISP_ERROR_BAD_OR);
+
             Lisp if_symbol = lisp_make_symbol("IF", ctx);
-            Lisp pred0 = expand_r(lisp_at_index(l, 1), ctx);
-            Lisp pred1 = expand_r(lisp_at_index(l, 2), ctx);
+            Lisp pred0 = expand_r(lisp_at_index(l, 1), error_jmp, ctx);
+            Lisp pred1 = expand_r(lisp_at_index(l, 2), error_jmp, ctx);
             
             Lisp inner = lisp_make_list(ctx,
                                         if_symbol,
@@ -1090,6 +1118,8 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
             // (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
             //  -> ((LAMBDA (<var0> ... <varN>) <body0> ... <bodyN>) <expr0> ... <expr1>)            
             Lisp pairs = lisp_at_index(l, 1);
+            if (lisp_type(pairs) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_LET);
+
             Lisp body = lisp_cdr(lisp_cdr(l));
 
             Lisp vars_front = lisp_null();
@@ -1100,11 +1130,14 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
             
             while (!lisp_is_null(pairs))
             {
+                if (lisp_type(lisp_car(pairs)) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_LET);
+
                 Lisp var = lisp_at_index(lisp_car(pairs), 0);
-                assert(var.type == LISP_SYMBOL);
+
+                if (lisp_type(var) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_LET);
                 back_append(&vars_front, &vars_back, var, ctx);
 
-                Lisp val = expand_r(lisp_at_index(lisp_car(pairs), 1), ctx);
+                Lisp val = expand_r(lisp_at_index(lisp_car(pairs), 1), error_jmp, ctx);
                 back_append(&exprs_front, &exprs_back, val, ctx);
                 pairs = lisp_cdr(pairs);
             }
@@ -1116,27 +1149,32 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
 
             lisp_set_cdr(lisp_cdr(lambda), body);
 
-            return lisp_cons(expand_r(lambda, ctx), exprs_front, ctx);
+            return lisp_cons(expand_r(lambda, error_jmp, ctx), exprs_front, ctx);
         }
         else if (op && strcmp(op, "LAMBDA") == 0)
         {
             // (LAMBDA (<var0> ... <varN>) <expr0> ... <exprN>)
             // (LAMBDA (<var0> ... <varN>) (BEGIN <expr0> ... <expr1>)) 
             int length = lisp_length(l);
+
             if (length > 3)
             {
-                Lisp body_exprs = expand_r(lisp_cdr(lisp_cdr(l)), ctx); 
+                Lisp body_exprs = expand_r(lisp_cdr(lisp_cdr(l)), error_jmp, ctx); 
                 Lisp begin = lisp_cons(lisp_make_symbol("BEGIN", ctx), body_exprs, ctx);
+
+                Lisp vars = lisp_at_index(l, 1);
+                if (lisp_type(vars) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
+
                 return lisp_make_list(ctx, 
                                       lisp_at_index(l, 0),  // LAMBDA
-                                      lisp_at_index(l, 1),  // vars
+                                      vars,  // vars
                                       begin,
                                       lisp_null()); 
             }
             else
             {
 				Lisp body = lisp_cdr(lisp_cdr(l));
-                lisp_set_cdr(lisp_cdr(l), expand_r(body, ctx));
+                lisp_set_cdr(lisp_cdr(l), expand_r(body, error_jmp, ctx));
                 return l;
             }
         }
@@ -1151,7 +1189,7 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
                                          lisp_null());
             return lisp_make_list(ctx,
                                   lisp_at_index(l, 0),
-                                  expand_r(statement, ctx),
+                                  expand_r(statement, error_jmp, ctx),
                                   quoted,
                                   lisp_null());
                                   
@@ -1162,7 +1200,7 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
 
             while (!lisp_is_null(it))
             {
-                lisp_set_car(it, expand_r(lisp_car(it), ctx));
+                lisp_set_car(it, expand_r(lisp_car(it), error_jmp, ctx));
                 it = lisp_cdr(it);
             }
 
@@ -1175,25 +1213,25 @@ static Lisp expand_r(Lisp l, LispContextRef ctx)
     }
 }
 
-Lisp lisp_read(const char* program, LispContextRef ctx)
+Lisp lisp_read(const char* program, LispError* out_error, LispContextRef ctx)
 {
     Lexer lex;
     lexer_init(&lex, program);
-    Lisp l = parse(&lex, ctx);
+    Lisp l = parse(&lex, out_error, ctx);
     lexer_shutdown(&lex);
     return l;
 }
 
-Lisp lisp_read_file(FILE* file, LispContextRef ctx)
+Lisp lisp_read_file(FILE* file, LispError* out_error, LispContextRef ctx)
 {
     Lexer lex;
     lexer_init_file(&lex, file);
-    Lisp l = parse(&lex, ctx);
+    Lisp l = parse(&lex, out_error, ctx);
     lexer_shutdown(&lex);
     return l;
 }
 
-Lisp lisp_read_path(const char* path, LispContextRef ctx)
+Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx)
 {
     FILE* file = fopen(path, "r");
 
@@ -1202,14 +1240,27 @@ Lisp lisp_read_path(const char* path, LispContextRef ctx)
         return lisp_null();
     }
 
-    Lisp l = lisp_read_file(file, ctx);
+    Lisp l = lisp_read_file(file, out_error, ctx);
     fclose(file);
     return l;
 }
 
-Lisp lisp_expand(Lisp lisp, LispContextRef ctx)
+Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContextRef ctx)
 {
-    return expand_r(lisp, ctx);
+    jmp_buf error_jmp;
+    LispError error = setjmp(error_jmp);
+
+    if (error == LISP_ERROR_NONE)
+    {
+        Lisp result = expand_r(lisp, error_jmp, ctx);
+        *out_error = error;
+        return result;
+    }
+    else
+    {
+        *out_error = error;
+        return lisp_null();
+    }
 }
  
 static const char* lisp_type_name[] = {
@@ -1776,6 +1827,38 @@ void lisp_shutdown(LispContextRef ctx)
     free(ctx);
 }
 
+const char* lisp_error_string(LispError error)
+{
+    switch (error)
+    {
+        case LISP_ERROR_NONE:
+            return "none";
+        case LISP_ERROR_PAREN_UNEXPECTED:
+            return "syntax error: unexpected ) paren";
+        case LISP_ERROR_PAREN_EXPECTED:
+            return "syntax error: expected ) paren";
+        case LISP_ERROR_BAD_TOKEN:
+            return "syntax error: bad token";
+        case LISP_ERROR_BAD_DEFINE:
+            return "expand error: bad define (define var x)";
+        case LISP_ERROR_BAD_SET:
+            return "expand error: bad set (set! var x)";
+        case LISP_ERROR_BAD_COND:
+            return "expand error: bad cond";
+        case LISP_ERROR_BAD_AND:
+            return "expand error: bad and (and a b)";
+        case LISP_ERROR_BAD_OR:
+            return "expand error: bad or (or a b)";
+        case LISP_ERROR_BAD_LET:
+            return "expand error: bad let";
+        case LISP_ERROR_BAD_LAMBDA:
+            return "expand error: bad lambda";
+        default:
+            return "unknown error code";
+    }
+}
+
+
 #pragma mark Default Interpreter
 
 static Lisp func_cons(Lisp args, LispContextRef ctx)
@@ -1899,7 +1982,7 @@ static Lisp func_length(Lisp args, LispContextRef ctx)
 
 static Lisp func_reverse_inplace(Lisp args, LispContextRef ctx)
 {
-    return reverse_inplace(lisp_car(args));
+    return lisp_reverse_inplace(lisp_car(args));
 }
 
 static Lisp func_assoc(Lisp args, LispContextRef ctx)
@@ -2042,7 +2125,7 @@ static Lisp func_even(Lisp args, LispContextRef ctx)
 {
     while (!lisp_is_null(args))
     {
-        if (lisp_int(lisp_car(args)) & 1) return lisp_make_int(0);
+        if ((lisp_int(lisp_car(args)) & 1) == 1) return lisp_make_int(0);
         args = lisp_cdr(args);
     } 
     return lisp_make_int(1);
@@ -2052,7 +2135,7 @@ static Lisp func_odd(Lisp args, LispContextRef ctx)
 {
     while (!lisp_is_null(args))
     {
-        if (lisp_int(lisp_car(args)) & 1 == 0) return lisp_make_int(0);
+        if ((lisp_int(lisp_car(args)) & 1) == 0) return lisp_make_int(0);
         args = lisp_cdr(args);
     } 
 
@@ -2062,15 +2145,31 @@ static Lisp func_odd(Lisp args, LispContextRef ctx)
 static Lisp func_read_path(Lisp args, LispContextRef ctx)
 {
     const char* path = lisp_string(lisp_car(args));
-    return lisp_read_path(path, ctx); 
+    LispError error;
+    Lisp result = lisp_read_path(path, &error, ctx); 
+
+    if (error != LISP_ERROR_NONE)
+    {
+        fprintf(stderr, "%s\n", lisp_error_string(error));
+    }
+
+    return result;
 }
 
 static Lisp func_expand(Lisp args, LispContextRef ctx)
 {
     Lisp expr = lisp_car(args);
-    return lisp_expand(expr, ctx);
-}
 
+    LispError error;
+    Lisp result = lisp_expand(expr, &error, ctx);
+
+    if (error != LISP_ERROR_NONE)
+    {
+        fprintf(stderr, "%s\n", lisp_error_string(error));
+    }
+
+    return result;
+}
 
 LispContextRef lisp_init_default(unsigned int heap_size)
 {

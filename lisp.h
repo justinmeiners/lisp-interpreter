@@ -1,39 +1,3 @@
-/* EXAMPLE
-
-   SCRIPTING EXAMPLE
-   -------------------------
-   // setup lisp with 1 MB of heap
-   LispContextRef ctx = lisp_init(1048576);    
-   Lisp env = lisp_make_default_env(ctx);
-
-   // load lisp program (add 1 and 2)
-   Lisp program = lisp_expand(lisp_read("(+ 1 2)", ctx), ctx);    
-
-   // execute program
-   Lisp result = lisp_eval(program, env, ctx); 
-
-   lisp_print(result)'
-
-   // you are responsible for garbage collection
-   lisp_collect(ctx, env);     
-   ...
-   // shutdown also garbage collects
-   lisp_shutdown(ctx, enve); 
-
-
-   DATA EXAMPLE
-   -------------------------
-   // setup lisp with 1 MB of heap
-   LispContextRef ctx = lisp_init(1048576); 
-   // load lisp structure
-   Lisp data = lisp_read_file(file, ctx); 
-   // get value for id 
-   Lisp id = lisp_for_key(data, lisp_make_symbol("ID", ctx), ctx)
-   
-   lisp_shutdown(ctx, env);
-*/
-
-
 #ifndef LISP_H
 #define LISP_H
 
@@ -44,6 +8,7 @@
 
 typedef enum
 {
+    LISP_NULL = 0,
     LISP_FLOAT,  // decimal/floating point type
     LISP_INT,    // integer type
     LISP_PAIR,   // cons pair (car, cdr)
@@ -52,8 +17,23 @@ typedef enum
     LISP_LAMBDA, // user defined lambda
     LISP_FUNC,   // C function
     LISP_TABLE,    // evaluation environment
-    LISP_NULL,
 } LispType;
+
+typedef enum
+{
+    LISP_ERROR_NONE = 0,
+    LISP_ERROR_PAREN_UNEXPECTED,
+    LISP_ERROR_PAREN_EXPECTED,
+    LISP_ERROR_BAD_TOKEN,
+    LISP_ERROR_BAD_QUOTE,
+    LISP_ERROR_BAD_DEFINE,
+    LISP_ERROR_BAD_SET,
+    LISP_ERROR_BAD_COND,
+    LISP_ERROR_BAD_AND,
+    LISP_ERROR_BAD_OR,
+    LISP_ERROR_BAD_LET,
+    LISP_ERROR_BAD_LAMBDA,
+} LispError;
 
 typedef struct
 {
@@ -109,7 +89,9 @@ Lisp lisp_at_index(Lisp l, int n); // O(n)
 Lisp lisp_nav(Lisp l, const char* path);
 int lisp_length(Lisp l); // O(n)
 // conveniece function for cons'ing together items. arguments must be null terminated
-Lisp lisp_list(LispContextRef ctx, Lisp first, ...);
+Lisp lisp_make_list(LispContextRef ctx, Lisp first, ...);
+Lisp lisp_reverse_inplace(Lisp l);
+
 // given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN)) 
 // returns the pair with the given key or null of none
 Lisp lisp_assoc(Lisp list, Lisp key_symbol); // O(n)
@@ -139,12 +121,12 @@ void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
 // reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
 // This is primarily for using Lisp as JSON/XML
 // For code call expand after reading
-Lisp lisp_read(const char* program, LispContextRef ctx);
-Lisp lisp_read_file(FILE* file, LispContextRef ctx);
-Lisp lisp_read_path(const char* path, LispContextRef ctx);
+Lisp lisp_read(const char* program, LispError* out_error, LispContextRef ctx);
+Lisp lisp_read_file(FILE* file, LispError* out_error, LispContextRef ctx);
+Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx);
 
 // expands Lisp syntax (For code)
-Lisp lisp_expand(Lisp lisp, LispContextRef ctx);
+Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContextRef ctx);
 
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, Lisp env, LispContextRef ctx);
@@ -161,5 +143,7 @@ Lisp lisp_get_global_env(LispContextRef ctx);
 // this will free all objects which are not reachable from root_to_save
 // usually the root environment should be this parameter
 Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx);
+
+const char* lisp_error_string(LispError error);
 
 #endif

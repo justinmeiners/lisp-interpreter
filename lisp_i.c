@@ -34,7 +34,15 @@ int main(int argc, const char* argv[])
             return 2;
         }
      
-        Lisp l = lisp_read_file(file, ctx);
+        LispError error;
+        Lisp l = lisp_read_file(file, &error, ctx);
+
+        if (error != LISP_ERROR_NONE)
+        {
+            fprintf(stderr, "%s\n", lisp_error_string(error));
+        }
+
+
         fclose(file);
         end_time = clock();
 
@@ -42,7 +50,15 @@ int main(int argc, const char* argv[])
             printf("read (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
         start_time = clock();
-        Lisp code = lisp_expand(l, ctx);
+
+        Lisp code = lisp_expand(l, &error, ctx);
+
+        if (error != LISP_ERROR_NONE)
+        {
+            fprintf(stderr, "%s\n", lisp_error_string(error));
+        }
+
+
         end_time = clock();
 
         if (LISP_DEBUG)
@@ -68,7 +84,21 @@ int main(int argc, const char* argv[])
             fgets(line, LINE_MAX, stdin);
 
             clock_t start_time = clock();
-            Lisp code = lisp_expand(lisp_read(line, ctx), ctx);
+            LispError error;
+            Lisp data = lisp_read(line, &error, ctx);
+
+            if (error != LISP_ERROR_NONE)
+            {
+                fprintf(stderr, "%s\n", lisp_error_string(error));
+            }
+
+            Lisp code = lisp_expand(data, &error, ctx);
+
+            if (error != LISP_ERROR_NONE)
+            {
+                fprintf(stderr, "%s\n", lisp_error_string(error));
+            }
+
             Lisp l = lisp_eval(code, lisp_get_global_env(ctx), ctx);
             clock_t end_time = clock();
             lisp_print(l);
