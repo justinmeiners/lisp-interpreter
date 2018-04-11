@@ -39,6 +39,8 @@ typedef enum
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_UNKNOWN_EVAL,
+
+    LISP_ERROR_BAD_ARG,
 } LispError;
 
 typedef struct
@@ -67,9 +69,38 @@ typedef struct
 } LispBlock;
 
 typedef struct LispContext* LispContextRef;
-typedef Lisp (*LispFunc)(Lisp, LispContextRef);
+typedef Lisp (*LispFunc)(Lisp, LispError*, LispContextRef);
 
-// Primitive types
+// SETUP
+LispContextRef lisp_init_default(unsigned int heap_size);
+void lisp_shutdown(LispContextRef ctx);
+Lisp lisp_global_env(LispContextRef ctx);
+
+// garbage collection. 
+// this will free all objects which are not reachable from root_to_save or the global env
+Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx);
+const char* lisp_error_string(LispError error);
+
+// LOADING
+// reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
+// This is primarily for using Lisp as JSON/XML
+// For code call expand after reading
+Lisp lisp_read(const char* text, LispError* out_error, LispContextRef ctx);
+Lisp lisp_read_file(FILE* file, LispError* out_error, LispContextRef ctx);
+Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx);
+
+// expands Lisp syntax (For code)
+Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContextRef ctx);
+
+// EVALUATION
+// evaluate a lisp expression
+Lisp lisp_eval(Lisp expr, Lisp env, LispError* out_error, LispContextRef ctx);
+
+// print out a lisp structure
+void lisp_print(Lisp l);
+void lisp_printf(FILE* file, Lisp l);
+
+// DATA STRUCTURES
 #define lisp_type(l) ((l).type)
 #define lisp_is_null(l) ((l).type == LISP_NULL)
 #define lisp_eq(a, b) ((a).val == (b).val)
@@ -83,7 +114,6 @@ const char* lisp_string(Lisp l);
 Lisp lisp_make_symbol(const char* symbol, LispContextRef ctx);
 const char* lisp_symbol(Lisp l);
 
-// Lists
 #define lisp_car(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[0] )
 #define lisp_cdr(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[1] )
 #define lisp_set_car(l, x) (lisp_car((l)) = (x))
@@ -96,7 +126,6 @@ Lisp lisp_nav(Lisp l, const char* path);
 int lisp_length(Lisp l); // O(n)
 
 Lisp lisp_make_list(Lisp x, int n, LispContextRef ctx);
-
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_make_listv(LispContextRef ctx, Lisp first, ...);
 Lisp lisp_reverse_inplace(Lisp l); // O(n)
@@ -125,35 +154,5 @@ Lisp lisp_env_extend(Lisp env, Lisp table, LispContextRef ctx);
 Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContextRef ctx);
 void lisp_env_define(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
 void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx);
-
-// Maxwell's equations of Software. REP
-// reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
-// This is primarily for using Lisp as JSON/XML
-// For code call expand after reading
-Lisp lisp_read(const char* text, LispError* out_error, LispContextRef ctx);
-Lisp lisp_read_file(FILE* file, LispError* out_error, LispContextRef ctx);
-Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx);
-
-// expands Lisp syntax (For code)
-Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContextRef ctx);
-
-// evaluate a lisp expression
-Lisp lisp_eval(Lisp expr, Lisp env, LispError* out_error, LispContextRef ctx);
-
-// print out a lisp structure
-void lisp_print(Lisp l);
-void lisp_printf(FILE* file, Lisp l);
-
-// memory managment and garbage collection
-LispContextRef lisp_init_default(unsigned int heap_size);
-void lisp_shutdown(LispContextRef ctx);
-Lisp lisp_global_env(LispContextRef ctx);
-
-// garbage collection. free up memory from unused objects. 
-// this will free all objects which are not reachable from root_to_save
-// usually the root environment should be this parameter
-Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx);
-
-const char* lisp_error_string(LispError error);
 
 #endif
