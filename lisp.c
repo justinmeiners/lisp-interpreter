@@ -1898,6 +1898,12 @@ const char* lisp_error_string(LispError error)
             return "expand error: bad let";
         case LISP_ERROR_BAD_LAMBDA:
             return "expand error: bad lambda";
+        case LISP_ERROR_UNKNOWN_VAR:
+            return "eval error: unknown variable";
+        case LISP_ERROR_BAD_OP:
+            return "eval error: application was not an operator";
+        case LISP_ERROR_UNKNOWN_EVAL:
+            return "eval error: got into a bad state";
         default:
             return "unknown error code";
     }
