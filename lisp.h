@@ -94,8 +94,11 @@ Lisp lisp_at_index(Lisp l, int n); // O(n)
 // more concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
 Lisp lisp_nav(Lisp l, const char* path);
 int lisp_length(Lisp l); // O(n)
+
+Lisp lisp_make_list(Lisp x, int n, LispContextRef ctx);
+
 // conveniece function for cons'ing together items. arguments must be null terminated
-Lisp lisp_make_list(LispContextRef ctx, Lisp first, ...);
+Lisp lisp_make_listv(LispContextRef ctx, Lisp first, ...);
 Lisp lisp_reverse_inplace(Lisp l); // O(n)
 
 // given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN)) 
@@ -144,7 +147,7 @@ void lisp_printf(FILE* file, Lisp l);
 // memory managment and garbage collection
 LispContextRef lisp_init_default(unsigned int heap_size);
 void lisp_shutdown(LispContextRef ctx);
-Lisp lisp_get_global_env(LispContextRef ctx);
+Lisp lisp_global_env(LispContextRef ctx);
 
 // garbage collection. free up memory from unused objects. 
 // this will free all objects which are not reachable from root_to_save

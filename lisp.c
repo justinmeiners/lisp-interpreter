@@ -245,7 +245,18 @@ int lisp_length(Lisp l)
     return count;
 }
 
-Lisp lisp_make_list(LispContextRef ctx, Lisp first, ...)
+Lisp lisp_make_list(Lisp x, int n, LispContextRef ctx)
+{
+    Lisp front = lisp_null();
+    Lisp back = front;
+
+    for (int i = 0; i < n; ++i)
+        back_append(&front, &back, x, ctx);
+
+    return front;
+}
+
+Lisp lisp_make_listv(LispContextRef ctx, Lisp first, ...)
 {
     Lisp front = lisp_cons(first, lisp_null(), ctx);
     Lisp back = front;
@@ -966,14 +977,14 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
 
                     Lisp body = lisp_cdr(lisp_cdr(l));
 
-                    Lisp lambda = lisp_make_list(ctx,
+                    Lisp lambda = lisp_make_listv(ctx,
                             lisp_make_symbol("LAMBDA", ctx),
                             lisp_cdr(sig), // args
                             lisp_null()); 
 
                     lisp_set_cdr(lisp_cdr(lambda), body);
 
-                    lisp_set_cdr(l, lisp_make_list(ctx,
+                    lisp_set_cdr(l, lisp_make_listv(ctx,
                                 name,
                                 expand_r(lambda, error_jmp, ctx),
                                 body,
@@ -998,7 +1009,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
             if (lisp_type(var) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_SET);
             Lisp expr = expand_r(lisp_at_index(l, 2), error_jmp, ctx);
 
-            return lisp_make_list(ctx,
+            return lisp_make_listv(ctx,
                     lisp_at_index(l, 0), // SET!
                     var,
                     expr,
@@ -1049,7 +1060,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
                 cond_pred = expand_r(lisp_car(cond_pair), error_jmp, ctx);
                 cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), error_jmp, ctx);
 
-                outer = lisp_make_list(ctx,
+                outer = lisp_make_listv(ctx,
                                        if_symbol,
                                        cond_pred,
                                        cond_expr,
@@ -1074,7 +1085,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
             Lisp preds = lisp_reverse_inplace(lisp_cdr(l));
             Lisp p = expand_r(lisp_car(preds), error_jmp, ctx);
             
-            Lisp outer = lisp_make_list(ctx,
+            Lisp outer = lisp_make_listv(ctx,
                                         if_symbol,
                                         p,
                                         lisp_make_int(1),
@@ -1087,7 +1098,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
             {
                 p = expand_r(lisp_car(preds), error_jmp, ctx);
 
-                outer = lisp_make_list(ctx,
+                outer = lisp_make_listv(ctx,
                         if_symbol,
                         p,
                         outer,
@@ -1112,7 +1123,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
             Lisp preds = lisp_reverse_inplace(lisp_cdr(l));
             Lisp p = expand_r(lisp_car(preds), error_jmp, ctx);
             
-            Lisp outer = lisp_make_list(ctx,
+            Lisp outer = lisp_make_listv(ctx,
                                         if_symbol,
                                         p,
                                         lisp_make_int(1),
@@ -1125,7 +1136,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
             {
                 p = expand_r(lisp_car(preds), error_jmp, ctx);
 
-                outer = lisp_make_list(ctx,
+                outer = lisp_make_listv(ctx,
                         if_symbol,
                         p,
                         lisp_make_int(1),
@@ -1167,7 +1178,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
                 pairs = lisp_cdr(pairs);
             }
             
-            Lisp lambda = lisp_make_list(ctx, 
+            Lisp lambda = lisp_make_listv(ctx, 
                                         lisp_make_symbol("LAMBDA", ctx), 
                                         vars_front, 
                                         lisp_null());
@@ -1190,7 +1201,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
                 Lisp vars = lisp_at_index(l, 1);
                 if (lisp_type(vars) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
 
-                return lisp_make_list(ctx, 
+                return lisp_make_listv(ctx, 
                                       lisp_at_index(l, 0),  // LAMBDA
                                       vars,  // vars
                                       begin,
@@ -1208,11 +1219,11 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
             Lisp statement = lisp_car(lisp_cdr(l));
             // here we save a quoted version of the code so we can see
             // what happened to trigger the assertion
-            Lisp quoted = lisp_make_list(ctx,
+            Lisp quoted = lisp_make_listv(ctx,
                                          lisp_make_symbol("QUOTE", ctx),
                                          statement,
                                          lisp_null());
-            return lisp_make_list(ctx,
+            return lisp_make_listv(ctx,
                                   lisp_at_index(l, 0),
                                   expand_r(statement, error_jmp, ctx),
                                   quoted,
@@ -1479,8 +1490,6 @@ static Lisp make_call_table(LispContextRef ctx)
     }
 }
 
-
-
 static Lisp eval(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
 {
     while (1)
@@ -1638,12 +1647,15 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
     if (error == LISP_ERROR_NONE)
     {
         Lisp result = eval(l, env, error_jmp, ctx);
-        *out_error = error;  
+
+        if (out_error)
+            *out_error = error;  
         return result; 
     }
     else
     {
-        *out_error = error;
+        if (out_error)
+            *out_error = error;
         return lisp_null();
     }
 }
@@ -1859,7 +1871,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
     return result;
 }
 
-Lisp lisp_get_global_env(LispContextRef ctx)
+Lisp lisp_global_env(LispContextRef ctx)
 {
     return ctx->global_env;
 }
@@ -2014,6 +2026,53 @@ static Lisp func_append(Lisp args, LispContextRef ctx)
     }
 
     return l;
+}
+
+static Lisp func_map(Lisp args, LispContextRef ctx)
+{
+    Lisp op = lisp_car(args);
+    assert(lisp_type(op) == LISP_FUNC || lisp_type(op) == LISP_LAMBDA);
+
+    // multiple lists can be passed in
+    Lisp lists = lisp_cdr(args);      
+    int n = lisp_length(lists);
+    if (n == 0) return lisp_null();
+
+
+    Lisp result_lists = lisp_make_list(lisp_null(), n, ctx);
+    Lisp result_it = result_lists;
+
+    while (!lisp_is_null(lists))
+    {        
+        // advance all the lists
+        Lisp it = lisp_car(lists);
+
+        Lisp front = lisp_null();
+        Lisp back = front;
+
+        while (!lisp_is_null(it))
+        { 
+            Lisp expr = lisp_cons(op, lisp_cons(lisp_car(it), lisp_null(), ctx), ctx);
+            Lisp result = lisp_eval(expr, lisp_global_env(ctx), NULL, ctx);
+
+            back_append(&front, &back, result, ctx);
+
+            it = lisp_cdr(it);
+        } 
+
+        lisp_set_car(result_it, front);
+        lists = lisp_cdr(lists);
+        result_it = lisp_cdr(result_it);
+    }
+
+    if (n == 1)
+    {
+        return lisp_car(result_lists);
+    }
+    else
+    {
+        return result_lists;
+    }
 }
 
 static Lisp func_nth(Lisp args, LispContextRef ctx)
@@ -2240,6 +2299,7 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         "NULL?",
         "LIST",
         "APPEND",
+        "MAP",
         "NTH",
         "LENGTH",
         "REVERSE!",
@@ -2272,6 +2332,7 @@ LispContextRef lisp_init_default(unsigned int heap_size)
         func_is_null,
         func_list,
         func_append,
+        func_map,
         func_nth,
         func_length,
         func_reverse_inplace,
