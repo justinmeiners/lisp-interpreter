@@ -25,10 +25,20 @@
 
 typedef struct
 {
-    char* buffer;
     unsigned int size;
     unsigned int capacity;
+    char* buffer;
 } Heap;
+
+typedef struct
+{
+    unsigned int pop_size[48];
+    unsigned int depth;
+
+    unsigned int size;
+    unsigned int capacity;
+    LispBlock** entries;
+} Stack;
 
 typedef struct
 {
@@ -48,9 +58,10 @@ typedef struct
 struct LispContext
 {
     Heap heap;
+    Stack stack;
+
     Lisp symbol_table;
     Lisp global_env;
-    Lisp env_reuse;
     int lambda_counter;
 };
 
@@ -78,21 +89,59 @@ static LispBlock* heap_alloc(unsigned int data_size, LispType type, Heap* heap)
     return block;
 }
 
+static void stack_init(Stack* s, unsigned int capacity)
+{
+    s->depth = 0;
+
+    s->capacity = capacity;
+    s->size = 0;
+    s->entries = malloc(capacity * sizeof(LispBlock*));    
+}
+
+static void stack_shutdown(Stack* s) { free(s->entries); }
+
+static void stack_push(Stack* s)
+{
+    s->pop_size[s->depth] = s->size;
+    ++s->depth;
+}
+
+static void stack_pop(Stack* s)
+{
+    assert(s->depth > 0);
+    --s->depth;
+    s->size = s->pop_size[s->depth];
+}
+
+static void stack_add(Stack* s, LispBlock* block)
+{
+    if (s->size + 1 >= s->capacity)
+    {
+        s->capacity = (s->capacity * 3) / 2;
+        s->entries = realloc(s->entries, s->capacity * sizeof(LispBlock*));
+    }
+    
+    s->entries[s->size] = block;
+    ++s->size;
+}
+
 static LispBlock* gc_alloc(unsigned int data_size, LispType type, LispContextRef ctx)
 {
     LispBlock* block = heap_alloc(data_size, type, &ctx->heap);
 
     if (!block)
     {
+        fprintf(stderr, "garbage collecting\n");
+        lisp_collect(lisp_null(), ctx);
         block = heap_alloc(data_size, type, &ctx->heap);
 
         if (!block)
         {
-            fprintf(stderr, "heap is full\n");
             return NULL;
         }
     }
 
+    stack_add(&ctx->stack, block);
     return block;
 }
 
@@ -1469,22 +1518,6 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
-static Lisp make_call_table(LispContextRef ctx)
-{
-    if (lisp_is_null(ctx->env_reuse))
-    {
-        return lisp_make_table(13, ctx);                       
-    }
-    else
-    {
-        // we can reuse any table which is not in the current env
-        // or is captured 
-        Lisp result = lisp_car(ctx->env_reuse);
-        ctx->env_reuse = lisp_cdr(ctx->env_reuse);
-        return result;
-    }
-}
-
 static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
 {
     while (1)
@@ -1522,6 +1555,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                     Lisp predicate = lisp_at_index(x, 1);
                     Lisp conseq = lisp_at_index(x, 2);
                     Lisp alt = lisp_at_index(x, 3);
+
                     
                     if (lisp_int(eval_r(predicate, env, error_jmp, ctx)) != 0)
                     {
@@ -1531,6 +1565,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                     {
                         x = alt; // while will eval
                     }
+                    
                 }
                 else if (op_name && strcmp(op_name, "BEGIN") == 0)
                 {
@@ -1594,7 +1629,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                         {
                             Lambda lambda = lisp_lambda(operator);
                             // make a new environment
-                            Lisp new_table = make_call_table(ctx);
+                            Lisp new_table = lisp_make_table(13, ctx);
                             // bind parameters to arguments
                             // to pass into function call
                             Lisp keyIt = lambda.args;
@@ -1639,6 +1674,8 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
 
 Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
 {
+    stack_push(&ctx->stack);
+
     jmp_buf error_jmp;
     LispError error = setjmp(error_jmp);
 
@@ -1648,12 +1685,16 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
 
         if (out_error)
             *out_error = error;  
+
+        stack_pop(&ctx->stack);
         return result; 
     }
     else
     {
         if (out_error)
             *out_error = error;
+
+        stack_pop(&ctx->stack);
         return lisp_null();
     }
 }
@@ -1675,9 +1716,9 @@ static inline Lisp gc_move(Lisp l, Heap* to)
         case LISP_SYMBOL:
         case LISP_STRING:
         case LISP_LAMBDA:
-        {
+        { 
             LispBlock* block = l.val;
-            
+
             if (!(block->gc_flags & GC_MOVED))
             {
                 unsigned int address = to->size;
@@ -1786,6 +1827,16 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
     Heap* from = &ctx->heap;
     Heap to;
     heap_init(&to, from->capacity);
+
+    for (int i = 0; i < ctx->stack.size; ++i)
+    {
+        Lisp l;
+
+        LispBlock* block = ctx->stack.entries[i];
+        l.val = block;
+        l.type = block->type;
+        gc_move(l, &to);
+    }
  
     // move root object
     ctx->symbol_table = gc_move(ctx->symbol_table, &to);
@@ -1876,6 +1927,7 @@ Lisp lisp_global_env(LispContextRef ctx)
 
 void lisp_shutdown(LispContextRef ctx)
 {
+    stack_shutdown(&ctx->stack);
     heap_shutdown(&ctx->heap);
     free(ctx);
 }
@@ -2298,15 +2350,21 @@ static Lisp func_expand(Lisp args, LispError* e, LispContextRef ctx)
     return result;
 }
 
-LispContextRef lisp_init_default(unsigned int heap_size)
+LispContextRef lisp_init_raw(unsigned int heap_size, int symbol_table_size)
 {
     LispContextRef ctx = malloc(sizeof(struct LispContext));
     ctx->lambda_counter = 0;
+    stack_init(&ctx->stack, 16);
     heap_init(&ctx->heap, heap_size);
 
-    ctx->symbol_table = lisp_make_table(512, ctx);
-    ctx->env_reuse = lisp_null();
+    ctx->symbol_table = lisp_make_table(symbol_table_size, ctx);
+    ctx->global_env = lisp_null();
+    return ctx;
+}
 
+LispContextRef lisp_init_interpreter(unsigned int heap_size)
+{
+    LispContextRef ctx = lisp_init_raw(heap_size, 512);
     Lisp table = lisp_make_table(256, ctx);
     lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_null(), ctx);
 
@@ -2381,5 +2439,12 @@ LispContextRef lisp_init_default(unsigned int heap_size)
 
     return ctx;
 }
+
+LispContextRef lisp_init_reader(unsigned int heap_size)
+{
+    LispContextRef ctx = lisp_init_raw(heap_size, 512);
+    return ctx;
+}
+
 
 

@@ -72,7 +72,8 @@ typedef struct LispContext* LispContextRef;
 typedef Lisp (*LispFunc)(Lisp, LispError*, LispContextRef);
 
 // SETUP
-LispContextRef lisp_init_default(unsigned int heap_size);
+LispContextRef lisp_init_interpreter(unsigned int heap_size);
+LispContextRef lisp_init_reader(unsigned int heap_size);
 void lisp_shutdown(LispContextRef ctx);
 Lisp lisp_global_env(LispContextRef ctx);
 
