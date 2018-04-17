@@ -88,10 +88,10 @@ static void heap_init(Heap* heap)
 
 static void heap_reset(Heap* heap, size_t target_size)
 {
-    Page* page = heap->first_page;
-    Page* previous = page;
+    Page* page = heap->first_page->next;
+    Page* previous = heap->first_page;
     
-    size_t size_counter = 0;
+    size_t size_counter = previous->size;
 
     // clear pages we will reuse
     while (page && size_counter < target_size)
@@ -122,7 +122,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, int gc_flags, Heap* he
     Page* page = heap->page;
     if (page->size + alloc_size > page->capacity)
     {
-        if (page->next && page->next->size + alloc_size > page->capacity)
+        if (page->next && page->next->size + alloc_size <= page->capacity)
         {
             // reuse the next page
             page = page->next;
@@ -232,24 +232,28 @@ float lisp_float(Lisp l)
 
 Lisp lisp_car(Lisp l)
 {
+    assert(l.type == LISP_PAIR);
     const Pair* pair = l.val;
     return pair->car;
 }
 
 Lisp lisp_cdr(Lisp l)
 {
+    assert(l.type == LISP_PAIR);
     const Pair* pair = l.val;
     return pair->cdr;
 }
 
 void lisp_set_car(Lisp l, Lisp x)
 {
+    assert(l.type == LISP_PAIR);
     Pair* pair = l.val;
     pair->car = x;
 }
 
 void lisp_set_cdr(Lisp l, Lisp x)
 {
+    assert(l.type == LISP_PAIR);
     Pair* pair = l.val;
     pair->cdr = x;
 }
@@ -540,7 +544,7 @@ Lisp lisp_make_func(LispFunc func)
 {
     Lisp l;
     l.type = LISP_FUNC;
-    l.val = (Block*)func;
+    l.val = func;
     return l;
 }
 
@@ -1921,9 +1925,10 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
 
     // swap the heaps
     Heap temp = ctx->heap;
-    heap_reset(&temp, to->size);
     ctx->heap = ctx->to_heap;
     ctx->to_heap = temp;
+    
+    heap_reset(&ctx->to_heap, ctx->heap.size);
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %lu\n", diff, ctx->heap.size);
