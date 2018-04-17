@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define LISP_DEBUG 0
+#define LISP_DEBUG 1
 
 typedef enum
 {
@@ -77,8 +77,8 @@ typedef struct LispContext* LispContextRef;
 typedef Lisp (*LispFunc)(Lisp, LispError*, LispContextRef);
 
 // SETUP
-LispContextRef lisp_init_interpreter();
-LispContextRef lisp_init_reader();
+LispContextRef lisp_init_interpreter(void);
+LispContextRef lisp_init_reader(void);
 
 void lisp_shutdown(LispContextRef ctx);
 Lisp lisp_global_env(LispContextRef ctx);
@@ -111,7 +111,7 @@ void lisp_printf(FILE* file, Lisp l);
 #define lisp_type(l) ((l).type)
 #define lisp_is_null(l) ((l).type == LISP_NULL)
 #define lisp_eq(a, b) ((a).val == (b).val)
-Lisp lisp_null();
+Lisp lisp_null(void);
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp l);
 Lisp lisp_make_float(float x);
