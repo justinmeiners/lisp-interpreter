@@ -23,22 +23,43 @@
 #include <setjmp.h>
 #include "lisp.h"
 
-typedef struct
+enum
+{
+    GC_CLEAR = 0,
+    GC_MOVED = (1 << 0), // has this block been moved to the to-space?
+    GC_VISITED = (1 << 1), // has this block's pointers been moved?
+};
+
+typedef struct Page
 {
     unsigned int size;
     unsigned int capacity;
+    struct Page* next; 
     char* buffer;
-} Heap;
+} Page;
+
+static Page* page_create(unsigned int capacity)
+{
+    Page* page = malloc(sizeof(Page));
+    page->capacity = capacity;
+    page->size = 0;
+    page->buffer = malloc(capacity);
+    page->next = NULL;
+}
+
+void page_destroy(Page* page)
+{
+    free(page->buffer);
+    free(page);
+}
 
 typedef struct
 {
-    unsigned int pop_size[48];
-    unsigned int depth;
-
-    unsigned int size;
-    unsigned int capacity;
-    LispBlock** entries;
-} Stack;
+    Page* page;
+    Page* first_page;
+    Page* page_pool;
+    size_t size;
+} Heap;
 
 typedef struct
 {
@@ -58,91 +79,87 @@ typedef struct
 struct LispContext
 {
     Heap heap;
-    Stack stack;
+    Heap to_heap;
 
     Lisp symbol_table;
     Lisp global_env;
     int lambda_counter;
 };
 
-static void heap_init(Heap* heap, unsigned int capacity)
+#define PAGE_SIZE 8192
+
+static void heap_init(Heap* heap)
 {
-    heap->capacity = capacity;
+    heap->first_page = page_create(PAGE_SIZE);
+    heap->page = heap->first_page;
     heap->size = 0;
-    heap->buffer = malloc(heap->capacity);
 }
 
-static void heap_shutdown(Heap* heap) { free(heap->buffer); }
-
-static LispBlock* heap_alloc(unsigned int data_size, LispType type, Heap* heap)
+static void heap_reset(Heap* heap, size_t target_size)
 {
-    if (heap->size + data_size + sizeof(LispBlock) > heap->capacity)
+    heap->size = 0;
+
+    Page* page = heap->first_page;
+
+    size_t size_counter = 0;
+
+    // clear pages we will reuse
+    while (page && size_counter < target_size)
     {
-        return NULL;
+        size_counter += page->size;
+        page->size = 0;
+        page = page->next;
     }
-    
-    LispBlock* block = (LispBlock*)(heap->buffer + heap->size);
-    block->gc_flags = 0;
+
+    // destroy the remaining ones
+    while (page)
+    {
+        Page* next = page->next;
+        page_destroy(page);
+        page = next;
+   } 
+
+   heap->page = heap->first_page;
+}
+
+static LispBlock* heap_alloc(unsigned int data_size, LispType type, int gc_flags, Heap* heap)
+{
+    size_t alloc_size = data_size + sizeof(LispBlock);
+
+    Page* page = heap->page;
+    if (page->size + alloc_size > page->capacity)
+    {
+        if (page->next && page->next->size + alloc_size > page->capacity)
+        {
+            // reuse the next page
+            page = page->next;
+            heap->page = page;
+        }
+        else
+        {
+            // we need a new page
+            size_t size = (alloc_size <= PAGE_SIZE) ? PAGE_SIZE : alloc_size;
+            Page* new_page = page_create(size);
+            new_page->next = page->next;
+            page->next = new_page;
+            heap->page = new_page;
+            page = new_page;
+        }
+    }
+ 
+    LispBlock* block = (LispBlock*)(page->buffer + page->size);
+    block->gc_flags = gc_flags;
     block->data_size = data_size;
     block->type = type;
-    heap->size += sizeof(LispBlock) + data_size;
+
+    page->size += alloc_size;
+    heap->size += alloc_size;
     return block;
-}
-
-static void stack_init(Stack* s, unsigned int capacity)
-{
-    s->depth = 0;
-
-    s->capacity = capacity;
-    s->size = 0;
-    s->entries = malloc(capacity * sizeof(LispBlock*));    
-}
-
-static void stack_shutdown(Stack* s) { free(s->entries); }
-
-static void stack_push(Stack* s)
-{
-    s->pop_size[s->depth] = s->size;
-    ++s->depth;
-}
-
-static void stack_pop(Stack* s)
-{
-    assert(s->depth > 0);
-    --s->depth;
-    s->size = s->pop_size[s->depth];
-}
-
-static void stack_add(Stack* s, LispBlock* block)
-{
-    if (s->size + 1 >= s->capacity)
-    {
-        s->capacity = (s->capacity * 3) / 2;
-        s->entries = realloc(s->entries, s->capacity * sizeof(LispBlock*));
-    }
-    
-    s->entries[s->size] = block;
-    ++s->size;
 }
 
 static LispBlock* gc_alloc(unsigned int data_size, LispType type, LispContextRef ctx)
 {
-    LispBlock* block = heap_alloc(data_size, type, &ctx->heap);
-
-    if (!block)
-    {
-        fprintf(stderr, "garbage collecting\n");
-        lisp_collect(lisp_null(), ctx);
-        block = heap_alloc(data_size, type, &ctx->heap);
-
-        if (!block)
-        {
-            return NULL;
-        }
-    }
-
-    stack_add(&ctx->stack, block);
-    return block;
+    return heap_alloc(data_size, type, GC_CLEAR, &ctx->heap);
 }
 
 Lisp lisp_null()
@@ -1555,8 +1572,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                     Lisp predicate = lisp_at_index(x, 1);
                     Lisp conseq = lisp_at_index(x, 2);
                     Lisp alt = lisp_at_index(x, 3);
-
-                    
+ 
                     if (lisp_int(eval_r(predicate, env, error_jmp, ctx)) != 0)
                     {
                         x = conseq; // while will eval
@@ -1564,8 +1580,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                     else
                     {
                         x = alt; // while will eval
-                    }
-                    
+                    } 
                 }
                 else if (op_name && strcmp(op_name, "BEGIN") == 0)
                 {
@@ -1674,8 +1689,6 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
 
 Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
 {
-    stack_push(&ctx->stack);
-
     jmp_buf error_jmp;
     LispError error = setjmp(error_jmp);
 
@@ -1686,7 +1699,6 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
         if (out_error)
             *out_error = error;  
 
-        stack_pop(&ctx->stack);
         return result; 
     }
     else
@@ -1694,56 +1706,41 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
         if (out_error)
             *out_error = error;
 
-        stack_pop(&ctx->stack);
         return lisp_null();
     }
 }
 
-
 #pragma Garbage Collection
 
-enum
-{
-    GC_MOVED = (1 << 0), // has this block been moved to the to-space?
-    GC_VISITED = (1 << 1), // has this block's pointers been moved?
-};
+static Lisp gc_move(Lisp l, Heap* to);
 
-static inline Lisp gc_move(Lisp l, Heap* to)
+static inline LispBlock* gc_move_block(LispBlock* block, Heap* to)
 {
-    switch (lisp_type(l))
+    switch (block->type)
     {
         case LISP_PAIR:
         case LISP_SYMBOL:
         case LISP_STRING:
         case LISP_LAMBDA:
         { 
-            LispBlock* block = l.val;
-
             if (!(block->gc_flags & GC_MOVED))
             {
                 unsigned int address = to->size;
-                
-                LispBlock* dest = (LispBlock*)(to->buffer + to->size);
-                size_t block_size = sizeof(LispBlock) + block->data_size;
-                to->size += block_size;
-                
-                // copy the data
-                memcpy(dest, block, block_size);
-                dest->gc_flags = 0;
+
+                // copy the data to new block
+                LispBlock* dest = heap_alloc(block->data_size, block->type, GC_CLEAR, to);               
+                memcpy(dest->data, block->data, block->data_size);
                 
                 // save forwarding address (offset in to)
-                block->data_size = address;
+                block->data_size = (uint64_t)dest;
                 block->gc_flags = GC_MOVED;
             }
             
-            // assign block address back to l
-            l.val = (LispBlock*)(to->buffer + block->data_size);
-            return l;
+            // return the moved block address
+            return (LispBlock*)block->data_size;
         }
         case LISP_TABLE:
-        {
-            LispBlock* block = l.val;
-            
+        { 
             if (!(block->gc_flags & GC_MOVED))
             {
                 Table* table = (Table*)block->data;
@@ -1757,14 +1754,9 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                     if (new_capacity < 1) new_capacity = 1;
                 }
 
-                unsigned int address = to->size;
-                LispBlock* dest = (LispBlock*)(to->buffer + to->size);
-                dest->type = block->type;
-                dest->data_size = sizeof(Table) + new_capacity * sizeof(Lisp);
-                dest->gc_flags = 0;
-                size_t block_size = sizeof(LispBlock) + dest->data_size;
-                to->size += block_size;
-                
+                size_t new_data_size = sizeof(Table) + new_capacity * sizeof(Lisp);
+                LispBlock* dest = heap_alloc(new_data_size, block->type, GC_CLEAR, to);
+ 
                 Table* dest_table = (Table*)dest->data;
                 dest_table->size = table->size;
                 dest_table->capacity = new_capacity;
@@ -1774,7 +1766,7 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                     dest_table->entries[i] = lisp_null();
                 
                 // save forwarding address (offset in to)
-                block->data_size = address;
+                block->data_size = (uint64_t)dest;
                 block->gc_flags = GC_MOVED;
                 
                 if (LISP_DEBUG && new_capacity != table->capacity)
@@ -1796,8 +1788,7 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                         Lisp pair = gc_move(lisp_car(it), to);
 
                         // allocate a new cell in the to space
-                        LispBlock* cons_block = heap_alloc(sizeof(Lisp) * 2, LISP_PAIR, to);
-                        cons_block->gc_flags = GC_VISITED;
+                        LispBlock* cons_block = heap_alloc(sizeof(Lisp) * 2, LISP_PAIR, GC_VISITED, to);
 
                         Lisp new_cell;
                         new_cell.type = cons_block->type;
@@ -1813,46 +1804,37 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                 }
             }
             
-            // assign block address back to l
-            l.val = (LispBlock*)(to->buffer + block->data_size);
-            return l;
+            // return the moved table address
+            return (LispBlock*)block->data_size;
         }
         default:
-            return l;
+            return NULL;
     }
+}
+
+static Lisp gc_move(Lisp l, Heap* to)
+{
+    l.val = gc_move_block(l.val, to);
+    return l;
 }
 
 Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
 {
-    Heap* from = &ctx->heap;
-    Heap to;
-    heap_init(&to, from->capacity);
+    Heap* to = &ctx->to_heap;
 
-    for (int i = 0; i < ctx->stack.size; ++i)
-    {
-        Lisp l;
-
-        LispBlock* block = ctx->stack.entries[i];
-        l.val = block;
-        l.type = block->type;
-        gc_move(l, &to);
-    }
- 
     // move root object
-    ctx->symbol_table = gc_move(ctx->symbol_table, &to);
-    ctx->global_env = gc_move(ctx->global_env, &to);
-    Lisp result = gc_move(root_to_save, &to);
+    ctx->symbol_table = gc_move(ctx->symbol_table, to);
+    ctx->global_env = gc_move(ctx->global_env, to);
+    Lisp result = gc_move(root_to_save, to);
 
-    // move references
-    int passes = 0;
-    while (1)
+    // move references  
+    Page* page = to->first_page;
+    while (page)
     {
-        ++passes;
-        int done = 1;
         size_t offset = 0;
-        while (offset < to.size)
+        while (offset < page->capacity)
         {
-            LispBlock* block = (LispBlock*)(to.buffer + offset);
+            LispBlock* block = (LispBlock*)(page->buffer + offset);
 
             if (!(block->gc_flags & GC_VISITED))
             {
@@ -1867,19 +1849,17 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
                         for (int i = 0; i < 2; ++i)
                         {
                             if (!lisp_is_null(ptrs[i]))
-                                ptrs[i] = gc_move(ptrs[i], &to);
+                                ptrs[i] = gc_move(ptrs[i], to);
                         }
-                        done = 0;
                         break;
                     }
                     case LISP_LAMBDA:
                     {
                         // move the body and args
                         Lambda* lambda = (Lambda*)block->data;
-                        lambda->args = gc_move(lambda->args, &to);
-                        lambda->body = gc_move(lambda->body, &to);
-                        lambda->env = gc_move(lambda->env, &to);
-                        done = 0;
+                        lambda->args = gc_move(lambda->args, to);
+                        lambda->body = gc_move(lambda->body, to);
+                        lambda->env = gc_move(lambda->env, to);
                         break; 
                     }
                     default: break;
@@ -1891,28 +1871,29 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
             offset += sizeof(LispBlock) + block->data_size;
         }
 
-        if (done) break;
+        page = page->next;
     }
 
-    if (LISP_DEBUG)
-        printf("gc passes: %i\n", passes);
-
-    assert(passes <= 2);
- 
+    // DEBUG, check offsets
+    page = to->first_page;
+    while (page)
     {
-        // clear the flags
         size_t offset = 0;
-        while (offset < to.size)
+        while (offset < page->size)
         {
-            LispBlock* block = (LispBlock*)(to.buffer + offset);
+            LispBlock* block = (LispBlock*)(page->buffer + offset);
             offset += sizeof(LispBlock) + block->data_size;
         }
-        assert(offset == to.size);
+        assert(offset == to->size);
     }
-    
-    size_t diff = from->size - to.size;
-    heap_shutdown(from);
-    *from = to;
+  
+    size_t diff = ctx->to_heap.size - ctx->heap.size ;
+
+    // swap the heaps
+    Heap temp = ctx->heap;
+    heap_reset(&temp, to->size);
+    ctx->heap = ctx->to_heap;
+    ctx->to_heap = temp;
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %i\n", diff, ctx->heap.size);
@@ -1927,8 +1908,8 @@ Lisp lisp_global_env(LispContextRef ctx)
 
 void lisp_shutdown(LispContextRef ctx)
 {
-    stack_shutdown(&ctx->stack);
-    heap_shutdown(&ctx->heap);
+    heap_reset(&ctx->heap, 0);
+    heap_reset(&ctx->to_heap, 0);
     free(ctx);
 }
 
@@ -2350,21 +2331,21 @@ static Lisp func_expand(Lisp args, LispError* e, LispContextRef ctx)
     return result;
 }
 
-LispContextRef lisp_init_raw(unsigned int heap_size, int symbol_table_size)
+LispContextRef lisp_init_raw(int symbol_table_size)
 {
     LispContextRef ctx = malloc(sizeof(struct LispContext));
     ctx->lambda_counter = 0;
-    stack_init(&ctx->stack, 16);
-    heap_init(&ctx->heap, heap_size);
+    heap_init(&ctx->heap);
+    heap_init(&ctx->to_heap);
 
     ctx->symbol_table = lisp_make_table(symbol_table_size, ctx);
     ctx->global_env = lisp_null();
     return ctx;
 }
 
-LispContextRef lisp_init_interpreter(unsigned int heap_size)
+LispContextRef lisp_init_interpreter()
 {
-    LispContextRef ctx = lisp_init_raw(heap_size, 512);
+    LispContextRef ctx = lisp_init_raw(512);
     Lisp table = lisp_make_table(256, ctx);
     lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_null(), ctx);
 
@@ -2440,9 +2421,9 @@ LispContextRef lisp_init_interpreter(unsigned int heap_size)
     return ctx;
 }
 
-LispContextRef lisp_init_reader(unsigned int heap_size)
+LispContextRef lisp_init_reader()
 {
-    LispContextRef ctx = lisp_init_raw(heap_size, 512);
+    LispContextRef ctx = lisp_init_raw(512);
     return ctx;
 }
 

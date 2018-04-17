@@ -57,6 +57,11 @@ typedef struct
 
 typedef struct
 {
+    // forwarded flag
+    // type
+    // address (page + offset)
+    // data_size
+ 
     unsigned char gc_flags;
     unsigned char type;
     /* 32Kb limit for a single allocation
@@ -64,7 +69,7 @@ typedef struct
        unless someone is allocating large arbitray
        buffers this shouldn't be a problem.
       If you need larger change to int. */
-    unsigned short data_size;     
+    uint64_t data_size;
     char data[];
 } LispBlock;
 
@@ -72,8 +77,9 @@ typedef struct LispContext* LispContextRef;
 typedef Lisp (*LispFunc)(Lisp, LispError*, LispContextRef);
 
 // SETUP
-LispContextRef lisp_init_interpreter(unsigned int heap_size);
-LispContextRef lisp_init_reader(unsigned int heap_size);
+LispContextRef lisp_init_interpreter();
+LispContextRef lisp_init_reader();
+
 void lisp_shutdown(LispContextRef ctx);
 Lisp lisp_global_env(LispContextRef ctx);
 
