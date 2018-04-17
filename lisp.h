@@ -55,24 +55,6 @@ typedef struct
     };
 } Lisp; // holds all lisp values
 
-typedef struct
-{
-    // forwarded flag
-    // type
-    // address (page + offset)
-    // data_size
- 
-    unsigned char gc_flags;
-    unsigned char type;
-    /* 32Kb limit for a single allocation
-       the token length limit is 4k, so
-       unless someone is allocating large arbitray
-       buffers this shouldn't be a problem.
-      If you need larger change to int. */
-    uint64_t data_size;
-    char data[];
-} LispBlock;
-
 typedef struct LispContext* LispContextRef;
 typedef Lisp (*LispFunc)(Lisp, LispError*, LispContextRef);
 
@@ -111,20 +93,22 @@ void lisp_printf(FILE* file, Lisp l);
 #define lisp_type(l) ((l).type)
 #define lisp_is_null(l) ((l).type == LISP_NULL)
 #define lisp_eq(a, b) ((a).val == (b).val)
+
 Lisp lisp_null(void);
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp l);
 Lisp lisp_make_float(float x);
 float lisp_float(Lisp l);
-Lisp lisp_make_string(const char* string, LispContextRef ctx);
+Lisp lisp_make_string(const char* c_string, LispContextRef ctx);
 const char* lisp_string(Lisp l);
 Lisp lisp_make_symbol(const char* symbol, LispContextRef ctx);
 const char* lisp_symbol(Lisp l);
 
-#define lisp_car(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[0] )
-#define lisp_cdr(l) ( ((Lisp*)(((LispBlock*)(l).val)->data))[1] )
-#define lisp_set_car(l, x) (lisp_car((l)) = (x))
-#define lisp_set_cdr(l, x) (lisp_cdr((l)) = (x))
+Lisp lisp_car(Lisp l);
+Lisp lisp_cdr(Lisp l);
+void lisp_set_car(Lisp l, Lisp x);
+void lisp_set_cdr(Lisp l, Lisp x);
+
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
 Lisp lisp_append(Lisp l, Lisp tail, LispContextRef ctx); // O(n)
 Lisp lisp_at_index(Lisp l, int n); // O(n)
