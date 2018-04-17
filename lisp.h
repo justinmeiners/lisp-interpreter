@@ -112,6 +112,7 @@ void lisp_set_cdr(Lisp l, Lisp x);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx);
 Lisp lisp_append(Lisp l, Lisp tail, LispContextRef ctx); // O(n)
 Lisp lisp_at_index(Lisp l, int n); // O(n)
+int lisp_index_of(Lisp l, Lisp x);
 // more concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
 Lisp lisp_nav(Lisp l, const char* path);
 int lisp_length(Lisp l); // O(n)

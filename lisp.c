@@ -75,6 +75,7 @@ struct LispContext
 
     Lisp symbol_table;
     Lisp global_env;
+    Lisp reuse_env;
     int lambda_counter;
 };
 
@@ -185,6 +186,7 @@ typedef struct
     Block block;
     unsigned int size;
     unsigned int capacity;
+    int lambda_count;
     Lisp entries[];
 } Table;
 
@@ -315,6 +317,18 @@ Lisp lisp_at_index(Lisp l, int i)
         --i;
     }
     return lisp_car(l);
+}
+
+int lisp_index_of(Lisp l, Lisp x)
+{
+    int i = 0;
+    while (!lisp_is_null(l))
+    {
+        if (lisp_eq(lisp_car(l), x)) return i;
+        l = lisp_cdr(l);
+        ++i;
+    }
+    return -1;
 }
 
 Lisp lisp_nav(Lisp l, const char* c)
@@ -566,6 +580,15 @@ Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContextRef ctx)
     lambda->args = args;
     lambda->body = body;
     lambda->env = env;
+    
+    Lisp env_it = env;
+    
+    while (!lisp_is_null(env_it))
+    {
+        Table* table = lisp_car(env_it).val;
+        ++table->lambda_count;
+        env_it = lisp_cdr(env_it);
+    }
 
     Lisp l;
     l.type = lambda->block.type;
@@ -1426,6 +1449,7 @@ Lisp lisp_make_table(unsigned int capacity, LispContextRef ctx)
     Table* table = gc_alloc(size, LISP_TABLE, ctx);
     table->size = 0;
     table->capacity = capacity;
+    table->lambda_count = 0;
 
     // clear the table
     for (int i = 0; i < capacity; ++i)
@@ -1580,6 +1604,40 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
+static Lisp make_call_env(Lisp env, LispContextRef ctx)
+{
+    Lisp t = lisp_make_table(13, ctx);
+    return t;
+    
+    /*
+    if (lisp_is_null(ctx->reuse_env))
+    {
+        ctx->reuse_env = lisp_cons(t, ctx->reuse_env, ctx);
+        return t;
+    }
+    else
+    {
+        Lisp it = ctx->reuse_env;
+        
+        while (!lisp_is_null(it))
+        {
+            Table* table = lisp_car(it).val;
+            
+            if (table->lambda_count < 0)
+            {
+                int index = lisp_index_of(env, lisp_car(it));
+                
+                if (index != -1)
+                {
+                }
+            }
+            
+            it = lisp_cdr(it);
+     }
+    }
+     */
+}
+
 static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
 {
     while (1)
@@ -1662,7 +1720,6 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                     return lisp_null();
                 }
                 else if (op_name && strcmp(op_name, "LAMBDA") == 0) // lambda defintions (compound procedures)
-                    
                 {
                     Lisp args = lisp_at_index(x, 1);
                     Lisp body = lisp_at_index(x, 2);
@@ -1689,7 +1746,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                         {
                             Lambda lambda = lisp_lambda(operator);
                             // make a new environment
-                            Lisp new_table = lisp_make_table(13, ctx);
+                            Lisp new_table = make_call_env(env, ctx);
                             // bind parameters to arguments
                             // to pass into function call
                             Lisp keyIt = lambda.args;
@@ -1802,6 +1859,7 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                 Table* dest_table = heap_alloc(new_data_size, LISP_TABLE, to);
                 dest_table->size = table->size;
                 dest_table->capacity = new_capacity;
+                dest_table->lambda_count = 0;
                 
                 // clear the table
                 for (int i = 0; i < new_capacity; ++i)
@@ -1896,6 +1954,16 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
                         lambda->args = gc_move(lambda->args, to);
                         lambda->body = gc_move(lambda->body, to);
                         lambda->env = gc_move(lambda->env, to);
+                        
+                        Lisp env_it = lambda->env;
+                        
+                        while (!lisp_is_null(env_it))
+                        {
+                            Table* table = lisp_car(env_it).val;
+                            ++table->lambda_count;
+                            env_it = lisp_cdr(env_it);
+                        }
+                        
                         break; 
                     }
                     default: break;
@@ -2375,6 +2443,7 @@ LispContextRef lisp_init_raw(int symbol_table_size)
 
     ctx->symbol_table = lisp_make_table(symbol_table_size, ctx);
     ctx->global_env = lisp_null();
+    ctx->reuse_env = lisp_null();
     return ctx;
 }
 
