@@ -58,13 +58,14 @@ typedef struct
 
 typedef struct
 {
-    int gc_flags;
-    int type;
     union
     {
         void* forward_address;
-        size_t data_size;
+        uint32_t data_size;
     };
+    
+    uint8_t gc_flags;
+    uint8_t type;
 } Block;
 
 struct LispContext
@@ -144,7 +145,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
     void* address = page->buffer + page->size;
     Block* block = address;
     block->gc_flags = GC_CLEAR;
-    block->data_size = alloc_size;
+    block->data_size = (uint32_t)alloc_size;
     block->type = type;
 
     page->size += alloc_size;
@@ -2019,10 +2020,9 @@ static Lisp func_nav(Lisp args, LispError* e, LispContextRef ctx)
 
 static Lisp func_eq(Lisp args, LispError* e, LispContextRef ctx)
 {
-    void* a = lisp_car(args).val;
-    void* b = lisp_car(lisp_cdr(args)).val;
-
-    return lisp_make_int(a == b);
+    Lisp a = lisp_car(args);
+    Lisp b = lisp_car(lisp_cdr(args));
+    return lisp_make_int(lisp_eq(a, b));
 }
 
 static Lisp func_is_null(Lisp args, LispError* e, LispContextRef ctx)

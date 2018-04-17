@@ -45,14 +45,14 @@ typedef enum
 
 typedef struct
 {
-    LispType type;
-
     union
     {
         float float_val;
         int int_val;  
         void* val;
     };
+    
+    LispType type;
 } Lisp; // holds all lisp values
 
 typedef struct LispContext* LispContextRef;
