@@ -77,7 +77,7 @@ struct LispContext
     int lambda_counter;
 };
 
-#define PAGE_SIZE 8192
+#define PAGE_SIZE 16384
 
 static void heap_init(Heap* heap)
 {
@@ -92,6 +92,7 @@ static void heap_reset(Heap* heap, size_t target_size)
     Page* previous = heap->first_page;
     
     size_t size_counter = previous->size;
+    previous->size = 0;
 
     // clear pages we will reuse
     while (page && size_counter < target_size)
@@ -117,7 +118,7 @@ static void heap_reset(Heap* heap, size_t target_size)
    heap->size = 0;
 }
 
-static void* heap_alloc(size_t alloc_size, LispType type, int gc_flags, Heap* heap)
+static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
     Page* page = heap->page;
     if (page->size + alloc_size > page->capacity)
@@ -142,7 +143,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, int gc_flags, Heap* he
     
     void* address = page->buffer + page->size;
     Block* block = address;
-    block->gc_flags = gc_flags;
+    block->gc_flags = GC_CLEAR;
     block->data_size = alloc_size;
     block->type = type;
 
@@ -153,7 +154,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, int gc_flags, Heap* he
 
 static void* gc_alloc(size_t data_size, LispType type, LispContextRef ctx)
 {
-    return heap_alloc(data_size, type, GC_CLEAR, &ctx->heap);
+    return heap_alloc(data_size, type, &ctx->heap);
 }
 
 typedef struct
@@ -1768,8 +1769,9 @@ static inline Lisp gc_move(Lisp l, Heap* to)
             if (!(block->gc_flags & GC_MOVED))
             {
                 // copy the data to new block
-                void* dest = heap_alloc(block->data_size, block->type, GC_CLEAR, to);
+                Block* dest = heap_alloc(block->data_size, block->type, to);
                 memcpy(dest, block, block->data_size);
+                dest->gc_flags = GC_CLEAR;
                 
                 // save forwarding address (offset in to)
                 block->forward_address = dest;
@@ -1796,7 +1798,7 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                 }
 
                 size_t new_data_size = sizeof(Table) + new_capacity * sizeof(Lisp);
-                Table* dest_table = heap_alloc(new_data_size, LISP_TABLE, GC_CLEAR, to);
+                Table* dest_table = heap_alloc(new_data_size, LISP_TABLE, to);
                 dest_table->size = table->size;
                 dest_table->capacity = new_capacity;
                 
@@ -1827,8 +1829,9 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                         Lisp pair = gc_move(lisp_car(it), to);
 
                         // allocate a new pair in the to space
-                        Pair* cons_block = heap_alloc(sizeof(Pair), LISP_PAIR, GC_VISITED, to);
-
+                        Pair* cons_block = heap_alloc(sizeof(Pair), LISP_PAIR, to);
+                        cons_block->block.gc_flags = GC_VISITED;
+                        
                         Lisp new_pair;
                         new_pair.type = cons_block->block.type;
                         new_pair.val = cons_block;
@@ -1867,7 +1870,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
     while (page)
     {
         size_t offset = 0;
-        while (offset < page->capacity)
+        while (offset < page->size)
         {
             Block* block = (Block*)(page->buffer + offset);
 
