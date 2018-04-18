@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <math.h>
 #include <setjmp.h>
 #include "lisp.h"
 
@@ -68,7 +69,7 @@ typedef struct
     uint8_t type;
 } Block;
 
-struct LispContext
+struct LispImpl
 {
     Heap heap;
     Heap to_heap;
@@ -154,9 +155,9 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
     return address;
 }
 
-static void* gc_alloc(size_t data_size, LispType type, LispContextRef ctx)
+static void* gc_alloc(size_t data_size, LispType type, LispContext ctx)
 {
-    return heap_alloc(data_size, type, &ctx->heap);
+    return heap_alloc(data_size, type, &ctx.impl->heap);
 }
 
 typedef struct
@@ -186,7 +187,6 @@ typedef struct
     Block block;
     unsigned int size;
     unsigned int capacity;
-    int lambda_count;
     Lisp entries[];
 } Table;
 
@@ -262,7 +262,7 @@ void lisp_set_cdr(Lisp l, Lisp x)
     pair->cdr = x;
 }
 
-Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx)
+Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx)
 {
     Pair* pair = gc_alloc(sizeof(Pair), LISP_PAIR, ctx);
     pair->car = car;
@@ -273,7 +273,7 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContextRef ctx)
     return l;
 }
 
-static void back_append(Lisp* front, Lisp* back, Lisp item, LispContextRef ctx)
+static void back_append(Lisp* front, Lisp* back, Lisp item, LispContext ctx)
 {
     Lisp new_l = lisp_cons(item, lisp_null(), ctx);
     if (lisp_is_null(*back))
@@ -288,7 +288,7 @@ static void back_append(Lisp* front, Lisp* back, Lisp item, LispContextRef ctx)
     }
 }
 
-Lisp lisp_append(Lisp l, Lisp l2, LispContextRef ctx)
+Lisp lisp_append(Lisp l, Lisp l2, LispContext ctx)
 {
     if (lisp_is_null(l)) return l;
 
@@ -378,7 +378,7 @@ int lisp_length(Lisp l)
     return count;
 }
 
-Lisp lisp_make_list(Lisp x, int n, LispContextRef ctx)
+Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
 {
     Lisp front = lisp_null();
     Lisp back = front;
@@ -388,7 +388,7 @@ Lisp lisp_make_list(Lisp x, int n, LispContextRef ctx)
     return front;
 }
 
-Lisp lisp_make_listv(LispContextRef ctx, Lisp first, ...)
+Lisp lisp_make_listv(LispContext ctx, Lisp first, ...)
 {
     Lisp front = lisp_cons(first, lisp_null(), ctx);
     Lisp back = front;
@@ -445,7 +445,7 @@ Lisp lisp_for_key(Lisp list, Lisp key_symbol)
     return lisp_car(lisp_cdr(pair));
 }
 
-Lisp lisp_make_string(const char* c_string, LispContextRef ctx)
+Lisp lisp_make_string(const char* c_string, LispContext ctx)
 {
     size_t length = strlen(c_string) + 1;
     String* string = gc_alloc(sizeof(String) + length, LISP_STRING, ctx);
@@ -521,10 +521,10 @@ static unsigned int hash_string(const char* c)
     return (s2 << 16) | s1;
 }
 
-Lisp lisp_make_symbol(const char* string, LispContextRef ctx)
+Lisp lisp_make_symbol(const char* string, LispContext ctx)
 {
     unsigned int hash = hash_string(string);
-    Lisp pair = table_get_string(ctx->symbol_table, string, hash);
+    Lisp pair = table_get_string(ctx.impl->symbol_table, string, hash);
     
     if (lisp_is_null(pair))
     {
@@ -547,7 +547,7 @@ Lisp lisp_make_symbol(const char* string, LispContextRef ctx)
         Lisp l;
         l.type = symbol->block.type;
         l.val = symbol;
-        lisp_table_set(ctx->symbol_table, l, lisp_null(), ctx);
+        lisp_table_set(ctx.impl->symbol_table, l, lisp_null(), ctx);
         return l;
     }
     else
@@ -556,7 +556,7 @@ Lisp lisp_make_symbol(const char* string, LispContextRef ctx)
     }
 }
 
-Lisp lisp_make_func(LispFunc func)
+Lisp lisp_make_func(Lisp(*func)(Lisp, LispError*, LispContext))
 {
     Lisp l;
     l.type = LISP_FUNC;
@@ -573,23 +573,14 @@ typedef struct
     Lisp env;
 } Lambda;
 
-Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContextRef ctx)
+Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
 {
     Lambda* lambda = gc_alloc(sizeof(Lambda), LISP_LAMBDA, ctx);
-    lambda->identifier = ctx->lambda_counter++;
+    lambda->identifier = ctx.impl->lambda_counter++;
     lambda->args = args;
     lambda->body = body;
     lambda->env = env;
     
-    Lisp env_it = env;
-    
-    while (!lisp_is_null(env_it))
-    {
-        Table* table = lisp_car(env_it).val;
-        ++table->lambda_count;
-        env_it = lisp_cdr(env_it);
-    }
-
     Lisp l;
     l.type = lambda->block.type;
     l.val = lambda;
@@ -947,7 +938,7 @@ static void lexer_next_token(Lexer* lex)
 
 #define SCRATCH_MAX 1024
 
-static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContextRef ctx)
+static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
 { 
     char scratch[SCRATCH_MAX];
     size_t length = lex->scan_length;
@@ -997,7 +988,7 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContextRef ctx)
 }
 
 // read tokens and construct S-expresions
-static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
+static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
 {  
     switch (lex->token)
     {
@@ -1035,7 +1026,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContextRef ctx)
     }
 }
 
-static Lisp parse(Lexer* lex, LispError* out_error, LispContextRef ctx)
+static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
 {
     jmp_buf error_jmp;
     LispError error = setjmp(error_jmp);
@@ -1067,7 +1058,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContextRef ctx)
     return result;
 }
 
-static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
+static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 {
     // 1. expand extended syntax into primitive syntax
     // 2. perform optimizations
@@ -1379,7 +1370,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContextRef ctx)
     }
 }
 
-Lisp lisp_read(const char* program, LispError* out_error, LispContextRef ctx)
+Lisp lisp_read(const char* program, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
     lexer_init(&lex, program);
@@ -1388,7 +1379,7 @@ Lisp lisp_read(const char* program, LispError* out_error, LispContextRef ctx)
     return l;
 }
 
-Lisp lisp_read_file(FILE* file, LispError* out_error, LispContextRef ctx)
+Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
     lexer_init_file(&lex, file);
@@ -1397,7 +1388,7 @@ Lisp lisp_read_file(FILE* file, LispError* out_error, LispContextRef ctx)
     return l;
 }
 
-Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx)
+Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
 {
     FILE* file = fopen(path, "r");
 
@@ -1412,7 +1403,7 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContextRef ctx)
     return l;
 }
 
-Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContextRef ctx)
+Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx)
 {
     jmp_buf error_jmp;
     LispError error = setjmp(error_jmp);
@@ -1443,13 +1434,12 @@ static const char* lisp_type_name[] = {
     "ENV",
 };
 
-Lisp lisp_make_table(unsigned int capacity, LispContextRef ctx)
+Lisp lisp_make_table(unsigned int capacity, LispContext ctx)
 {
     size_t size = sizeof(Table) + sizeof(Lisp) * capacity;
     Table* table = gc_alloc(size, LISP_TABLE, ctx);
     table->size = 0;
     table->capacity = capacity;
-    table->lambda_count = 0;
 
     // clear the table
     for (int i = 0; i < capacity; ++i)
@@ -1461,7 +1451,7 @@ Lisp lisp_make_table(unsigned int capacity, LispContextRef ctx)
     return l;
 }
 
-void lisp_table_set(Lisp l, Lisp symbol, Lisp value, LispContextRef ctx)
+void lisp_table_set(Lisp l, Lisp symbol, Lisp value, LispContext ctx)
 {
     Table* table = lisp_table(l);
     
@@ -1482,17 +1472,18 @@ void lisp_table_set(Lisp l, Lisp symbol, Lisp value, LispContextRef ctx)
     }
 }
 
-Lisp lisp_table_get(Lisp l, Lisp symbol, LispContextRef ctx)
+Lisp lisp_table_get(Lisp l, Lisp symbol, LispContext ctx)
 {
     Table* table = lisp_table(l);
     unsigned int index = symbol_hash(symbol) % table->capacity;
     return lisp_assoc(table->entries[index], symbol);
 }
 
-void lisp_table_add_funcs(Lisp table, const char** names, LispFunc* funcs, LispContextRef ctx)
+void lisp_table_add_funcs(Lisp table, const char** names, LispFunc* funcs, LispContext ctx)
 {
     const char** name = names;
-    LispFunc* func = funcs;
+
+	LispFunc* func = funcs;
 
     while (*name)
     {
@@ -1502,17 +1493,12 @@ void lisp_table_add_funcs(Lisp table, const char** names, LispFunc* funcs, LispC
     }
 }
 
-Lisp lisp_make_env(Lisp table, LispContextRef ctx)
-{
-    return lisp_cons(table, lisp_null(), ctx);
-}
-
-Lisp lisp_env_extend(Lisp env, Lisp table, LispContextRef ctx)
+Lisp lisp_env_extend(Lisp env, Lisp table, LispContext ctx)
 {
     return lisp_cons(table, env, ctx);
 }
 
-Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContextRef ctx)
+Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContext ctx)
 {
     Lisp it = env;
     while (!lisp_is_null(it))
@@ -1525,12 +1511,12 @@ Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContextRef ctx)
     return lisp_null();
 }
 
-void lisp_env_define(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx)
+void lisp_env_define(Lisp env, Lisp symbol, Lisp value, LispContext ctx)
 {
     lisp_table_set(lisp_car(env), symbol, value, ctx);
 }
 
-void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContextRef ctx)
+void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContext ctx)
 {
     Lisp pair = lisp_env_lookup(env, symbol, ctx);
     if (lisp_is_null(pair))
@@ -1604,41 +1590,8 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
-static Lisp make_call_env(Lisp env, LispContextRef ctx)
-{
-    Lisp t = lisp_make_table(13, ctx);
-    return t;
-    
-    /*
-    if (lisp_is_null(ctx->reuse_env))
-    {
-        ctx->reuse_env = lisp_cons(t, ctx->reuse_env, ctx);
-        return t;
-    }
-    else
-    {
-        Lisp it = ctx->reuse_env;
-        
-        while (!lisp_is_null(it))
-        {
-            Table* table = lisp_car(it).val;
-            
-            if (table->lambda_count < 0)
-            {
-                int index = lisp_index_of(env, lisp_car(it));
-                
-                if (index != -1)
-                {
-                }
-            }
-            
-            it = lisp_cdr(it);
-     }
-    }
-     */
-}
 
-static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
+static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContext ctx)
 {
     while (1)
     {
@@ -1746,7 +1699,8 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
                         {
                             Lambda lambda = lisp_lambda(operator);
                             // make a new environment
-                            Lisp new_table = make_call_env(env, ctx);
+							Lisp new_table = lisp_make_table(13, ctx);
+
                             // bind parameters to arguments
                             // to pass into function call
                             Lisp keyIt = lambda.args;
@@ -1789,7 +1743,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContextRef ctx)
     }
 }
 
-Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContextRef ctx)
+Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 {
     jmp_buf error_jmp;
     LispError error = setjmp(error_jmp);
@@ -1859,7 +1813,6 @@ static inline Lisp gc_move(Lisp l, Heap* to)
                 Table* dest_table = heap_alloc(new_data_size, LISP_TABLE, to);
                 dest_table->size = table->size;
                 dest_table->capacity = new_capacity;
-                dest_table->lambda_count = 0;
                 
                 // clear the table
                 for (int i = 0; i < new_capacity; ++i)
@@ -1915,13 +1868,13 @@ static inline Lisp gc_move(Lisp l, Heap* to)
 }
 
 
-Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
+Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
-    Heap* to = &ctx->to_heap;
+    Heap* to = &ctx.impl->to_heap;
 
     // move root object
-    ctx->symbol_table = gc_move(ctx->symbol_table, to);
-    ctx->global_env = gc_move(ctx->global_env, to);
+    ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
+    ctx.impl->global_env = gc_move(ctx.impl->global_env, to);
     Lisp result = gc_move(root_to_save, to);
 
     // move references  
@@ -1954,16 +1907,6 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
                         lambda->args = gc_move(lambda->args, to);
                         lambda->body = gc_move(lambda->body, to);
                         lambda->env = gc_move(lambda->env, to);
-                        
-                        Lisp env_it = lambda->env;
-                        
-                        while (!lisp_is_null(env_it))
-                        {
-                            Table* table = lisp_car(env_it).val;
-                            ++table->lambda_count;
-                            env_it = lisp_cdr(env_it);
-                        }
-                        
                         break; 
                     }
                     default: break;
@@ -1993,31 +1936,31 @@ Lisp lisp_collect(Lisp root_to_save, LispContextRef ctx)
         page = page->next;
     }
   
-    size_t diff = ctx->heap.size - ctx->to_heap.size;
+    size_t diff = ctx.impl->heap.size - ctx.impl->to_heap.size;
 
     // swap the heaps
-    Heap temp = ctx->heap;
-    ctx->heap = ctx->to_heap;
-    ctx->to_heap = temp;
+    Heap temp = ctx.impl->heap;
+	ctx.impl->heap = ctx.impl->to_heap;
+	ctx.impl->to_heap = temp;
     
-    heap_reset(&ctx->to_heap, ctx->heap.size);
+    heap_reset(&ctx.impl->to_heap, ctx.impl->heap.size);
 
     if (LISP_DEBUG)
-        printf("gc collected: %lu heap: %lu\n", diff, ctx->heap.size);
+        printf("gc collected: %lu heap: %lu\n", diff, ctx.impl->heap.size);
 
     return result;
 }
 
-Lisp lisp_global_env(LispContextRef ctx)
+Lisp lisp_global_env(LispContext ctx)
 {
-    return ctx->global_env;
+    return ctx.impl->global_env;
 }
 
-void lisp_shutdown(LispContextRef ctx)
+void lisp_shutdown(LispContext ctx)
 {
-    heap_reset(&ctx->heap, 0);
-    heap_reset(&ctx->to_heap, 0);
-    free(ctx);
+    heap_reset(&ctx.impl->heap, 0);
+    heap_reset(&ctx.impl->to_heap, 0);
+    free(ctx.impl);
 }
 
 const char* lisp_error_string(LispError error)
@@ -2063,22 +2006,22 @@ const char* lisp_error_string(LispError error)
 
 #pragma mark Default Interpreter
 
-static Lisp func_cons(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_cons(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_cons(lisp_car(args), lisp_car(lisp_cdr(args)), ctx);
 }
 
-static Lisp func_car(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_car(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_car(lisp_car(args));
 }
 
-static Lisp func_cdr(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_cdr(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_cdr(lisp_car(args));
 }
 
-static Lisp func_nav(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_nav(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp path = lisp_car(args);
     Lisp l = lisp_car(lisp_cdr(args));
@@ -2086,14 +2029,14 @@ static Lisp func_nav(Lisp args, LispError* e, LispContextRef ctx)
     return lisp_nav(l, lisp_string(path));
 }
 
-static Lisp func_eq(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_eq(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
     Lisp b = lisp_car(lisp_cdr(args));
     return lisp_make_int(lisp_eq(a, b));
 }
 
-static Lisp func_is_null(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_is_null(Lisp args, LispError* e, LispContext ctx)
 {
     while (!lisp_is_null(args))
     {
@@ -2103,7 +2046,7 @@ static Lisp func_is_null(Lisp args, LispError* e, LispContextRef ctx)
     return lisp_make_int(1);
 }
 
-static Lisp func_display(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_display(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp l = lisp_car(args);
     if (lisp_type(l) == LISP_STRING)
@@ -2117,12 +2060,12 @@ static Lisp func_display(Lisp args, LispError* e, LispContextRef ctx)
     return lisp_null();
 }
 
-static Lisp func_newline(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_newline(Lisp args, LispError* e, LispContext ctx)
 {
     printf("\n"); return lisp_null(); 
 }
 
-static Lisp func_assert(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_assert(Lisp args, LispError* e, LispContext ctx)
 {
    if (lisp_int(lisp_car(args)) != 1)
    {
@@ -2135,7 +2078,7 @@ static Lisp func_assert(Lisp args, LispError* e, LispContextRef ctx)
    return lisp_null();
 }
 
-static Lisp func_equals(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_equals(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp to_check  = lisp_car(args);
     if (lisp_is_null(to_check)) return lisp_make_int(1);
@@ -2150,9 +2093,9 @@ static Lisp func_equals(Lisp args, LispError* e, LispContextRef ctx)
     return lisp_make_int(1);
 }
 
-static Lisp func_list(Lisp args, LispError* e, LispContextRef ctx) { return args; }
+static Lisp func_list(Lisp args, LispError* e, LispContext ctx) { return args; }
 
-static Lisp func_append(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_append(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp l = lisp_car(args);
 
@@ -2172,7 +2115,7 @@ static Lisp func_append(Lisp args, LispError* e, LispContextRef ctx)
     return l;
 }
 
-static Lisp func_map(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_map(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp op = lisp_car(args);
 
@@ -2224,29 +2167,29 @@ static Lisp func_map(Lisp args, LispError* e, LispContextRef ctx)
     }
 }
 
-static Lisp func_nth(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_nth(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp index = lisp_car(args);
     Lisp list = lisp_car(lisp_cdr(args));
     return lisp_at_index(list, lisp_int(index));
 }
 
-static Lisp func_length(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_length(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_make_int(lisp_length(lisp_car(args)));
 }
 
-static Lisp func_reverse_inplace(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_reverse_inplace(lisp_car(args));
 }
 
-static Lisp func_assoc(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_assoc(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_assoc(lisp_car(args), lisp_car(lisp_cdr(args)));
 }
 
-static Lisp func_add(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_add(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp accum = lisp_car(args);
     args = lisp_cdr(args);
@@ -2266,7 +2209,7 @@ static Lisp func_add(Lisp args, LispError* e, LispContextRef ctx)
     return accum;
 }
 
-static Lisp func_sub(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_sub(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp accum = lisp_car(args);
     args = lisp_cdr(args);
@@ -2291,7 +2234,7 @@ static Lisp func_sub(Lisp args, LispError* e, LispContextRef ctx)
     return accum;
 }
 
-static Lisp func_mult(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_mult(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp accum = lisp_car(args);
     args = lisp_cdr(args);
@@ -2316,7 +2259,7 @@ static Lisp func_mult(Lisp args, LispError* e, LispContextRef ctx)
     return accum;
 }
 
-static Lisp func_divide(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_divide(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp accum = lisp_car(args);
     args = lisp_cdr(args);
@@ -2341,7 +2284,7 @@ static Lisp func_divide(Lisp args, LispError* e, LispContextRef ctx)
     return accum;
 }
 
-static Lisp func_less(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_less(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp accum = lisp_car(args);
     args = lisp_cdr(args);
@@ -2363,7 +2306,7 @@ static Lisp func_less(Lisp args, LispError* e, LispContextRef ctx)
     return lisp_make_int(result);
 }
 
-static Lisp func_greater(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_greater(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp accum = lisp_car(args);
     args = lisp_cdr(args);
@@ -2385,71 +2328,124 @@ static Lisp func_greater(Lisp args, LispError* e, LispContextRef ctx)
     return lisp_make_int(result);
 }
 
-static Lisp func_less_equal(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_less_equal(Lisp args, LispError* e, LispContext ctx)
 {
     // a <= b = !(a > b)
     Lisp l = func_greater(args, e, ctx);
     return  lisp_make_int(!lisp_int(l));
 }
 
-static Lisp func_greater_equal(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_greater_equal(Lisp args, LispError* e, LispContext ctx)
 {
     // a >= b = !(a < b)
     Lisp l = func_less(args, e, ctx);
     return  lisp_make_int(!lisp_int(l));
 }
 
-static Lisp func_even(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_int(Lisp args, LispError* e, LispContext ctx)
 {
-    while (!lisp_is_null(args))
-    {
-        if ((lisp_int(lisp_car(args)) & 1) == 1) return lisp_make_int(0);
-        args = lisp_cdr(args);
-    } 
-    return lisp_make_int(1);
+	Lisp val = lisp_car(args);
+	switch (lisp_type(val))
+	{
+		case LISP_INT:
+			return val;
+		case LISP_FLOAT:
+			return lisp_make_int(lisp_int(val));
+		case LISP_STRING:
+			return lisp_make_int(atoi(lisp_string(val)));
+		default:
+			*e = LISP_ERROR_BAD_ARG;
+			return lisp_null();
+	}
 }
 
-static Lisp func_odd(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_float(Lisp args, LispError* e, LispContext ctx)
 {
-    while (!lisp_is_null(args))
-    {
-        if ((lisp_int(lisp_car(args)) & 1) == 0) return lisp_make_int(0);
-        args = lisp_cdr(args);
-    } 
-
-    return lisp_make_int(1); 
+	Lisp val = lisp_car(args);
+	switch (lisp_type(val))
+	{
+		case LISP_FLOAT:
+			return val;
+		case LISP_INT:
+			return lisp_make_float(lisp_float(val));
+		case LISP_STRING:
+			return lisp_make_float(atof(lisp_string(val)));
+		default:
+			*e = LISP_ERROR_BAD_ARG;
+			return lisp_null();
+	}
 }
 
-static Lisp func_read_path(Lisp args, LispError *e, LispContextRef ctx)
+static Lisp func_even(Lisp args, LispError* e, LispContext ctx)
+{
+	while (!lisp_is_null(args))
+	{
+		if ((lisp_int(lisp_car(args)) & 1) == 1) return lisp_make_int(0);
+		args = lisp_cdr(args);
+	}
+	return lisp_make_int(1);
+}
+
+static Lisp func_odd(Lisp args, LispError* e, LispContext ctx)
+{
+	while (!lisp_is_null(args))
+	{
+		if ((lisp_int(lisp_car(args)) & 1) == 0) return lisp_make_int(0);
+		args = lisp_cdr(args);
+	}
+
+	return lisp_make_int(1);
+}
+
+static Lisp func_sin(Lisp args, LispError* e, LispContext ctx)
+{
+	float x = sinf(lisp_float(lisp_car(args)));
+	return lisp_make_float(x);
+}
+
+static Lisp func_cos(Lisp args, LispError* e, LispContext ctx)
+{
+	float x = cosf(lisp_float(lisp_car(args)));
+	return lisp_make_float(x);
+}
+
+static Lisp func_sqrt(Lisp args, LispError* e, LispContext ctx)
+{
+	float x = sqrtf(lisp_float(lisp_car(args)));
+	return lisp_make_float(x);
+}
+
+static Lisp func_read_path(Lisp args, LispError *e, LispContext ctx)
 {
     const char* path = lisp_string(lisp_car(args));
     Lisp result = lisp_read_path(path, e, ctx);
     return result;
 }
 
-static Lisp func_expand(Lisp args, LispError* e, LispContextRef ctx)
+static Lisp func_expand(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp expr = lisp_car(args);
     Lisp result = lisp_expand(expr, e, ctx);
     return result;
 }
 
-LispContextRef lisp_init_raw(int symbol_table_size)
+LispContext lisp_init_raw(int symbol_table_size)
 {
-    LispContextRef ctx = malloc(sizeof(struct LispContext));
-    ctx->lambda_counter = 0;
-    heap_init(&ctx->heap);
-    heap_init(&ctx->to_heap);
+	LispContext ctx;
+	ctx.impl = malloc(sizeof(struct LispImpl));
+    ctx.impl->lambda_counter = 0;
+    heap_init(&ctx.impl->heap);
+    heap_init(&ctx.impl->to_heap);
 
-    ctx->symbol_table = lisp_make_table(symbol_table_size, ctx);
-    ctx->global_env = lisp_null();
-    ctx->reuse_env = lisp_null();
+	ctx.impl->symbol_table = lisp_make_table(symbol_table_size, ctx);
+	ctx.impl->global_env = lisp_null();
+	ctx.impl->reuse_env = lisp_null();
     return ctx;
 }
 
-LispContextRef lisp_init_interpreter(void)
+LispContext lisp_init_interpreter(void)
 {
-    LispContextRef ctx = lisp_init_raw(512);
+    LispContext ctx = lisp_init_raw(512);
     Lisp table = lisp_make_table(256, ctx);
     lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_null(), ctx);
 
@@ -2481,8 +2477,13 @@ LispContextRef lisp_init_interpreter(void)
         ">",
         "<=",
         ">=",
-        "EVEN?",
-        "ODD?",
+		"INT",
+		"FLOAT",
+		"EVEN?",
+		"ODD?",
+		"SIN",
+		"COS",
+		"SQRT",
         NULL,
     };
 
@@ -2514,20 +2515,24 @@ LispContextRef lisp_init_interpreter(void)
         func_greater,
         func_less_equal,
         func_greater_equal,
-        func_even,
-        func_odd,
+		func_int,
+		func_float,
+		func_even,
+		func_odd,
+		func_sin,
+		func_cos,
+		func_sqrt,
         NULL,
     };
 
     lisp_table_add_funcs(table, names, funcs, ctx);
-    ctx->global_env = lisp_make_env(table, ctx); 
-
+	ctx.impl->global_env = lisp_env_extend(ctx.impl->global_env, table, ctx);
     return ctx;
 }
 
-LispContextRef lisp_init_reader(void)
+LispContext lisp_init_reader(void)
 {
-    LispContextRef ctx = lisp_init_raw(512);
+    LispContext ctx = lisp_init_raw(512);
     return ctx;
 }
 

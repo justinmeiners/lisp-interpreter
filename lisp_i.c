@@ -17,7 +17,7 @@ int main(int argc, const char* argv[])
         }
     }
     
-    LispContextRef ctx = lisp_init_interpreter();
+    LispContext ctx = lisp_init_interpreter();
 
     clock_t start_time, end_time;
         
