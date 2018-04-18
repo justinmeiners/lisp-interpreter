@@ -82,7 +82,7 @@ Loading the structure in C.
 
 ```c
 // setup lisp with 1 MB of heap
-LispContextRef ctx = lisp_init_empty(); 
+LispContext ctx = lisp_init_empty(); 
 // load lisp structure
 Lisp data = lisp_read_file(file, ctx); 
 // get value for age
