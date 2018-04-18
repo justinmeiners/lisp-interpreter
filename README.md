@@ -41,14 +41,13 @@ $ ./lisp_i
 
 ```c
 // setup lisp with 1 MB of heap
-LispContextRef ctx = lisp_init(1048576);    
-Lisp env = lisp_make_default_env(ctx);
+LispContext ctx = lisp_init_interpreter();    
 
 // load lisp program (add 1 and 2)
 Lisp program = lisp_expand(lisp_read("(+ 1 2)", ctx), ctx);    
 
 // execute program
-Lisp result = lisp_eval(program, env, ctx); 
+Lisp result = lisp_eval(program, lisp_global_env(ctx), ctx); 
 
 // prints 3
 lisp_print(result);
@@ -83,7 +82,7 @@ Loading the structure in C.
 
 ```c
 // setup lisp with 1 MB of heap
-LispContextRef ctx = lisp_init(1048576); 
+LispContextRef ctx = lisp_init_empty(); 
 // load lisp structure
 Lisp data = lisp_read_file(file, ctx); 
 // get value for age
@@ -97,7 +96,7 @@ lisp_shutdown(ctx);
 C functions can be used to extend the interpreter, or call into C code.
 
 ```c
-Lisp sum_of_squares(Lisp args, LispContextRef ctx)
+Lisp sum_of_squares(Lisp args, LispError* e, LispContext ctx)
 {
     // first argument
     Lisp accum = lisp_car(args);
