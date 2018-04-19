@@ -86,25 +86,24 @@ static void heap_init(Heap* heap)
     heap->size = 0;
 }
 
-static void heap_reset(Heap* heap, size_t target_size)
+static void heap_reset(Heap* heap)
 {
-    for (int i = 0; i <= heap->page_index; ++i)
+    for (int i = 1; i <= heap->page_index; ++i)
     {
         page_destroy(heap->pages[i]);
         heap->pages[i] = NULL;
     }
-   
-	heap->pages[0] = page_create(PAGE_SIZE);
-	heap->page_index = 0;
+    heap->pages[0]->size = 0;
+   	heap->page_index = 0;
     heap->size = 0;
 }
 
 static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
 	if (alloc_size < 1) return NULL;
-
+    
     Page* page = heap->pages[heap->page_index];
-    int remaining = page ? page->capacity - page->size : 0;
+    size_t remaining = page->capacity - page->size;
 
     if (alloc_size > remaining)
     {
@@ -1780,8 +1779,10 @@ static Lisp gc_move(Lisp l, Heap* to)
             {
                 // copy the data to new block
                 Block* dest = heap_alloc(block->size, block->type, to);
+                uint16_t page = dest->page_index;
                 memcpy(dest, block, block->size);
                 dest->gc_flags = GC_CLEAR;
+                dest->page_index = page;
                 
                 // save forwarding address (offset in to)
                 gc_forward_address(block, dest, to); 
@@ -1938,7 +1939,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 	ctx.impl->heap = ctx.impl->to_heap;
 	ctx.impl->to_heap = temp;
     
-    heap_reset(&ctx.impl->to_heap, ctx.impl->heap.size);
+    heap_reset(&ctx.impl->to_heap);
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %lu\n", diff, ctx.impl->heap.size);
@@ -1953,8 +1954,7 @@ Lisp lisp_global_env(LispContext ctx)
 
 void lisp_shutdown(LispContext ctx)
 {
-    heap_reset(&ctx.impl->heap, 0);
-    heap_reset(&ctx.impl->to_heap, 0);
+    // TODO:
     free(ctx.impl);
 }
 
