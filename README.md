@@ -44,10 +44,10 @@ $ ./lisp_i
 LispContext ctx = lisp_init_interpreter();    
 
 // load lisp program (add 1 and 2)
-Lisp program = lisp_expand(lisp_read("(+ 1 2)", ctx), ctx);    
+Lisp program = lisp_read_expand("(+ 1 2)", ctx);    
 
-// execute program
-Lisp result = lisp_eval(program, lisp_global_env(ctx), ctx); 
+// execute program using globalenvironment
+Lisp result = lisp_eval_global(program, ctx); 
 
 // prints 3
 lisp_print(result);

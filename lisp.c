@@ -100,6 +100,17 @@ static void heap_reset(Heap* heap)
     heap->size = 0;
 }
 
+static void heap_shutdown(Heap* heap)
+{
+    Page* page = heap->pages;
+    while (page)
+    {
+        Page* next = page->next;
+        page_destroy(page);
+        page = next;
+    }
+}
+
 static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
 	if (alloc_size < 1) return NULL;
@@ -1391,6 +1402,50 @@ Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx)
         return lisp_null();
     }
 }
+
+Lisp lisp_read_expand(const char* text, LispError* out_error, LispContext ctx)
+{
+    LispError e;
+    Lisp data = lisp_read(text, &e, ctx);
+
+    if (e != LISP_ERROR_NONE) 
+    {
+        if (out_error) *out_error = e;
+        return lisp_null();
+    }
+
+    return lisp_expand(data, out_error, ctx);
+}
+
+Lisp lisp_read_expand_file(FILE* file, LispError* out_error, LispContext ctx)
+{
+    LispError e;
+    Lisp data = lisp_read_file(file, &e, ctx);
+    
+    if (e != LISP_ERROR_NONE)
+    {
+        if (out_error) *out_error = e;
+        return lisp_null();
+    }
+    
+    return lisp_expand(data, out_error, ctx);
+}
+
+Lisp lisp_read_expand_path(const char* path, LispError* out_error, LispContext ctx)
+{
+    LispError e;
+    Lisp data = lisp_read_path(path, &e, ctx);
+    
+    if (e != LISP_ERROR_NONE)
+    {
+        if (out_error) *out_error = e;
+        return lisp_null();
+    }
+    
+    return lisp_expand(data, out_error, ctx);
+}
+
+
  
 // TODO?
 static const char* lisp_type_name[] = {
@@ -1737,6 +1792,12 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
     }
 }
 
+Lisp lisp_eval_global(Lisp expr, LispError* out_error, LispContext ctx)
+{
+    return lisp_eval(expr, lisp_global_env(ctx), out_error, ctx);
+}
+
+
 #pragma Garbage Collection
 
 static Lisp gc_move(Lisp l, Heap* to)
@@ -1892,22 +1953,24 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
         
         page = page->next;
     }
-
-    // DEBUG, check offsets
-    
-    page = to->pages;
-    while (page)
-	{
-        size_t offset = 0;
-        while (offset < page->size)
+ 
+    if (LISP_DEBUG)
+    {
+        // DEBUG, check offsets
+        page = to->pages;
+        while (page)
         {
-            Block* block = (Block*)(page->buffer + offset);
-            offset += block->size;
+            size_t offset = 0;
+            while (offset < page->size)
+            {
+                Block* block = (Block*)(page->buffer + offset);
+                offset += block->size;
+            }
+            assert(offset == page->size);
+            page = page->next;
         }
-        assert(offset == page->size);
-        page = page->next;
     }
-  
+
     size_t diff = ctx.impl->heap.size - ctx.impl->to_heap.size;
 
     // swap the heaps
@@ -1930,7 +1993,8 @@ Lisp lisp_global_env(LispContext ctx)
 
 void lisp_shutdown(LispContext ctx)
 {
-    // TODO:
+    heap_shutdown(&ctx.impl->heap);
+    heap_shutdown(&ctx.impl->to_heap);
     free(ctx.impl);
 }
 

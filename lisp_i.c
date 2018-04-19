@@ -66,7 +66,7 @@ int main(int argc, const char* argv[])
 
 
         start_time = clock(); 
-        lisp_eval(code, lisp_global_env(ctx), &error, ctx);  
+        lisp_eval_global(code, &error, ctx);  
         end_time = clock();
 
         if (error != LISP_ERROR_NONE)
@@ -90,21 +90,14 @@ int main(int argc, const char* argv[])
 
             clock_t start_time = clock();
             LispError error;
-            Lisp data = lisp_read(line, &error, ctx);
-
+            Lisp code = lisp_read_expand(line, &error, ctx);
+            
             if (error != LISP_ERROR_NONE)
             {
                 fprintf(stderr, "%s\n", lisp_error_string(error));
             }
 
-            Lisp code = lisp_expand(data, &error, ctx);
-
-            if (error != LISP_ERROR_NONE)
-            {
-                fprintf(stderr, "%s\n", lisp_error_string(error));
-            }
-
-            Lisp l = lisp_eval(code, lisp_global_env(ctx), &error, ctx);
+            Lisp l = lisp_eval_global(code, &error, ctx);
             clock_t end_time = clock();
 
             if (error != LISP_ERROR_NONE)

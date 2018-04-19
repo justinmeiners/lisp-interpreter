@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define LISP_DEBUG 1
+#define LISP_DEBUG 0
 
 typedef enum
 {
@@ -84,10 +84,16 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
 // expands Lisp syntax (For code)
 Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx);
+// read and then expand for convenience
+Lisp lisp_read_expand(const char* text, LispError* out_error, LispContext ctx);
+Lisp lisp_read_expand_file(FILE* file, LispError* out_error, LispContext ctx);
+Lisp lisp_read_expand_path(const char* path, LispError* out_error, LispContext ctx);
 
 // EVALUATION
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
+// same as above but uses global environment
+Lisp lisp_eval_global(Lisp expr, LispError* out_error, LispContext ctx);
 
 // print out a lisp structure
 void lisp_print(Lisp l);
