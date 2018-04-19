@@ -64,7 +64,7 @@ typedef Lisp(*LispFunc)(Lisp, LispError*, LispContext);
 
 // SETUP
 LispContext lisp_init_interpreter(void);
-LispContext lisp_init_reader(void);
+LispContext lisp_init_empty(void);
 
 void lisp_shutdown(LispContext ctx);
 Lisp lisp_global_env(LispContext ctx);
