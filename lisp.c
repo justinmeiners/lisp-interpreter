@@ -35,6 +35,7 @@ typedef struct Page
 {
     size_t size;
     size_t capacity;
+    struct Page* next;
     char buffer[];
 } Page;
 
@@ -43,6 +44,7 @@ static Page* page_create(size_t capacity)
     Page* page = malloc(sizeof(Page) + capacity);
     page->capacity = capacity;
     page->size = 0;
+    page->next = NULL;
     return page;
 }
 
@@ -50,18 +52,19 @@ void page_destroy(Page* page) { free(page); }
 
 typedef struct
 {
-    Page** pages;
-    size_t page_capacity;
-    size_t page_index;
+    Page* pages;
     size_t size;
 } Heap;
 
-typedef struct
+typedef struct Block
 {
-    uint32_t size;
-    uint16_t page_index; 
-    uint8_t gc_flags;
-    uint8_t type;
+    union
+    {
+        struct Block* forward_address;
+        size_t size;
+    };
+    unsigned char gc_flags;
+    unsigned char type;
 } Block;
 
 struct LispImpl
@@ -79,22 +82,21 @@ struct LispImpl
 
 static void heap_init(Heap* heap)
 {
-    heap->page_capacity = 32;
-    heap->page_index = 0;
-    heap->pages = malloc(sizeof(Page*) * heap->page_capacity);
-    heap->pages[0] = page_create(PAGE_SIZE);
+    heap->pages = page_create(PAGE_SIZE);
     heap->size = 0;
 }
 
 static void heap_reset(Heap* heap)
 {
-    for (int i = 1; i <= heap->page_index; ++i)
+    Page* page = heap->pages->next;
+    while (page)
     {
-        page_destroy(heap->pages[i]);
-        heap->pages[i] = NULL;
+        Page* next = page->next;
+        page_destroy(page);
+        page = next;
     }
-    heap->pages[0]->size = 0;
-   	heap->page_index = 0;
+    heap->pages->next = NULL;
+    heap->pages->size = 0;
     heap->size = 0;
 }
 
@@ -102,30 +104,22 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
 	if (alloc_size < 1) return NULL;
     
-    Page* page = heap->pages[heap->page_index];
+    Page* page = heap->pages;
     size_t remaining = page->capacity - page->size;
 
     if (alloc_size > remaining)
     {
-        ++heap->page_index;
-        if (heap->page_index >= heap->page_capacity)
-        {
-            // the page table needs to grow
-            heap->page_capacity = (heap->page_capacity * 3) / 2;
-            heap->pages = realloc(heap->pages, sizeof(Page*) * heap->page_capacity);
-        }
-
         // need a new page
         size_t size = (alloc_size <= PAGE_SIZE) ? PAGE_SIZE : alloc_size;
         page = page_create(size);
-        heap->pages[heap->page_index] = page;
+        page->next = heap->pages;
+        heap->pages = page;
     }
     
     void* address = page->buffer + page->size;
     Block* block = address;
     block->gc_flags = GC_CLEAR;
-    block->size = (uint32_t)alloc_size;
-    block->page_index = heap->page_index;
+    block->size = alloc_size;
     block->type = type;
     page->size += alloc_size;
     heap->size += alloc_size;
@@ -1745,26 +1739,6 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 
 #pragma Garbage Collection
 
-static void gc_forward_address(Block* from_block, const Block* to_block, Heap* to)
-{
-    const Page* page = to->pages[to_block->page_index]; 
-    const char* base = page->buffer;
-    const char* address = (const char*)to_block;
-
-    ptrdiff_t offset = address - base;
-    assert(offset >= 0 && offset <= page->capacity);
-    from_block->size = (uint32_t)offset;
-    from_block->page_index = to_block->page_index;
-    from_block->gc_flags = GC_MOVED;
-}
-
-static void* gc_get_address(const Block* from_block, Heap* to)
-{
-    Page* page = to->pages[from_block->page_index];
-    char* base = page->buffer;
-    return base + from_block->size;
-}
-
 static Lisp gc_move(Lisp l, Heap* to)
 {
     switch (l.type)
@@ -1779,17 +1753,16 @@ static Lisp gc_move(Lisp l, Heap* to)
             {
                 // copy the data to new block
                 Block* dest = heap_alloc(block->size, block->type, to);
-                uint16_t page = dest->page_index;
                 memcpy(dest, block, block->size);
                 dest->gc_flags = GC_CLEAR;
-                dest->page_index = page;
                 
                 // save forwarding address (offset in to)
-                gc_forward_address(block, dest, to); 
+                block->forward_address = dest;
+                block->gc_flags = GC_MOVED;
             }
             
             // return the moved block address
-            l.val = gc_get_address(block, to);
+            l.val = block->forward_address;
             return l;
         }
         case LISP_TABLE:
@@ -1812,13 +1785,14 @@ static Lisp gc_move(Lisp l, Heap* to)
                 dest_table->size = table->size;
                 dest_table->capacity = new_capacity;
                 
+                // save forwarding address (offset in to)
+                table->block.forward_address = &dest_table->block;
+                table->block.gc_flags = GC_MOVED;
+                
                 // clear the table
                 for (int i = 0; i < new_capacity; ++i)
                     dest_table->entries[i] = lisp_null();
                 
-                // save forwarding address (offset in to)
-                gc_forward_address(&table->block, &dest_table->block, to); 
- 
                 if (LISP_DEBUG && new_capacity != table->capacity)
                 {
                     printf("resizing table %i -> %i\n", table->capacity, new_capacity);
@@ -1856,7 +1830,7 @@ static Lisp gc_move(Lisp l, Heap* to)
             }
             
             // return the moved table address
-            l.val = gc_get_address(&table->block, to);
+            l.val = table->block.forward_address;
             return l;
         }
         default:
@@ -1876,10 +1850,9 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 
     // move references  
 
-	for (int i = 0; i <= to->page_index; ++i)
+    const Page* page = to->pages;
+    while (page)
     {
-		Page* page = to->pages[i];
-
         size_t offset = 0;
         while (offset < page->size)
         {
@@ -1916,13 +1889,15 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 
             offset += block->size;
         }
+        
+        page = page->next;
     }
 
     // DEBUG, check offsets
-	for (int i = 0; i <= to->page_index; ++i)
+    
+    page = to->pages;
+    while (page)
 	{
-		const Page* page = to->pages[i];
-
         size_t offset = 0;
         while (offset < page->size)
         {
@@ -1930,6 +1905,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
             offset += block->size;
         }
         assert(offset == page->size);
+        page = page->next;
     }
   
     size_t diff = ctx.impl->heap.size - ctx.impl->to_heap.size;
