@@ -2,7 +2,6 @@
 #define LISP_H
 
 #include <stdio.h>
-#include <stdint.h>
 
 #define LISP_DEBUG 0
 
@@ -17,6 +16,7 @@ typedef enum
     LISP_LAMBDA, // user defined lambda
     LISP_FUNC,   // C function
     LISP_TABLE,  // key/value storage
+    LISP_VECTOR, // homogenous array
 } LispType;
 
 typedef enum
@@ -45,12 +45,12 @@ typedef enum
 
 typedef struct
 {
-    union
+    union LispVal
     {
         float float_val;
         int int_val;  
-        void* val;
-    };
+        void* ptr_val;
+    } val;
     
     LispType type;
 } Lisp; // holds all lisp values
@@ -63,11 +63,10 @@ typedef struct
 typedef Lisp(*LispFunc)(Lisp, LispError*, LispContext);
 
 // SETUP
+// -----------------------------------------
 LispContext lisp_init_interpreter(void);
 LispContext lisp_init_empty(void);
-
 void lisp_shutdown(LispContext ctx);
-Lisp lisp_global_env(LispContext ctx);
 
 // garbage collection. 
 // this will free all objects which are not reachable from root_to_save or the global env
@@ -75,6 +74,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 const char* lisp_error_string(LispError error);
 
 // LOADING
+// -----------------------------------------
 // reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
 // This is primarily for using Lisp as JSON/XML
 // For code call expand after reading
@@ -90,6 +90,7 @@ Lisp lisp_read_expand_file(FILE* file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_expand_path(const char* path, LispError* out_error, LispContext ctx);
 
 // EVALUATION
+// -----------------------------------------
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
 // same as above but uses global environment
@@ -100,11 +101,11 @@ void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 
 // DATA STRUCTURES
+// -----------------------------------------
 #define lisp_type(l) ((l).type)
+#define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
+Lisp lisp_make_null(void);
 #define lisp_is_null(l) ((l).type == LISP_NULL)
-#define lisp_eq(a, b) ((a).val == (b).val)
-
-Lisp lisp_null(void);
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp l);
 Lisp lisp_make_float(float x);
@@ -114,46 +115,55 @@ const char* lisp_string(Lisp l);
 Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
 const char* lisp_symbol(Lisp l);
 
+// PAIRs
 Lisp lisp_car(Lisp l);
 Lisp lisp_cdr(Lisp l);
 void lisp_set_car(Lisp l, Lisp x);
 void lisp_set_cdr(Lisp l, Lisp x);
-
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
-Lisp lisp_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
-Lisp lisp_at_index(Lisp l, int n); // O(n)
-int lisp_index_of(Lisp l, Lisp x);
 // more concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
 Lisp lisp_nav(Lisp l, const char* path);
-int lisp_length(Lisp l); // O(n)
 
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);
-Lisp lisp_reverse_inplace(Lisp l); // O(n)
-
-// given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN)) 
+Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
+Lisp lisp_list_ref(Lisp l, int n); // O(n)
+int lisp_list_index_of(Lisp l, Lisp x); // O(n)
+int lisp_list_length(Lisp l); // O(n)
+// given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))
 // returns the pair with the given key or null of none
-Lisp lisp_assoc(Lisp list, Lisp key_symbol); // O(n)
+Lisp lisp_list_assoc(Lisp l, Lisp key); // O(n)
 // given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
-Lisp lisp_for_key(Lisp list, Lisp key_symbol); // O(n)
+Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
+// This operation modifys the list
+Lisp lisp_list_reverse(Lisp l); // O(n)
 
-// if you want to progromatically generate compound procedures
+// vectors
+Lisp lisp_make_vector(int n, Lisp x, LispContext ctx);
+int lisp_vector_length(Lisp v);
+Lisp lisp_vector_ref(Lisp v, int i);
+void lisp_vector_set(Lisp v, int i, Lisp x);
+
+// programatically generate compound procedures
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
+
 // C functions
 Lisp lisp_make_func(LispFunc func);
+LispFunc lisp_func(Lisp l);
 
 // tables
 Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
-void lisp_table_set(Lisp table, Lisp symbol, Lisp value, LispContext ctx);
+void lisp_table_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
 // returns the key value pair, or null if not found
-Lisp lisp_table_get(Lisp table, Lisp symbol, LispContext ctx);
-void lisp_table_add_funcs(Lisp table, const char** names, LispFunc* funcs, LispContext ctx);
+Lisp lisp_table_get(Lisp l, Lisp key, LispContext ctx);
+void lisp_table_add_funcs(Lisp l, const char** names, LispFunc* funcs, LispContext ctx);
 
 // evaluation environments
-Lisp lisp_env_extend(Lisp env, Lisp table, LispContext ctx);
-Lisp lisp_env_lookup(Lisp env, Lisp symbol, LispContext ctx);
-void lisp_env_define(Lisp env, Lisp symbol, Lisp value, LispContext ctx);
-void lisp_env_set(Lisp env, Lisp symbol, Lisp value, LispContext ctx);
+Lisp lisp_env_global(LispContext ctx);
+Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
+Lisp lisp_env_lookup(Lisp l, Lisp key, LispContext ctx);
+void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);
+void lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
 
 #endif

@@ -74,7 +74,7 @@ int main(int argc, const char* argv[])
             fprintf(stderr, "%s\n", lisp_error_string(error));
         }
 
-        lisp_collect(lisp_null(), ctx);
+        lisp_collect(lisp_make_null(), ctx);
 
         if (LISP_DEBUG)
             printf("eval (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
@@ -108,7 +108,7 @@ int main(int argc, const char* argv[])
             lisp_print(l);
             printf("\n");
             
-            lisp_collect(lisp_null(), ctx);
+            lisp_collect(lisp_make_null(), ctx);
             
             if (LISP_DEBUG)
                 printf("(us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
