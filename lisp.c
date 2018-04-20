@@ -78,7 +78,7 @@ struct LispImpl
     int lambda_counter;
 };
 
-#define PAGE_SIZE 16384
+#define PAGE_SIZE 1
 
 static void heap_init(Heap* heap)
 {
@@ -255,11 +255,6 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx)
     return p;
 }
 
-int lisp_is_pair(Lisp p)
-{
-	return (p.type == LISP_PAIR);
-}
-
 static void back_append(Lisp* front, Lisp* back, Lisp item, LispContext ctx)
 {
     Lisp new_l = lisp_cons(item, lisp_make_null(), ctx);
@@ -343,8 +338,8 @@ int lisp_list_index_of(Lisp l, Lisp x)
 	while (lisp_is_pair(l))
     {
         if (lisp_eq(lisp_car(l), x)) return i;
-        l = lisp_cdr(l);
         ++i;
+        l = lisp_cdr(l);
     }
     return -1;
 }
@@ -1430,7 +1425,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             
             while (lisp_is_pair(pairs))
             {
-                if (lisp_type(lisp_car(pairs)) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_LET);
+                if (!lisp_is_pair(lisp_car(pairs))) longjmp(error_jmp, LISP_ERROR_BAD_LET);
 
                 Lisp var = lisp_list_ref(lisp_car(pairs), 0);
 
@@ -1463,7 +1458,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                 Lisp begin = lisp_cons(lisp_make_symbol("BEGIN", ctx), body_exprs, ctx);
 
                 Lisp vars = lisp_list_ref(l, 1);
-                if (lisp_type(vars) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
+                if (!lisp_is_pair(vars)) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
 
                 return lisp_make_listv(ctx, 
                                       lisp_list_ref(l, 0),  // LAMBDA
@@ -1684,12 +1679,11 @@ Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx)
 
 Lisp lisp_env_lookup(Lisp l, Lisp key, LispContext ctx)
 {
-    Lisp it = l;
-    while (lisp_is_pair(it))
+    while (lisp_is_pair(l))
     {
-        Lisp x = lisp_table_get(lisp_car(it), key, ctx);
+        Lisp x = lisp_table_get(lisp_car(l), key, ctx);
         if (!lisp_is_null(x)) return x;
-        it = lisp_cdr(it);
+        l = lisp_cdr(l);
     }
     
     return lisp_make_null();
@@ -1764,7 +1758,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             if (!is_cdr) fprintf(file, "(");
             lisp_print_r(file, lisp_car(l), 0);
 
-            if (lisp_cdr(l).type != LISP_PAIR)
+            if (lisp_type(lisp_cdr(l)) != LISP_PAIR)
             {
                 if (!lisp_is_null(lisp_cdr(l)))
                 { 
@@ -1903,7 +1897,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContext ctx)
                             Lisp keyIt = lambda->args;
                             Lisp valIt = args_front;
                             
-                            while (lisp_type(keyIt) == LISP_PAIR)
+                            while (lisp_is_pair(keyIt))
                             {
                                 lisp_table_set(new_table, lisp_car(keyIt), lisp_car(valIt), ctx);
                                 keyIt = lisp_cdr(keyIt); 
@@ -2035,7 +2029,7 @@ static Lisp gc_move(Lisp l, Heap* to)
                     printf("resizing table %i -> %i\n", table->capacity, new_capacity);
                 }
                 
-                for (int i = 0; i < table->capacity; ++i)
+                for (unsigned int i = 0; i < table->capacity; ++i)
                 {
                     Lisp it = table->entries[i];
                     
@@ -2046,7 +2040,6 @@ static Lisp gc_move(Lisp l, Heap* to)
                         if (new_capacity != table->capacity)
                             new_index = symbol_hash(lisp_car(lisp_car(it))) % new_capacity;
                         
-                        Lisp key = lisp_car(lisp_car(it));
                         Lisp pair = gc_move(lisp_car(it), to);
 
                         // allocate a new pair in the to space
@@ -2061,7 +2054,8 @@ static Lisp gc_move(Lisp l, Heap* to)
                         lisp_set_car(new_pair, pair);
                         lisp_set_cdr(new_pair, dest_table->entries[new_index]);
                         dest_table->entries[new_index] = new_pair;
-                         
+                        
+                        lisp_set_car(it, pair);
                         it = lisp_cdr(it);
                     }
                 }
@@ -2079,13 +2073,27 @@ static Lisp gc_move(Lisp l, Heap* to)
 
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
-    lisp_print(lisp_env_global(ctx));
-    printf("---\n");
-
     Heap* to = &ctx.impl->to_heap;
 
     // move root object
     ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
+    
+    Table* table = lisp_table(ctx.impl->symbol_table);
+    
+    for (int i = 0; i < table->capacity; ++i)
+    {
+        Lisp it = table->entries[i];
+        if (lisp_is_null(it)) continue;
+        
+        if (!lisp_is_null(it))
+        {
+            Block* block = lisp_car(it).val.ptr_val;
+            printf("%i %p -> ", block->gc_flags, block->forward_address);
+            it = lisp_cdr(it);
+        }
+        printf("\n");
+    }
+    
     ctx.impl->global_env = gc_move(ctx.impl->global_env, to);
     
     Lisp result = gc_move(root_to_save, to);

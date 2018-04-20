@@ -128,7 +128,7 @@ Lisp lisp_cdr(Lisp p);
 void lisp_set_car(Lisp p, Lisp x);
 void lisp_set_cdr(Lisp p, Lisp x);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
-int lisp_is_pair(Lisp p);
+#define lisp_is_pair(p) ((p).type == LISP_PAIR)
 
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
 // conveniece function for cons'ing together items. arguments must be null terminated
