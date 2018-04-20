@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#define LISP_DEBUG 0
+#define LISP_DEBUG 1
 
 typedef enum
 {
@@ -116,7 +116,9 @@ Lisp lisp_make_float(float x);
 float lisp_float(Lisp x);
 
 Lisp lisp_make_string(const char* c_string, LispContext ctx);
-const char* lisp_string(Lisp x);
+char lisp_string_ref(Lisp s, int n);
+void lisp_string_set(Lisp s, int n, char c);
+const char* lisp_string(Lisp s);
 
 Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
 const char* lisp_symbol(Lisp x);
@@ -145,14 +147,12 @@ Lisp lisp_list_nav(Lisp p, const char* path);
 // This operation modifys the list
 Lisp lisp_list_reverse(Lisp l); // O(n)
 
-// vectors
 Lisp lisp_make_vector(unsigned int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, unsigned int i);
 void lisp_vector_set(Lisp v, unsigned int i, Lisp x);
 Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx);
 
-// tables
 Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx);
 // returns the key value pair, or null if not found

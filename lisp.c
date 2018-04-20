@@ -330,7 +330,7 @@ Lisp lisp_list_ref(Lisp l, int i)
 {
     while (i > 0)
     {
-        if (l.type != LISP_PAIR) return lisp_make_null();
+        if (!lisp_is_pair(l)) return lisp_make_null();
         l = lisp_cdr(l);
         --i;
     }
@@ -365,7 +365,7 @@ Lisp lisp_list_assoc(Lisp l, Lisp key)
     while (lisp_is_pair(l))
     {
         Lisp pair = lisp_car(l);
-        if (lisp_type(pair) == LISP_PAIR && lisp_eq(lisp_car(pair), key))
+        if (lisp_is_pair(pair) && lisp_eq(lisp_car(pair), key))
         {
             return pair;
         }
@@ -514,11 +514,27 @@ Lisp lisp_make_string(const char* c_string, LispContext ctx)
     return l;
 }
 
-const char* lisp_string(Lisp l)
+static String* get_string(Lisp s)
 {
-    assert(l.type == LISP_STRING);
-    String* string = l.val.ptr_val;
-    return string->string;
+    assert(s.type == LISP_STRING);
+    return s.val.ptr_val;
+}
+
+const char* lisp_string(Lisp s)
+{
+    return get_string(s)->string;
+}
+
+char lisp_string_ref(Lisp s, int n)
+{
+    const char* str = lisp_string(s);
+    return str[n];
+}
+
+void lisp_string_set(Lisp s, int n, char c)
+{
+    String* string = get_string(s);
+    string->string[n] = c;
 }
 
 const char* lisp_symbol(Lisp l)
@@ -1672,7 +1688,7 @@ Lisp lisp_env_lookup(Lisp l, Lisp key, LispContext ctx)
     while (lisp_is_pair(it))
     {
         Lisp x = lisp_table_get(lisp_car(it), key, ctx);
-        if (lisp_is_pair(x)) return x;
+        if (!lisp_is_null(x)) return x;
         it = lisp_cdr(it);
     }
     
@@ -2023,13 +2039,14 @@ static Lisp gc_move(Lisp l, Heap* to)
                 {
                     Lisp it = table->entries[i];
                     
-                    while (!lisp_is_null(it))
+                    while (lisp_is_pair(it))
                     {
                         unsigned int new_index = i;
                         
                         if (new_capacity != table->capacity)
                             new_index = symbol_hash(lisp_car(lisp_car(it))) % new_capacity;
                         
+                        Lisp key = lisp_car(lisp_car(it));
                         Lisp pair = gc_move(lisp_car(it), to);
 
                         // allocate a new pair in the to space
@@ -2062,11 +2079,15 @@ static Lisp gc_move(Lisp l, Heap* to)
 
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
+    lisp_print(lisp_env_global(ctx));
+    printf("---\n");
+
     Heap* to = &ctx.impl->to_heap;
 
     // move root object
     ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
     ctx.impl->global_env = gc_move(ctx.impl->global_env, to);
+    
     Lisp result = gc_move(root_to_save, to);
 
     // move references  
@@ -2096,10 +2117,8 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                     case LISP_VECTOR:
                     {
                         Vector* vector = (Vector*)block;
-
                         Lisp temp;
                         temp.type = vector->type;
-
                         for (int i = 0; i < vector->length; ++i)
                         {
                            temp.val = vector->entries[i];
@@ -2154,6 +2173,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 	ctx.impl->to_heap = temp;
     
     heap_reset(&ctx.impl->to_heap);
+    lisp_print(lisp_env_global(ctx));
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %lu\n", diff, ctx.impl->heap.size);
@@ -2326,7 +2346,6 @@ static Lisp func_append(Lisp args, LispError* e, LispContext ctx)
         *e = LISP_ERROR_BAD_ARG;
         return lisp_make_null();
     }
-
     args = lisp_cdr(args);
     while (lisp_is_pair(args))
     {
@@ -2351,7 +2370,6 @@ static Lisp func_map(Lisp args, LispError* e, LispContext ctx)
     Lisp lists = lisp_cdr(args);      
     int n = lisp_list_length(lists);
     if (n == 0) return lisp_make_null();
-
 
     Lisp result_lists = lisp_make_list(lisp_make_null(), n, ctx);
     Lisp result_it = result_lists;
@@ -2658,14 +2676,42 @@ static Lisp func_string_copy(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp func_string_length(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp val = lisp_car(args);
-    if (lisp_type(val) != LISP_STRING)
+    Lisp x = lisp_car(args);
+    if (lisp_type(x) != LISP_STRING)
     {
         *e = LISP_ERROR_BAD_ARG;
         return lisp_make_null();
     }
 
-    return lisp_make_int(strlen(lisp_string(val)));
+    return lisp_make_int((int)strlen(lisp_string(x)));
+}
+
+static Lisp func_string_ref(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp str = lisp_car(args);
+    Lisp index = lisp_car(lisp_cdr(args));
+    if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
+    {
+        *e = LISP_ERROR_BAD_ARG;
+        return lisp_make_null();
+    }
+
+    return lisp_make_int((int)lisp_string_ref(str, lisp_int(index)));
+}
+
+static Lisp func_string_set(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp str = lisp_list_ref(args, 0);
+    Lisp index = lisp_list_ref(args, 1);
+    Lisp val = lisp_list_ref(args, 2);
+    if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
+    {
+        *e = LISP_ERROR_BAD_ARG;
+        return lisp_make_null();
+    }
+
+    lisp_string_set(str, lisp_int(index), (char)lisp_int(val));
+    return lisp_make_null();
 }
 
 static Lisp func_is_int(Lisp args, LispError* e, LispContext ctx)
@@ -2894,6 +2940,8 @@ LispContext lisp_init_interpreter(void)
         "STRING?",
         "STRING-COPY",
         "STRING-LENGTH",
+        "STRING-REF",
+        "STRING-SET!",
         "INT?",
         "FLOAT?",
 		"EVEN?",
@@ -2946,6 +2994,8 @@ LispContext lisp_init_interpreter(void)
         func_is_string,
         func_string_copy,
         func_string_length,
+        func_string_ref,
+        func_string_set,
         func_is_int,
         func_is_float,
 		func_even,
