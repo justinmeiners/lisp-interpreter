@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#define LISP_DEBUG 1
+#define LISP_DEBUG 0
 
 typedef enum
 {

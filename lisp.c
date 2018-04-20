@@ -52,8 +52,10 @@ void page_destroy(Page* page) { free(page); }
 
 typedef struct
 {
-    Page* pages;
+    Page* first_page;
+    Page* page;
     size_t size;
+    size_t page_count;
 } Heap;
 
 typedef struct Block
@@ -78,61 +80,55 @@ struct LispImpl
     int lambda_counter;
 };
 
-#define PAGE_SIZE 1
+#define PAGE_SIZE 8192
 
 static void heap_init(Heap* heap)
 {
-    heap->pages = page_create(PAGE_SIZE);
+    heap->first_page = NULL;
+    heap->page = heap->first_page;
     heap->size = 0;
-}
-
-static void heap_reset(Heap* heap)
-{
-    Page* page = heap->pages->next;
-    while (page)
-    {
-        Page* next = page->next;
-        page_destroy(page);
-        page = next;
-    }
-    heap->pages->next = NULL;
-    heap->pages->size = 0;
-    heap->size = 0;
+    heap->page_count = 0;
 }
 
 static void heap_shutdown(Heap* heap)
 {
-    Page* page = heap->pages;
+    Page* page = heap->first_page;
     while (page)
     {
         Page* next = page->next;
         page_destroy(page);
         page = next;
     }
+    heap->first_page = NULL;
 }
 
 static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
-	if (alloc_size < 1) return NULL;
+    assert(alloc_size > 0);
     
-    Page* page = heap->pages;
-    size_t remaining = page->capacity - page->size;
-
-    if (alloc_size > remaining)
+    size_t desired_page_size =  (alloc_size <= PAGE_SIZE) ? PAGE_SIZE : alloc_size;
+    
+    if (!heap->page)
     {
-        // need a new page
-        size_t size = (alloc_size <= PAGE_SIZE) ? PAGE_SIZE : alloc_size;
-        page = page_create(size);
-        page->next = heap->pages;
-        heap->pages = page;
+        // need a new page because we don't have one
+        heap->first_page = page_create(desired_page_size);
+        heap->page = heap->first_page;
+        ++heap->page_count;
+    }
+    else if (alloc_size > heap->page->capacity - heap->page->size)
+    {
+        // need a new page because ours is full
+        heap->page->next = page_create(desired_page_size);
+        heap->page = heap->page->next;
+        ++heap->page_count;
     }
     
-    void* address = page->buffer + page->size;
+    void* address = heap->page->buffer + heap->page->size;
     Block* block = address;
     block->gc_flags = GC_CLEAR;
     block->size = alloc_size;
     block->type = type;
-    page->size += alloc_size;
+    heap->page->size += alloc_size;
     heap->size += alloc_size;
     return address;
 }
@@ -2054,8 +2050,6 @@ static Lisp gc_move(Lisp l, Heap* to)
                         lisp_set_car(new_pair, pair);
                         lisp_set_cdr(new_pair, dest_table->entries[new_index]);
                         dest_table->entries[new_index] = new_pair;
-                        
-                        lisp_set_car(it, pair);
                         it = lisp_cdr(it);
                     }
                 }
@@ -2077,43 +2071,25 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 
     // move root object
     ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
-    
-    Table* table = lisp_table(ctx.impl->symbol_table);
-    
-    for (int i = 0; i < table->capacity; ++i)
-    {
-        Lisp it = table->entries[i];
-        if (lisp_is_null(it)) continue;
-        
-        if (!lisp_is_null(it))
-        {
-            Block* block = lisp_car(it).val.ptr_val;
-            printf("%i %p -> ", block->gc_flags, block->forward_address);
-            it = lisp_cdr(it);
-        }
-        printf("\n");
-    }
-    
     ctx.impl->global_env = gc_move(ctx.impl->global_env, to);
     
     Lisp result = gc_move(root_to_save, to);
 
-    // move references  
-
-    const Page* page = to->pages;
+    // move references
+    const Page* page = to->first_page;
+    int page_counter = 0;
     while (page)
     {
         size_t offset = 0;
         while (offset < page->size)
         {
             Block* block = (Block*)(page->buffer + offset);
-
             if (!(block->gc_flags & GC_VISITED))
             {
                 switch (block->type)
                 {
                     // these add to the buffer!
-                    // so lists are handled in a single pass 
+                    // so lists are handled in a single pass
                     case LISP_PAIR:
                     {
                         // move the CAR and CDR
@@ -2142,24 +2118,24 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         lambda->args = gc_move(lambda->args, to);
                         lambda->body = gc_move(lambda->body, to);
                         lambda->env = gc_move(lambda->env, to);
-                        break; 
+                        break;
                     }
                     default: break;
                 }
-
                 block->gc_flags |= GC_VISITED;
             }
-
             offset += block->size;
         }
-        
         page = page->next;
+        ++page_counter;
     }
- 
+    // check that we visited all the pages
+    assert(page_counter == to->page_count);
+    
     if (LISP_DEBUG)
     {
         // DEBUG, check offsets
-        page = to->pages;
+        const Page* page = to->first_page;
         while (page)
         {
             size_t offset = 0;
@@ -2180,8 +2156,9 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 	ctx.impl->heap = ctx.impl->to_heap;
 	ctx.impl->to_heap = temp;
     
-    heap_reset(&ctx.impl->to_heap);
-    lisp_print(lisp_env_global(ctx));
+    // reset the heap
+    heap_shutdown(&ctx.impl->to_heap);
+    heap_init(&ctx.impl->to_heap);
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %lu\n", diff, ctx.impl->heap.size);
@@ -2394,9 +2371,7 @@ static Lisp func_map(Lisp args, LispError* e, LispContext ctx)
         { 
             Lisp expr = lisp_cons(op, lisp_cons(lisp_car(it), lisp_make_null(), ctx), ctx);
             Lisp result = lisp_eval(expr, lisp_env_global(ctx), NULL, ctx);
-
             back_append(&front, &back, result, ctx);
-
             it = lisp_cdr(it);
         } 
 
@@ -2889,6 +2864,11 @@ static Lisp func_expand(Lisp args, LispError* e, LispContext ctx)
     return result;
 }
 
+static Lisp func_global_env(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_env_global(ctx);
+}
+
 static LispContext lisp_init(int symbol_table_size)
 {
 	LispContext ctx;
@@ -2932,6 +2912,7 @@ LispContext lisp_init_interpreter(void)
         "READ-PATH",
 		"LAMBDA-BODY",
         "EXPAND",
+        "GLOBAL-ENV",
         "=",
         "+",
         "-",
@@ -2986,6 +2967,7 @@ LispContext lisp_init_interpreter(void)
         func_read_path,
 		func_lambda_body,
         func_expand,
+        func_global_env,
         func_equals,
         func_add,
         func_sub,
