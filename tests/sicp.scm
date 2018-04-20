@@ -49,7 +49,7 @@
 
 (assert (= (peano-add 4 5) 9))
 (assert (= (peano-add 20 10) 30))
-(assert (= (peano-add 1000 2000) 3000))
+(assert (= (peano-add 100000 200000) 300000))
 
 ; 1.14 change counter
 
