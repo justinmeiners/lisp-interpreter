@@ -1,7 +1,7 @@
 
 ; check that we can load an interact with this file
 
-(let ((data (read-path "random_gen.sexpr")))
+(let ((data (read-path "big_data_gen.sexpr")))
     (display "records: ")
     (display (length data))
     (newline)
@@ -12,3 +12,8 @@
    
 (display "done")
 (newline)
+
+(let ((data (read-path "big_data_canada.sexpr")))
+    (display "records: ")
+    (display (length data)))
+

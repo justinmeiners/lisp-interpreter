@@ -48,7 +48,8 @@
         (peano-add (dec a) (inc b))))
 
 (assert (= (peano-add 4 5) 9))
-(assert (= (peano-add 100 200) 300))
+(assert (= (peano-add 20 10) 30))
+(assert (= (peano-add 1000 2000) 3000))
 
 ; 1.14 change counter
 
