@@ -25,6 +25,7 @@ typedef enum
     LISP_ERROR_FILE_OPEN,
     LISP_ERROR_PAREN_UNEXPECTED,
     LISP_ERROR_PAREN_EXPECTED,
+	LISP_ERROR_DOT_UNEXPECTED,
 
     LISP_ERROR_BAD_TOKEN,
     LISP_ERROR_BAD_QUOTE,
@@ -39,6 +40,7 @@ typedef enum
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_UNKNOWN_EVAL,
+	LISP_ERROR_OUT_OF_BOUNDS,
 
     LISP_ERROR_BAD_ARG,
 } LispError;
@@ -102,27 +104,29 @@ void lisp_printf(FILE* file, Lisp l);
 
 // DATA STRUCTURES
 // -----------------------------------------
-#define lisp_type(l) ((l).type)
+#define lisp_type(x) ((x).type)
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
 Lisp lisp_make_null(void);
-#define lisp_is_null(l) ((l).type == LISP_NULL)
-Lisp lisp_make_int(int n);
-int lisp_int(Lisp l);
-Lisp lisp_make_float(float x);
-float lisp_float(Lisp l);
-Lisp lisp_make_string(const char* c_string, LispContext ctx);
-const char* lisp_string(Lisp l);
-Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
-const char* lisp_symbol(Lisp l);
+#define lisp_is_null(x) ((x).type == LISP_NULL)
 
-// PAIRs
-Lisp lisp_car(Lisp l);
-Lisp lisp_cdr(Lisp l);
-void lisp_set_car(Lisp l, Lisp x);
-void lisp_set_cdr(Lisp l, Lisp x);
+Lisp lisp_make_int(int n);
+int lisp_int(Lisp x);
+
+Lisp lisp_make_float(float x);
+float lisp_float(Lisp x);
+
+Lisp lisp_make_string(const char* c_string, LispContext ctx);
+const char* lisp_string(Lisp x);
+
+Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
+const char* lisp_symbol(Lisp x);
+
+Lisp lisp_car(Lisp p);
+Lisp lisp_cdr(Lisp p);
+void lisp_set_car(Lisp p, Lisp x);
+void lisp_set_cdr(Lisp p, Lisp x);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
-// more concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
-Lisp lisp_nav(Lisp l, const char* path);
+int lisp_is_pair(Lisp p);
 
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
 // conveniece function for cons'ing together items. arguments must be null terminated
@@ -136,14 +140,24 @@ int lisp_list_length(Lisp l); // O(n)
 Lisp lisp_list_assoc(Lisp l, Lisp key); // O(n)
 // given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
 Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
+ // concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
+Lisp lisp_list_nav(Lisp p, const char* path);
 // This operation modifys the list
 Lisp lisp_list_reverse(Lisp l); // O(n)
 
 // vectors
-Lisp lisp_make_vector(int n, Lisp x, LispContext ctx);
+Lisp lisp_make_vector(unsigned int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
-Lisp lisp_vector_ref(Lisp v, int i);
-void lisp_vector_set(Lisp v, int i, Lisp x);
+Lisp lisp_vector_ref(Lisp v, unsigned int i);
+void lisp_vector_set(Lisp v, unsigned int i, Lisp x);
+Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx);
+
+// tables
+Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
+void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx);
+// returns the key value pair, or null if not found
+Lisp lisp_table_get(Lisp t, Lisp key, LispContext ctx);
+void lisp_table_add_funcs(Lisp t, const char** names, LispFunc* funcs, LispContext ctx);
 
 // programatically generate compound procedures
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
@@ -151,13 +165,6 @@ Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
 // C functions
 Lisp lisp_make_func(LispFunc func);
 LispFunc lisp_func(Lisp l);
-
-// tables
-Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
-void lisp_table_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
-// returns the key value pair, or null if not found
-Lisp lisp_table_get(Lisp l, Lisp key, LispContext ctx);
-void lisp_table_add_funcs(Lisp l, const char** names, LispFunc* funcs, LispContext ctx);
 
 // evaluation environments
 Lisp lisp_env_global(LispContext ctx);

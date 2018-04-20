@@ -1,6 +1,6 @@
 TARGET = lisp_i
 SRC = *.c
-FLAGS = -O3
+FLAGS = -O3 -Wall
 CC = gcc
 
 ${TARGET}: ${SRC}

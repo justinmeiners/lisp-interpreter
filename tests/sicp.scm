@@ -68,10 +68,12 @@
           ((= kinds-of-coins 2) 5)
           ((= kinds-of-coins 3) 10)
           ((= kinds-of-coins 4) 25)
-          ((= kinds-of-coins 5) 50))) 
+          ((= kinds-of-coins 5) 50)
+          (else 0)))
 
-;(display (count-change 5))
-;(newline)
+(display "counting change: ")
+(display (count-change 75))
+(newline)
 
 
 ; 1.16 - fast powers
@@ -132,8 +134,6 @@
 
 (assert (= ((justin 'withdraw) 0) 120))
 (assert (= ((ryan 'deposity) 0) 180))
-
-
 
 
 ; and or expansion
