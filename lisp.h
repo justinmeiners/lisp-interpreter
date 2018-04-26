@@ -134,7 +134,8 @@ Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
 // conveniece function for cons'ing together items. arguments must be null terminated
 Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
-Lisp lisp_list_ref(Lisp l, int n); // O(n)
+Lisp lisp_list_advance(Lisp l, int i); // O(n)
+Lisp lisp_list_ref(Lisp l, int i); // O(n)
 int lisp_list_index_of(Lisp l, Lisp x); // O(n)
 int lisp_list_length(Lisp l); // O(n)
 // given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))

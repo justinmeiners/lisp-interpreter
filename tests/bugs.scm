@@ -1,6 +1,7 @@
+; add a test for every bug that is incountered
+; to avoid recreating it in the future
 
 ; test basic vector creation and operations
-
 (define v #(1 2 3 4 5 6 7 8 9 10))
 
 (define (sum-to-n n) (/ (* n (+ n 1)) 2))
@@ -22,4 +23,11 @@
 (display (vector-length big-v))
 (assert (= (vector-length big-v) 200))
 
+
+; procedures with no arguments don't expand properly
+
+(define (hello-world) (display "hello world") (newline))
+(hello-world)
         
+
+
