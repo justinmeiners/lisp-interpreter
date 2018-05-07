@@ -17,7 +17,7 @@ An embeddable lisp interepreter written in C. I created this while reading SICP 
 
 - Scheme-like (but not confined to) syntax. if, let, and, or, etc.
 - Closures
-- Cheney garbage collection with explicit invocation.
+- Exact [garbage collection](#garbage-collection) with explicit invocation.
 - Symbol table
 - Easy integration of C functions.
 - REPL command line tool.
@@ -41,30 +41,30 @@ $ ./lisp_i
 
 ```c
 // setup lisp with 1 MB of heap
-LispContext ctx = lisp_init_interpreter();    
+LispContext ctx = lisp_init_interpreter();
 
 // load lisp program (add 1 and 2)
 LispError error;
-Lisp program = lisp_read_expand("(+ 1 2)", &error, ctx);    
+Lisp program = lisp_read_expand("(+ 1 2)", &error, ctx);
 
 // execute program using global environment
-Lisp result = lisp_eval_global(program, &error, ctx); 
+Lisp result = lisp_eval_global(program, &error, ctx);
 
 // prints 3
 lisp_print(result);
 
 // you are responsible for garbage collection
-lisp_collect(ctx, env);     
+lisp_collect(ctx, env);
 // ...
 // shutdown also garbage collects
-lisp_shutdown(ctx, env); 
+lisp_shutdown(ctx, env);
 ```
 
 ### Loading Data
 
-Lisp s-expressions can be used as a lightweight substitute to JSON or XML. 
+Lisp s-expressions can be used as a lightweight substitute to JSON or XML.
 
-JSON 
+JSON
 ```json
 {
    "name" : "bob jones",
@@ -75,19 +75,19 @@ JSON
 
 Lisp
 ```scheme
-((name "bob jones") 
-    (age 54) 
+((name "bob jones")
+    (age 54)
     (city "SLC"))
 ```
 Loading the structure in C.
 
 ```c
 // setup lisp with 1 MB of heap
-LispContext ctx = lisp_init_empty(); 
+LispContext ctx = lisp_init_empty();
 // load lisp structure
-Lisp data = lisp_read_file(file, ctx); 
+Lisp data = lisp_read_file(file, ctx);
 // get value for age
-Lisp age = lisp_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
+Lisp age = lisp_list_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
 // ...
 lisp_shutdown(ctx);
 ```
@@ -137,14 +137,20 @@ In Lisp
 (sum-of-squares 1 2 3)
 ; returns 1 + 4 + 9 = 14
 ```
-Constants can also be stored in the enviornment in a similar fashion.
+Constants can also be stored in the environment in a similar fashion.
 
 ```c
 Lisp pi = lisp_make_float(3.1415);
 lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
 ```
 
-## Status
+## Garbage Collection
 
-This project is in progress and is not stable. However, most of the lisp features have been implemented and work properly. You can find a list of todos on the project page.
+The lisp interpreter uses the [Cheney algorithim](https://en.wikipedia.org/wiki/Cheney%27s_algorithm) for garbage collection.
+
+Memory is allocated in fixed size pages. When an allocation is request and the current page does not have enough space remaining, a new page will be allocated to fulfill the allocation. So, allocations will continue to use up more memory until garbage collection is invoked by calling `lisp_collect`.
+
+The choice to use explicit, rather than automatic garbage collection, was made so that the interpreter does not need to keep track of every lisp object on the stack, only the most important objects. If garbage collection was allowed to trigger in the middle of a C function call, then the interpreter would need to be able to "see" all the lisp values on the call stack, in order to prevent them from being collected. Providing this feature would make integrating with C code much more complicated and conflict with the project's goal of being easily embeddable.
+
+This means that when `lisp_collect` is called, all lisp values which are not reachable from the global environment or the function's parameters become invalidated. Be conscious of where you call the garbage collector is called.
 
