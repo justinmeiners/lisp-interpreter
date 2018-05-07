@@ -152,6 +152,6 @@ Memory is allocated in fixed size pages. When an allocation is request and the c
 
 The choice to use explicit, rather than automatic garbage collection, was made so that the interpreter does not need to keep track of every lisp object on the stack, only the most important objects. If garbage collection was allowed to trigger in the middle of a C function call, then the interpreter would need to be able to "see" all the lisp values on the call stack, in order to prevent them from being collected. Providing this feature would make integrating with C code much more complicated and conflict with the project's goal of being easily embeddable.
 
-This means that when `lisp_collect` is called, all lisp values which are not reachable from the global environment or the function's parameters become invalidated. Be conscious of where you call the garbage collector is called.
+This means that when `lisp_collect` is called, all lisp values which are not reachable from the global environment or the function's parameters become invalidated. Be conscious of when and where you call the garbage collector.
 
 You can learn about an alternative solution in the [Lua Scripting Language](https://www.lua.org/pil/24.2.html).
