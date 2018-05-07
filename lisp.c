@@ -80,7 +80,7 @@ struct LispImpl
     int lambda_counter;
 };
 
-#define PAGE_SIZE 8192
+#define LISP_PAGE_SIZE 8192
 
 static void heap_init(Heap* heap)
 {
@@ -106,7 +106,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
     assert(alloc_size > 0);
     
-    size_t desired_page_size =  (alloc_size <= PAGE_SIZE) ? PAGE_SIZE : alloc_size;
+    size_t desired_page_size =  (alloc_size <= LISP_PAGE_SIZE) ? LISP_PAGE_SIZE : alloc_size;
     
     if (!heap->page)
     {
@@ -731,7 +731,7 @@ static void lexer_init_file(Lexer* lex, FILE* file)
 {
     lex->file = file;
 
-    lex->buff_size = 4096;
+    lex->buff_size = LISP_FILE_CHUNK_SIZE;
 
      // double input buffering
     lex->sc_buff_index = 0;
