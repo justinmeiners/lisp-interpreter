@@ -75,9 +75,9 @@ JSON
 
 Lisp
 ```scheme
-((name "bob jones")
-    (age 54)
-    (city "SLC"))
+#((name . "bob jones")
+    (age . 54)
+    (city . "SLC"))
 ```
 Loading the structure in C.
 
@@ -87,7 +87,7 @@ LispContext ctx = lisp_init_empty();
 // load lisp structure
 Lisp data = lisp_read_file(file, ctx);
 // get value for age
-Lisp age = lisp_list_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
+Lisp age = lisp_vector_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
 // ...
 lisp_shutdown(ctx);
 ```
