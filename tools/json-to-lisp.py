@@ -21,10 +21,10 @@ def lisp_dump(data):
         result += ")"
         return result
     elif isinstance(data, dict):
-        result = "("
+        result = "#("
         i = 0
         for key, item in data.items():
-            result += "(%s %s)" % (key, lisp_dump(item))
+            result += "(%s . %s)" % (key, lisp_dump(item))
             if i + 1 < len(data):
                 result += " "
             i += 1

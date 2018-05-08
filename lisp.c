@@ -376,7 +376,16 @@ Lisp lisp_list_assoc(Lisp l, Lisp key)
 Lisp lisp_list_for_key(Lisp l, Lisp key)
 {
     Lisp pair = lisp_list_assoc(l, key);
-    return lisp_car(lisp_cdr(pair));
+    Lisp x = lisp_cdr(pair);
+
+    if (lisp_is_pair(x))
+    {
+        return lisp_car(x);
+    }
+    else
+    {
+        return x;
+    }
 }
 
 Lisp lisp_list_nav(Lisp p, const char* c)
@@ -2449,7 +2458,9 @@ static Lisp func_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp func_assoc(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_list_assoc(lisp_car(args), lisp_car(lisp_cdr(args)));
+    Lisp key = lisp_car(args);
+    Lisp l = lisp_car(lisp_cdr(args)); 
+    return lisp_list_assoc(l, key);
 }
 
 static Lisp func_add(Lisp args, LispError* e, LispContext ctx)
@@ -2887,7 +2898,6 @@ static Lisp func_vector_assoc(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp key = lisp_car(args);
     Lisp v = lisp_car(lisp_cdr(args));
-
     return lisp_vector_assoc(v, key); 
 }
 
