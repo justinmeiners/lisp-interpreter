@@ -28,6 +28,16 @@
 
 (define (hello-world) (display "hello world") (newline))
 (hello-world)
+
+; vector assoc
+(define vec-map #((bob . 1) (john . 2) (dan . 3) (alice . 4)))
+
+(assert (= (cdr (vector-assoc 'john vec-map)) 2))
+(assert (= (cdr (vector-assoc 'alice vec-map)) 4))
+(assert (null? (vector-assoc 'bad-key vec-map)))
+
+
+
         
 
 
