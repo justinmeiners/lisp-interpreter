@@ -159,6 +159,7 @@ Lisp lisp_make_vector(unsigned int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, unsigned int i);
 void lisp_vector_set(Lisp v, unsigned int i, Lisp x);
+Lisp lisp_vector_assoc(Lisp v, Lisp key); // O(n)
 Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx);
 
 Lisp lisp_make_table(unsigned int capacity, LispContext ctx);

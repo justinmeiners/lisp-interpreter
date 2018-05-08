@@ -481,6 +481,28 @@ void lisp_vector_set(Lisp v, unsigned int i, Lisp x)
     vector->entries[i] = x.val;
 }
 
+Lisp lisp_vector_assoc(Lisp v, Lisp key)
+{
+    const Vector* vector = lisp_vector(v);
+    assert(vector->type == LISP_PAIR);
+
+    Lisp x;
+    x.type = LISP_PAIR;
+
+    for (int i = 0; i < vector->length; ++i)
+    {
+        x.val = vector->entries[i];
+
+        if (lisp_eq(lisp_car(x), key))
+        {
+            return x;
+        }
+    }
+
+    return lisp_make_null(); 
+
+}
+
 Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx)
 {
 	const Vector* vector = lisp_vector(v);
@@ -2861,6 +2883,14 @@ static Lisp func_vector_set(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
+static Lisp func_vector_assoc(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp key = lisp_car(args);
+    Lisp v = lisp_car(lisp_cdr(args));
+
+    return lisp_vector_assoc(v, key); 
+}
+
 static Lisp func_read_path(Lisp args, LispError *e, LispContext ctx)
 {
     const char* path = lisp_string(lisp_car(args));
@@ -2961,6 +2991,7 @@ LispContext lisp_init_interpreter(void)
         "VECTOR-LENGTH",
         "VECTOR-REF",
         "VECTOR-SET!",
+        "VECTOR-ASSOC",
         NULL,
     };
 
@@ -3016,6 +3047,7 @@ LispContext lisp_init_interpreter(void)
         func_vector_length,
         func_vector_ref,
         func_vector_set,
+        func_vector_assoc,
         NULL,
     };
 
