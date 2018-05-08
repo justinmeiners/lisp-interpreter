@@ -15,5 +15,5 @@
 
 (let ((data (read-path "big_data_canada.sexpr")))
     (display "records: ")
-    (display (length data)))
+    (display (vector-length data)))
 
