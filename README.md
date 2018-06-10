@@ -3,7 +3,7 @@ lisp-interpreter
 
 ## About
 
-An embeddable lisp interepreter written in C. I created this while reading SICP to improve my knowledge of lisp and to make an implementation that allows me to easily add scripting to my own programs.
+An embeddable lisp interepreter written in C. I created this while reading [SICP](https://github.com/justinmeiners/sicp-excercises) to improve my knowledge of lisp and to make an implementation that allows me to easily add scripting to my own programs.
 
 
 ### Philosophy
