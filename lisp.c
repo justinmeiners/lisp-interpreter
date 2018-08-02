@@ -338,7 +338,7 @@ Lisp lisp_list_ref(Lisp l, int n)
 int lisp_list_index_of(Lisp l, Lisp x)
 {
     int i = 0;
-	while (lisp_is_pair(l))
+    while (lisp_is_pair(l))
     {
         if (lisp_eq(lisp_car(l), x)) return i;
         ++i;
@@ -390,38 +390,38 @@ Lisp lisp_list_for_key(Lisp l, Lisp key)
 
 Lisp lisp_list_nav(Lisp p, const char* c)
 {
-	if (toupper(*c) != 'C') return lisp_make_null();
+    if (toupper(*c) != 'C') return lisp_make_null();
 
-	++c;
-	int i = 0;
-	while (toupper(*c) != 'R' && *c)
-	{
-		++i;
-		++c;
-	}
+    ++c;
+    int i = 0;
+    while (toupper(*c) != 'R' && *c)
+    {
+        ++i;
+        ++c;
+    }
 
-	if (toupper(*c) != 'R') return lisp_make_null();
-	--c;
+    if (toupper(*c) != 'R') return lisp_make_null();
+    --c;
 
-	while (i > 0)
-	{
-		if (toupper(*c) == 'D')
-		{
-			p = lisp_cdr(p);
-		}
-		else if (toupper(*c) == 'A')
-		{
-			p = lisp_car(p);
-		}
-		else
-		{
-			return lisp_make_null();
-		}
-		--c;
-		--i;
-	}
+    while (i > 0)
+    {
+        if (toupper(*c) == 'D')
+        {
+            p = lisp_cdr(p);
+        }
+        else if (toupper(*c) == 'A')
+        {
+            p = lisp_car(p);
+        }
+        else
+        {
+            return lisp_make_null();
+        }
+        --c;
+        --i;
+    }
 
-	return p;
+    return p;
 }
 
 Lisp lisp_list_reverse(Lisp l)
@@ -514,21 +514,21 @@ Lisp lisp_vector_assoc(Lisp v, Lisp key)
 
 Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx)
 {
-	const Vector* vector = lisp_vector(v);
-	assert(n >= vector->length);
+    const Vector* vector = lisp_vector(v);
+    assert(n >= vector->length);
 
-	if (n == vector->length)
-	{
-		return v;
-	}
-	else
-	{
-		Lisp new_v = lisp_make_vector(n, lisp_vector_ref(v, 0), ctx);
-		Vector* new_vector = lisp_vector(new_v);
-		for (int i = 0; i < vector->length; ++i)
-			new_vector->entries[i] = vector->entries[i];
-		return new_v;
-	}
+    if (n == vector->length)
+    {
+        return v;
+    }
+    else
+    {
+        Lisp new_v = lisp_make_vector(n, lisp_vector_ref(v, 0), ctx);
+        Vector* new_vector = lisp_vector(new_v);
+        for (int i = 0; i < vector->length; ++i)
+            new_vector->entries[i] = vector->entries[i];
+        return new_v;
+    }
 }
 
 Lisp lisp_make_string(const char* c_string, LispContext ctx)
@@ -705,8 +705,8 @@ typedef enum
     TOKEN_NONE = 0,
     TOKEN_L_PAREN,
     TOKEN_R_PAREN,
-	TOKEN_HASH,
-	TOKEN_DOT,
+    TOKEN_HASH,
+    TOKEN_DOT,
     TOKEN_QUOTE,
     TOKEN_SYMBOL,
     TOKEN_STRING,
@@ -833,7 +833,7 @@ static int lexer_step(Lexer* lex)
                 }
             }
 
-			lex->c_buff_index = new_index;
+            lex->c_buff_index = new_index;
             lex->c = lex->buffs[new_index];
         }  
         else
@@ -1012,16 +1012,16 @@ static void lexer_next_token(Lexer* lex)
         lex->token = TOKEN_R_PAREN;
         lexer_step(lex);
     }
-	else if (*lex->c == '#')
-	{
-		lex->token = TOKEN_HASH;
-		lexer_step(lex);
-	}
-	else if (*lex->c == '.')
-	{
-		lex->token = TOKEN_DOT;
-		lexer_step(lex);
-	}
+    else if (*lex->c == '#')
+    {
+        lex->token = TOKEN_HASH;
+        lexer_step(lex);
+    }
+    else if (*lex->c == '.')
+    {
+        lex->token = TOKEN_DOT;
+        lexer_step(lex);
+    }
     else if (*lex->c == '\'')
     {
         lex->token = TOKEN_QUOTE;
@@ -1107,8 +1107,8 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
     {
         case TOKEN_NONE:
             longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
-		case TOKEN_DOT:
-			longjmp(error_jmp, LISP_ERROR_DOT_UNEXPECTED);
+        case TOKEN_DOT:
+            longjmp(error_jmp, LISP_ERROR_DOT_UNEXPECTED);
         case TOKEN_L_PAREN:
         {
             Lisp front = lisp_make_null();
@@ -1122,21 +1122,21 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
                 back_append(&front, &back, x, ctx);
             }
 
-			// A dot at the end of a list assigns the cdr
-			if (lex->token == TOKEN_DOT)
-			{
-				if (lisp_is_null(back)) longjmp(error_jmp, LISP_ERROR_DOT_UNEXPECTED);
+            // A dot at the end of a list assigns the cdr
+            if (lex->token == TOKEN_DOT)
+            {
+                if (lisp_is_null(back)) longjmp(error_jmp, LISP_ERROR_DOT_UNEXPECTED);
 
-				lexer_next_token(lex);
-				if (lex->token != TOKEN_R_PAREN)
-				{
-					Lisp x = parse_list_r(lex, error_jmp, ctx);
-					lisp_set_cdr(back, x);
+                lexer_next_token(lex);
+                if (lex->token != TOKEN_R_PAREN)
+                {
+                    Lisp x = parse_list_r(lex, error_jmp, ctx);
+                    lisp_set_cdr(back, x);
 
-				}
-			}
+                }
+            }
 
-			if (lex->token != TOKEN_R_PAREN) longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
+            if (lex->token != TOKEN_R_PAREN) longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
 
             // )
             lexer_next_token(lex);
@@ -1144,46 +1144,46 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
         }
         case TOKEN_R_PAREN:
             longjmp(error_jmp, LISP_ERROR_PAREN_UNEXPECTED);
-		case TOKEN_HASH:
-		{
-			// #
-			lexer_next_token(lex);
-			if (lex->token != TOKEN_L_PAREN) longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
-			lexer_next_token(lex);
-			// (
+        case TOKEN_HASH:
+        {
+            // #
+            lexer_next_token(lex);
+            if (lex->token != TOKEN_L_PAREN) longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
+            lexer_next_token(lex);
+            // (
 
-			Lisp v = lisp_make_null();
-			int count = 0;
+            Lisp v = lisp_make_null();
+            int count = 0;
 
-			while (lex->token != TOKEN_R_PAREN)
-			{
-				Lisp x = parse_list_r(lex, error_jmp, ctx);
+            while (lex->token != TOKEN_R_PAREN)
+            {
+                Lisp x = parse_list_r(lex, error_jmp, ctx);
 
-				if (lisp_is_null(v))
-				{
-					v = lisp_make_vector(16, x, ctx);
-					++count;
-				}
-				else
-				{
-					int length = lisp_vector_length(v);
-					if (count + 1 >= length)
-					{
-						v = lisp_vector_grow(v, length * 2, ctx);
-					}
+                if (lisp_is_null(v))
+                {
+                    v = lisp_make_vector(16, x, ctx);
+                    ++count;
+                }
+                else
+                {
+                    int length = lisp_vector_length(v);
+                    if (count + 1 >= length)
+                    {
+                        v = lisp_vector_grow(v, length * 2, ctx);
+                    }
 
-					lisp_vector_set(v, count, x);
-					++count;
-				}
-			}
-			// )
-			lexer_next_token(lex);
+                    lisp_vector_set(v, count, x);
+                    ++count;
+                }
+            }
+            // )
+            lexer_next_token(lex);
 
-			// cutouff length
-			Vector* vector = lisp_vector(v);
-			vector->length = count;
-			return v;
-		}
+            // cutouff length
+            Vector* vector = lisp_vector(v);
+            vector->length = count;
+            return v;
+        }
         case TOKEN_QUOTE:
         {
              // '
@@ -1247,12 +1247,12 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
         if (lisp_type(lisp_car(l)) == LISP_SYMBOL)
             op = lisp_symbol(lisp_car(l));
 
-		if (op && strcmp(op, "QUOTE") == 0)
-		{
+        if (op && strcmp(op, "QUOTE") == 0)
+        {
             if (lisp_list_length(l) != 2) longjmp(error_jmp, LISP_ERROR_BAD_QUOTE);
-			// don't expand quotes
-			return l;
-		}
+            // don't expand quotes
+            return l;
+        }
         else if (op && strcmp(op, "DEFINE") == 0)
         {
             int length = lisp_list_length(l);
@@ -1430,11 +1430,11 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                 p = expand_r(lisp_car(preds), error_jmp, ctx);
 
                 outer = lisp_make_listv(ctx,
-										if_symbol,
-										p,
-										lisp_make_int(1),
-										outer,
-										lisp_make_null());
+                                        if_symbol,
+                                        p,
+                                        lisp_make_int(1),
+                                        outer,
+                                        lisp_make_null());
                 preds = lisp_cdr(preds);
             }
                       
@@ -1506,14 +1506,14 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                 Lisp vars = lisp_list_ref(l, 1);
                 if (!lisp_is_pair(vars) && !lisp_is_null(vars)) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
 
-				Lisp lambda = lisp_cons(begin, lisp_make_null(), ctx);
-				lambda = lisp_cons(vars, lambda, ctx);
-				lambda = lisp_cons(lisp_car(l), lambda, ctx);
-				return lambda;
+                Lisp lambda = lisp_cons(begin, lisp_make_null(), ctx);
+                lambda = lisp_cons(vars, lambda, ctx);
+                lambda = lisp_cons(lisp_car(l), lambda, ctx);
+                return lambda;
             }
             else
             {
-				Lisp body = lisp_list_advance(l, 2);
+                Lisp body = lisp_list_advance(l, 2);
                 lisp_set_cdr(lisp_cdr(l), expand_r(body, error_jmp, ctx));
                 return l;
             }
@@ -1707,7 +1707,7 @@ void lisp_table_add_funcs(Lisp t, const char** names, LispFunc* funcs, LispConte
 {
     const char** name = names;
 
-	LispFunc* func = funcs;
+    LispFunc* func = funcs;
 
     while (*name)
     {
@@ -1789,7 +1789,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
         }
         case LISP_VECTOR:
         {
-			fprintf(file, "#(");
+            fprintf(file, "#(");
             for (int i = 0; i < lisp_vector_length(l); ++i)
             {
                 lisp_print_r(file, lisp_vector_ref(l, i), 0);
@@ -1935,7 +1935,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContext ctx)
                         {
                             const Lambda* lambda = lisp_lambda(operator);
                             // make a new environment
-							Lisp new_table = lisp_make_table(13, ctx);
+                            Lisp new_table = lisp_make_table(13, ctx);
 
                             // bind parameters to arguments
                             // to pass into function call
@@ -1946,14 +1946,14 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContext ctx)
                             {
                                 lisp_table_set(new_table, lisp_car(keyIt), lisp_car(valIt), ctx);
                                 keyIt = lisp_cdr(keyIt); 
-								valIt = lisp_cdr(valIt);
+                                valIt = lisp_cdr(valIt);
                             }
 
-							if (lisp_type(keyIt) == LISP_SYMBOL)
-							{
-								// variable length arguments
-								lisp_table_set(new_table, keyIt, valIt, ctx);
-							}
+                            if (lisp_type(keyIt) == LISP_SYMBOL)
+                            {
+                                // variable length arguments
+                                lisp_table_set(new_table, keyIt, valIt, ctx);
+                            }
                             
                             // normally we would eval the body here
                             // but while will eval
@@ -2202,8 +2202,8 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 
     // swap the heaps
     Heap temp = ctx.impl->heap;
-	ctx.impl->heap = ctx.impl->to_heap;
-	ctx.impl->to_heap = temp;
+    ctx.impl->heap = ctx.impl->to_heap;
+    ctx.impl->to_heap = temp;
     
     // reset the heap
     heap_shutdown(&ctx.impl->to_heap);
@@ -2239,8 +2239,8 @@ const char* lisp_error_string(LispError error)
             return "syntax error: unexpected ) paren";
         case LISP_ERROR_PAREN_EXPECTED:
             return "syntax error: expected ) paren";
-		case LISP_ERROR_DOT_UNEXPECTED:
-			return "syntax error: dot . was unexpected";
+        case LISP_ERROR_DOT_UNEXPECTED:
+            return "syntax error: dot . was unexpected";
         case LISP_ERROR_BAD_TOKEN:
             return "syntax error: bad token";
         case LISP_ERROR_BAD_DEFINE:
@@ -2265,8 +2265,8 @@ const char* lisp_error_string(LispError error)
             return "eval error: got into a bad state";
         case LISP_ERROR_BAD_ARG:
             return "eval error: bad argument type";
-		case LISP_ERROR_OUT_OF_BOUNDS:
-			return "eval error: index out of bounds";
+        case LISP_ERROR_OUT_OF_BOUNDS:
+            return "eval error: index out of bounds";
         default:
             return "unknown error code";
     }
@@ -2618,73 +2618,73 @@ static Lisp func_greater_equal(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp func_to_int(Lisp args, LispError* e, LispContext ctx)
 {
-	Lisp val = lisp_car(args);
-	switch (lisp_type(val))
-	{
-		case LISP_INT:
-			return val;
-		case LISP_FLOAT:
-			return lisp_make_int(lisp_int(val));
-		case LISP_STRING:
-			return lisp_make_int(atoi(lisp_string(val)));
-		default:
-			*e = LISP_ERROR_BAD_ARG;
-			return lisp_make_null();
-	}
+    Lisp val = lisp_car(args);
+    switch (lisp_type(val))
+    {
+        case LISP_INT:
+            return val;
+        case LISP_FLOAT:
+            return lisp_make_int(lisp_int(val));
+        case LISP_STRING:
+            return lisp_make_int(atoi(lisp_string(val)));
+        default:
+            *e = LISP_ERROR_BAD_ARG;
+            return lisp_make_null();
+    }
 }
 
 static Lisp func_to_float(Lisp args, LispError* e, LispContext ctx)
 {
-	Lisp val = lisp_car(args);
-	switch (lisp_type(val))
-	{
-		case LISP_FLOAT:
-			return val;
-		case LISP_INT:
-			return lisp_make_float(lisp_float(val));
-		case LISP_STRING:
-			return lisp_make_float(atof(lisp_string(val)));
-		default:
-			*e = LISP_ERROR_BAD_ARG;
-			return lisp_make_null();
-	}
+    Lisp val = lisp_car(args);
+    switch (lisp_type(val))
+    {
+        case LISP_FLOAT:
+            return val;
+        case LISP_INT:
+            return lisp_make_float(lisp_float(val));
+        case LISP_STRING:
+            return lisp_make_float(atof(lisp_string(val)));
+        default:
+            *e = LISP_ERROR_BAD_ARG;
+            return lisp_make_null();
+    }
 }
 
 static Lisp func_to_string(Lisp args, LispError* e, LispContext ctx)
 {
     char scratch[SCRATCH_MAX];
-	Lisp val = lisp_car(args);
-	switch (lisp_type(val))
-	{
-		case LISP_FLOAT:
+    Lisp val = lisp_car(args);
+    switch (lisp_type(val))
+    {
+        case LISP_FLOAT:
             snprintf(scratch, SCRATCH_MAX, "%f", lisp_float(val));
-			return lisp_make_string(scratch, ctx);
-		case LISP_INT:
+            return lisp_make_string(scratch, ctx);
+        case LISP_INT:
             snprintf(scratch, SCRATCH_MAX, "%i", lisp_int(val));
             return lisp_make_string(scratch, ctx);
         case LISP_SYMBOL:
             return lisp_make_string(lisp_symbol(val), ctx);
-		case LISP_STRING:
-			return val;
-		default:
-			*e = LISP_ERROR_BAD_ARG;
-			return lisp_make_null();
-	}
+        case LISP_STRING:
+            return val;
+        default:
+            *e = LISP_ERROR_BAD_ARG;
+            return lisp_make_null();
+    }
 }
 
 static Lisp func_to_symbol(Lisp args, LispError* e, LispContext ctx)
 {
-	Lisp val = lisp_car(args);
-	switch (lisp_type(val))
-	{
+    Lisp val = lisp_car(args);
+    switch (lisp_type(val))
+    {
         case LISP_SYMBOL:
             return val;
-		case LISP_STRING:
+        case LISP_STRING:
             return lisp_make_symbol(lisp_string(val), ctx);
-		default:
-			*e = LISP_ERROR_BAD_ARG;
-			return lisp_make_null();
-	}
+        default:
+            *e = LISP_ERROR_BAD_ARG;
+            return lisp_make_null();
+    }
 }
 
 static Lisp func_is_string(Lisp args, LispError* e, LispContext ctx)
@@ -2770,40 +2770,40 @@ static Lisp func_is_float(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp func_even(Lisp args, LispError* e, LispContext ctx)
 {
-	while (!lisp_is_null(args))
-	{
-		if ((lisp_int(lisp_car(args)) & 1) == 1) return lisp_make_int(0);
-		args = lisp_cdr(args);
-	}
-	return lisp_make_int(1);
+    while (!lisp_is_null(args))
+    {
+        if ((lisp_int(lisp_car(args)) & 1) == 1) return lisp_make_int(0);
+        args = lisp_cdr(args);
+    }
+    return lisp_make_int(1);
 }
 
 static Lisp func_odd(Lisp args, LispError* e, LispContext ctx)
 {
-	while (lisp_is_pair(args))
-	{
-		if ((lisp_int(lisp_car(args)) & 1) == 0) return lisp_make_int(0);
-		args = lisp_cdr(args);
-	}
-	return lisp_make_int(1);
+    while (lisp_is_pair(args))
+    {
+        if ((lisp_int(lisp_car(args)) & 1) == 0) return lisp_make_int(0);
+        args = lisp_cdr(args);
+    }
+    return lisp_make_int(1);
 }
 
 static Lisp func_sin(Lisp args, LispError* e, LispContext ctx)
 {
-	float x = sinf(lisp_float(lisp_car(args)));
-	return lisp_make_float(x);
+    float x = sinf(lisp_float(lisp_car(args)));
+    return lisp_make_float(x);
 }
 
 static Lisp func_cos(Lisp args, LispError* e, LispContext ctx)
 {
-	float x = cosf(lisp_float(lisp_car(args)));
-	return lisp_make_float(x);
+    float x = cosf(lisp_float(lisp_car(args)));
+    return lisp_make_float(x);
 }
 
 static Lisp func_sqrt(Lisp args, LispError* e, LispContext ctx)
 {
-	float x = sqrtf(lisp_float(lisp_car(args)));
-	return lisp_make_float(x);
+    float x = sqrtf(lisp_float(lisp_car(args)));
+    return lisp_make_float(x);
 }
 
 static Lisp func_make_vector(Lisp args, LispError* e, LispContext ctx)
@@ -2822,22 +2822,22 @@ static Lisp func_make_vector(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp func_vector_grow(Lisp args, LispError* e, LispContext ctx)
 {
-	Lisp v = lisp_car(args);
-	Lisp length = lisp_car(lisp_cdr(args));
+    Lisp v = lisp_car(args);
+    Lisp length = lisp_car(lisp_cdr(args));
 
-	if (lisp_type(length) != LISP_INT || lisp_type(v) != LISP_VECTOR)
-	{
-		*e = LISP_ERROR_BAD_ARG;
-		return lisp_make_null();
-	}
+    if (lisp_type(length) != LISP_INT || lisp_type(v) != LISP_VECTOR)
+    {
+        *e = LISP_ERROR_BAD_ARG;
+        return lisp_make_null();
+    }
 
-	if (lisp_int(length) < lisp_vector_length(v))
-	{
-		*e = LISP_ERROR_OUT_OF_BOUNDS;
-		return lisp_make_null();
-	}
+    if (lisp_int(length) < lisp_vector_length(v))
+    {
+        *e = LISP_ERROR_OUT_OF_BOUNDS;
+        return lisp_make_null();
+    }
 
-	return lisp_vector_grow(v, lisp_int(length), ctx);
+    return lisp_vector_grow(v, lisp_int(length), ctx);
 }
 
 static Lisp func_vector_length(Lisp args, LispError* e, LispContext ctx)
@@ -2863,11 +2863,11 @@ static Lisp func_vector_ref(Lisp args, LispError* e, LispContext ctx)
         return lisp_make_null();
     }
 
-	if (lisp_int(i) >= lisp_vector_length(v))
-	{
-		*e = LISP_ERROR_OUT_OF_BOUNDS;
-		return lisp_make_null();
-	}
+    if (lisp_int(i) >= lisp_vector_length(v))
+    {
+        *e = LISP_ERROR_OUT_OF_BOUNDS;
+        return lisp_make_null();
+    }
 
     return lisp_vector_ref(v, lisp_int(i));
 }
@@ -2884,11 +2884,11 @@ static Lisp func_vector_set(Lisp args, LispError* e, LispContext ctx)
         return lisp_make_null();
     }
 
-	if (lisp_int(i) >= lisp_vector_length(v))
-	{
-		*e = LISP_ERROR_OUT_OF_BOUNDS;
-		return lisp_make_null();
-	}
+    if (lisp_int(i) >= lisp_vector_length(v))
+    {
+        *e = LISP_ERROR_OUT_OF_BOUNDS;
+        return lisp_make_null();
+    }
 
     lisp_vector_set(v, lisp_int(i), x);
     return lisp_make_null();
@@ -2910,9 +2910,9 @@ static Lisp func_read_path(Lisp args, LispError *e, LispContext ctx)
 
 static Lisp func_lambda_body(Lisp args, LispError* e, LispContext ctx)
 {
-	Lisp l = lisp_car(args);
-	Lambda* lambda = lisp_lambda(l);
-	return lambda->body;
+    Lisp l = lisp_car(args);
+    Lambda* lambda = lisp_lambda(l);
+    return lambda->body;
 }
 
 static Lisp func_expand(Lisp args, LispError* e, LispContext ctx)
@@ -2929,17 +2929,17 @@ static Lisp func_global_env(Lisp args, LispError* e, LispContext ctx)
 
 static LispContext lisp_init(int symbol_table_size)
 {
-	LispContext ctx;
-	ctx.impl = malloc(sizeof(struct LispImpl));
+    LispContext ctx;
+    ctx.impl = malloc(sizeof(struct LispImpl));
     if (!ctx.impl) return ctx;
 
     ctx.impl->lambda_counter = 0;
     heap_init(&ctx.impl->heap);
     heap_init(&ctx.impl->to_heap);
 
-	ctx.impl->symbol_table = lisp_make_table(symbol_table_size, ctx);
-	ctx.impl->global_env = lisp_make_null();
-	ctx.impl->reuse_env = lisp_make_null();
+    ctx.impl->symbol_table = lisp_make_table(symbol_table_size, ctx);
+    ctx.impl->global_env = lisp_make_null();
+    ctx.impl->reuse_env = lisp_make_null();
     return ctx;
 }
 
@@ -2968,7 +2968,7 @@ LispContext lisp_init_interpreter(void)
         "NEWLINE",
         "ASSERT",
         "READ-PATH",
-		"LAMBDA-BODY",
+        "LAMBDA-BODY",
         "EXPAND",
         "GLOBAL-ENV",
         "=",
@@ -2980,8 +2980,8 @@ LispContext lisp_init_interpreter(void)
         ">",
         "<=",
         ">=",
-		"TO->INT",
-		"TO->FLOAT",
+        "TO->INT",
+        "TO->FLOAT",
         "TO->STRING",
         "TO->SYMBOL",
         "STRING?",
@@ -2991,13 +2991,13 @@ LispContext lisp_init_interpreter(void)
         "STRING-SET!",
         "INT?",
         "FLOAT?",
-		"EVEN?",
-		"ODD?",
-		"SIN",
-		"COS",
-		"SQRT",
+        "EVEN?",
+        "ODD?",
+        "SIN",
+        "COS",
+        "SQRT",
         "MAKE-VECTOR",
-		"VECTOR-GROW",
+        "VECTOR-GROW",
         "VECTOR-LENGTH",
         "VECTOR-REF",
         "VECTOR-SET!",
@@ -3024,7 +3024,7 @@ LispContext lisp_init_interpreter(void)
         func_newline,
         func_assert,
         func_read_path,
-		func_lambda_body,
+        func_lambda_body,
         func_expand,
         func_global_env,
         func_equals,
@@ -3036,8 +3036,8 @@ LispContext lisp_init_interpreter(void)
         func_greater,
         func_less_equal,
         func_greater_equal,
-		func_to_int,
-		func_to_float,
+        func_to_int,
+        func_to_float,
         func_to_string,
         func_to_symbol,
         func_is_string,
@@ -3047,13 +3047,13 @@ LispContext lisp_init_interpreter(void)
         func_string_set,
         func_is_int,
         func_is_float,
-		func_even,
-		func_odd,
-		func_sin,
-		func_cos,
-		func_sqrt,
+        func_even,
+        func_odd,
+        func_sin,
+        func_cos,
+        func_sqrt,
         func_make_vector,
-		func_vector_grow,
+        func_vector_grow,
         func_vector_length,
         func_vector_ref,
         func_vector_set,
@@ -3062,7 +3062,7 @@ LispContext lisp_init_interpreter(void)
     };
 
     lisp_table_add_funcs(table, names, funcs, ctx);
-	ctx.impl->global_env = lisp_env_extend(ctx.impl->global_env, table, ctx);
+    ctx.impl->global_env = lisp_env_extend(ctx.impl->global_env, table, ctx);
     return ctx;
 }
 

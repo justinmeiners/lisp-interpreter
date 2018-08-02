@@ -32,7 +32,7 @@ typedef enum
     LISP_ERROR_FILE_OPEN,
     LISP_ERROR_PAREN_UNEXPECTED,
     LISP_ERROR_PAREN_EXPECTED,
-	LISP_ERROR_DOT_UNEXPECTED,
+    LISP_ERROR_DOT_UNEXPECTED,
 
     LISP_ERROR_BAD_TOKEN,
     LISP_ERROR_BAD_QUOTE,
@@ -47,7 +47,7 @@ typedef enum
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_UNKNOWN_EVAL,
-	LISP_ERROR_OUT_OF_BOUNDS,
+    LISP_ERROR_OUT_OF_BOUNDS,
 
     LISP_ERROR_BAD_ARG,
 } LispError;
@@ -66,7 +66,7 @@ typedef struct
 
 typedef struct
 {
-	struct LispImpl* impl;
+    struct LispImpl* impl;
 } LispContext;
 
 typedef Lisp(*LispFunc)(Lisp, LispError*, LispContext);
