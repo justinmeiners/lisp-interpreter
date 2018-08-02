@@ -2800,6 +2800,12 @@ static Lisp func_cos(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_float(x);
 }
 
+static Lisp func_tan(Lisp args, LispError* e, LispContext ctx)
+{
+    float x = tanf(lisp_float(lisp_car(args)));
+    return lisp_make_float(x);
+}
+
 static Lisp func_sqrt(Lisp args, LispError* e, LispContext ctx)
 {
     float x = sqrtf(lisp_float(lisp_car(args)));
@@ -2995,6 +3001,7 @@ LispContext lisp_init_interpreter(void)
         "ODD?",
         "SIN",
         "COS",
+        "TAN",
         "SQRT",
         "MAKE-VECTOR",
         "VECTOR-GROW",
@@ -3051,6 +3058,7 @@ LispContext lisp_init_interpreter(void)
         func_odd,
         func_sin,
         func_cos,
+        func_tan,
         func_sqrt,
         func_make_vector,
         func_vector_grow,
