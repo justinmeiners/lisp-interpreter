@@ -1,7 +1,8 @@
 TARGET = lisp_i
 SRC = *.c
-FLAGS = -O3 -Wall
-CC = gcc
+CFLAGS = -O3 -Wall
+LDLIBS = -lm
+CC = cc
 
 ${TARGET}: ${SRC}
-	${CC} ${FLAGS} $^ -o $@
+	${CC} $^ -o $@ ${CFLAGS} ${LDLIBS}
