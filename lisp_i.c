@@ -23,7 +23,10 @@ int main(int argc, const char* argv[])
         
     if (file_path)
     {
-        printf("loading: %s\n", file_path);
+        if (LISP_DEBUG)
+        {
+            printf("loading: %s\n", file_path);
+        }
 
         start_time = clock();        
         FILE* file = fopen(file_path, "r");
