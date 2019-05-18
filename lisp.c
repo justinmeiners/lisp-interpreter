@@ -57,6 +57,7 @@ typedef struct
     Page* page;
     size_t size;
     size_t page_count;
+    size_t page_size;
 } Heap;
 
 typedef struct Block
@@ -81,14 +82,13 @@ struct LispImpl
     int lambda_counter;
 };
 
-#define LISP_PAGE_SIZE 8192
-
-static void heap_init(Heap* heap)
+static void heap_init(Heap* heap, size_t page_size)
 {
     heap->first_page = NULL;
     heap->page = heap->first_page;
     heap->size = 0;
     heap->page_count = 0;
+    heap->page_size = page_size;
 }
 
 static void heap_shutdown(Heap* heap)
@@ -107,7 +107,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
     assert(alloc_size > 0);
     
-    size_t desired_page_size =  (alloc_size <= LISP_PAGE_SIZE) ? LISP_PAGE_SIZE : alloc_size;
+    size_t desired_page_size =  (alloc_size <= heap->page_size) ? heap->page_size : alloc_size;
     
     if (!heap->page)
     {
@@ -2208,7 +2208,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     
     // reset the heap
     heap_shutdown(&ctx.impl->to_heap);
-    heap_init(&ctx.impl->to_heap);
+    heap_init(&ctx.impl->to_heap, ctx.impl->heap.page_size);
 
     if (LISP_DEBUG)
         printf("gc collected: %lu heap: %lu\n", diff, ctx.impl->heap.size);
@@ -2952,15 +2952,15 @@ static Lisp func_global_env(Lisp args, LispError* e, LispContext ctx)
     return lisp_env_global(ctx);
 }
 
-static LispContext lisp_init(int symbol_table_size)
+LispContext lisp_init_empty_opt(int symbol_table_size, size_t page_size)
 {
     LispContext ctx;
     ctx.impl = malloc(sizeof(struct LispImpl));
     if (!ctx.impl) return ctx;
 
     ctx.impl->lambda_counter = 0;
-    heap_init(&ctx.impl->heap);
-    heap_init(&ctx.impl->to_heap);
+    heap_init(&ctx.impl->heap, page_size);
+    heap_init(&ctx.impl->to_heap, page_size);
 
     ctx.impl->symbol_table = lisp_make_table(symbol_table_size, ctx);
     ctx.impl->global_env = lisp_make_null();
@@ -2968,11 +2968,21 @@ static LispContext lisp_init(int symbol_table_size)
     return ctx;
 }
 
-
-LispContext lisp_init_interpreter(void)
+LispContext lisp_init_empty(void)
 {
-    LispContext ctx = lisp_init(512);
-    Lisp table = lisp_make_table(256, ctx);
+    return lisp_init_empty_opt(512, 8192);
+}
+
+LispContext lisp_init_lang(void)
+{
+    return lisp_init_lang_opt(512, 8192);
+}
+
+LispContext lisp_init_lang_opt(int symbol_table_size, size_t page_size)
+{
+    LispContext ctx = lisp_init_empty_opt(symbol_table_size, page_size);
+
+    Lisp table = lisp_make_table(300, ctx);
     lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_make_null(), ctx);
 
     const char* names[] = {
@@ -3100,9 +3110,4 @@ LispContext lisp_init_interpreter(void)
     return ctx;
 }
 
-LispContext lisp_init_empty(void)
-{
-    LispContext ctx = lisp_init(512);
-    return ctx;
-}
 

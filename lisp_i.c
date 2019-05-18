@@ -8,6 +8,7 @@
 int main(int argc, const char* argv[])
 {
     const char* file_path = NULL;
+    size_t page_size = 8192;
     
     for (int i = 1; i < argc; ++i)
     {
@@ -15,9 +16,13 @@ int main(int argc, const char* argv[])
         {
             file_path = argv[i + 1];
         }
+        else if (strcmp(argv[i], "--page-size") == 0)
+        {
+            page_size = atoi(argv[i + 1]);
+        }
     }
     
-    LispContext ctx = lisp_init_interpreter();
+    LispContext ctx = lisp_init_lang_opt(512, page_size);
 
     clock_t start_time, end_time;
         
