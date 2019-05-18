@@ -20,24 +20,12 @@
       '()
       (cons (rand-item 100 100)
         (build-items (- n 1)))))
+;(pseudo-seed! (unix-time))
+;(define items (build-items 10))
 
 
-(define (display-items ls)
-  (if (null? ls)
-      '()
-      (begin
-        (display (car (car ls)))
-        (display ", ")
-        (display (cdr (car ls)))
-        (newline)
-        (display-items (cdr ls)))))
 
-
-;(define items '((23 505) (26 352) (18 220) (32 354) (27 414) (29 498) (26 545) (30 473) (27 543)))
-
-(pseudo-seed! (+ 42 128))
-(define items (build-items 20))
-;(display-items items)
+(define items '((23 . 505) (26 . 352) (18 . 220) (32 . 354) (27 . 414) (29 . 498) (26 . 545) (30 . 473) (27 . 543)))
 
 (define (reduce f accum ls)
     (if (null? ls)
@@ -61,6 +49,7 @@
           0)
         (knapsack remaining (cdr items))))))
 
-(display (knapsack 700 items))
+(display (knapsack 67 items))
 
+(assert (= (knapsack 67 items) 1270))
 
