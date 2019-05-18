@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <math.h>
 #include <setjmp.h>
+#include <time.h>
 #include "lisp.h"
 
 enum
@@ -2907,6 +2908,24 @@ static Lisp func_vector_assoc(Lisp args, LispError* e, LispContext ctx)
     return lisp_vector_assoc(v, key); 
 }
 
+static Lisp func_pseudo_seed(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp seed = lisp_car(args);
+    srand((unsigned int)lisp_int(seed));  
+    return lisp_make_null();
+}
+
+static Lisp func_pseudo_rand(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp n = lisp_car(args);
+    return lisp_make_int(rand() % lisp_int(n));
+}
+
+static Lisp func_unix_time(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_int(time(NULL));
+}
+
 static Lisp func_read_path(Lisp args, LispError *e, LispContext ctx)
 {
     const char* path = lisp_string(lisp_car(args));
@@ -2948,6 +2967,7 @@ static LispContext lisp_init(int symbol_table_size)
     ctx.impl->reuse_env = lisp_make_null();
     return ctx;
 }
+
 
 LispContext lisp_init_interpreter(void)
 {
@@ -3009,6 +3029,9 @@ LispContext lisp_init_interpreter(void)
         "VECTOR-REF",
         "VECTOR-SET!",
         "VECTOR-ASSOC",
+        "PSEUDO-RAND",
+        "PSEUDO-SEED!",
+        "UNIX-TIME",
         NULL,
     };
 
@@ -3066,6 +3089,9 @@ LispContext lisp_init_interpreter(void)
         func_vector_ref,
         func_vector_set,
         func_vector_assoc,
+        func_pseudo_rand,
+        func_pseudo_seed,
+        func_unix_time,
         NULL,
     };
 
