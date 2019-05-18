@@ -5,9 +5,6 @@
 
 #define LISP_DEBUG 0
 
-// the default size of a page
-// for dynamic allocations
-#define LISP_PAGE_SIZE 8192
 // how much data the parser reads
 // into memory at once from a file
 #define LISP_FILE_CHUNK_SIZE 4096
@@ -73,8 +70,11 @@ typedef Lisp(*LispFunc)(Lisp, LispError*, LispContext);
 
 // SETUP
 // -----------------------------------------
-LispContext lisp_init_interpreter(void);
+LispContext lisp_init_lang(void);
+LispContext lisp_init_lang_opt(int symbol_table_size, size_t page_size);
+
 LispContext lisp_init_empty(void);
+LispContext lisp_init_empty_opt(int symbol_table_size, size_t page_size);
 void lisp_shutdown(LispContext ctx);
 
 // garbage collection. 
