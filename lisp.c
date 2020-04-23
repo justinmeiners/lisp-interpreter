@@ -76,6 +76,9 @@ struct LispImpl
     Heap heap;
     Heap to_heap;
 
+    Lisp stack[256];
+    size_t stack_ptr;
+
     Lisp symbol_table;
     Lisp global_env;
     Lisp reuse_env;
@@ -1827,8 +1830,20 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
+
+static void lisp_stack_push(Lisp lisp, LispContext ctx)
+{
+    ctx.impl->stack[ctx.impl->stack_ptr] = *lisp;
+}
+
+static Lisp lisp_stack_pop(Lisp lisp, LispContext ctx)
+{
+    ctx.impl->stack_ptr--;
+}
+
 static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContext ctx)
 {
+    lisp_stack_push(x, ctx);
     while (1)
     {
         assert(!lisp_is_null(env));
@@ -1859,8 +1874,12 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContext ctx)
                 const char* op_name = NULL;
                 if (lisp_type(lisp_car(x)) == LISP_SYMBOL)
                     op_name = lisp_symbol(lisp_car(x));
-                
-                if (op_name && strcmp(op_name, "IF") == 0) // if conditional statemetns
+
+                if (op_name && strcmp(op_name, "GC-COLLECT") == 0)
+                {
+
+                } 
+                else if (op_name && strcmp(op_name, "IF") == 0) // if conditional statemetns
                 {
                     Lisp predicate = lisp_list_ref(x, 1);
                     Lisp conseq = lisp_list_ref(x, 2);
@@ -1986,6 +2005,7 @@ static Lisp eval_r(Lisp x, Lisp env, jmp_buf error_jmp, LispContext ctx)
         }
     }
 }
+
 
 Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 {
@@ -2122,6 +2142,12 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     // move root object
     ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
     ctx.impl->global_env = gc_move(ctx.impl->global_env, to);
+
+    int i;
+    for (i = 0; i < ctx.impl->stack_ptr; ++i)
+    {
+        ctx.impl->stack[i] = gc_move(ctx.impl->stack[i], to);
+    }
     
     Lisp result = gc_move(root_to_save, to);
 
@@ -2959,6 +2985,7 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t page_size)
     if (!ctx.impl) return ctx;
 
     ctx.impl->lambda_counter = 0;
+    ctx.impl->stack_ptr = 0;
     heap_init(&ctx.impl->heap, page_size);
     heap_init(&ctx.impl->to_heap, page_size);
 
@@ -3046,6 +3073,7 @@ LispContext lisp_init_lang_opt(int symbol_table_size, size_t page_size)
     };
 
     LispFunc funcs[] = {
+        func_gc_collect,
         func_cons,
         func_car,
         func_cdr,
