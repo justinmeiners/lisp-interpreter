@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#define LISP_DEBUG 0
+#define LISP_DEBUG 1
 
 // how much data the parser reads
 // into memory at once from a file
@@ -71,10 +71,10 @@ typedef Lisp(*LispFunc)(Lisp, LispError*, LispContext);
 // SETUP
 // -----------------------------------------
 LispContext lisp_init_lang(void);
-LispContext lisp_init_lang_opt(int symbol_table_size, size_t page_size);
+LispContext lisp_init_lang_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
 
 LispContext lisp_init_empty(void);
-LispContext lisp_init_empty_opt(int symbol_table_size, size_t page_size);
+LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
 void lisp_shutdown(LispContext ctx);
 
 // garbage collection. 
