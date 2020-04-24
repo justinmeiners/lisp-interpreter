@@ -1139,6 +1139,49 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
     return l;
 }
 
+static const char* char_name_table[] =
+{
+    "NUL", "SOH", "STX", "ETX", "EOT",
+    "ENQ", "ACK", "BEL", "backspace", "tab",
+    "linefeed", "VT", "page", "return", "SO",
+    "SI", "DLE", "DC1", "DC2", "DC3",
+    "DC4", "NAK", "SYN", "ETB", "CAN",
+    "EM", "SUB", "altmode", "FS", "GS", "RS",
+    "backnext", "space", NULL
+};
+
+static int parse_char_token(Lexer* lex)
+{
+    size_t length = lex->scan_length;
+    if (length == 1)
+    {
+        // TODO: multi chars
+        char c;
+        lexer_copy_token(lex, 0, 1, &c);
+        return (int)c;
+    }
+    else
+    {
+        char scratch[SCRATCH_MAX];
+        lexer_copy_token(lex, 0, length, scratch);
+        scratch[length] = '\0';
+        
+        const char** name_it = char_name_table;
+        
+        int c = 0;
+        while (*name_it)
+        {
+            if (strcmp(*name_it, scratch) == 0)
+            {
+                return c;
+            }
+            ++name_it;
+            ++c;
+        }
+        return -1;
+    }
+}
+
 // read tokens and construct S-expresions
 static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
 {  
@@ -1190,11 +1233,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             {
                 lexer_next_token(lex);
                 if (lex->token != TOKEN_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_TOKEN);
-
-                // TODO: multi chars
-                char c;
-                lexer_copy_token(lex, 0, 1, &c);
-                
+                int c = parse_char_token(lex);
                 lexer_next_token(lex);
                 return lisp_make_char(c);
             }
@@ -2855,6 +2894,8 @@ static Lisp sch_to_exact(Lisp args, LispError* e, LispContext ctx)
     {
         case LISP_INT:
             return val;
+        case LISP_CHAR:
+            return lisp_make_int(lisp_char(val));
         case LISP_REAL:
             return lisp_make_int((int)lisp_real(val));
             
@@ -3503,6 +3544,7 @@ static const LispFuncDef lib_defs[] = {
     { "char-alphanumeric?", sch_char_is_alphanum },
     { "char-alphabetic?", sch_char_is_alpha },
     { "char-numeric?", sch_char_is_number },
+    { "char->integer", sch_to_exact },
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     { "ASSOC", sch_assoc },
