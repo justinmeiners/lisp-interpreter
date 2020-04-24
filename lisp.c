@@ -745,6 +745,7 @@ typedef enum
     TOKEN_STRING,
     TOKEN_INT,
     TOKEN_FLOAT,
+    TOKEN_CHAR,
 } TokenType;
 
 /* for debug
@@ -991,6 +992,18 @@ static int lexer_match_string(Lexer* lex)
     return 1;    
 }
 
+static int lexer_match_char(Lexer* lex)
+{
+    lexer_restart_scan(lex);
+    // start with quote
+    if (*lex->c != '\\') return 0;
+    lexer_step(lex);
+    if (!isalnum(*lex->c)) return 0;
+    lexer_step(lex);
+    while (isalnum(*lex->c)) lexer_step(lex);
+    return 1;
+}
+
 static void lexer_copy_token(Lexer* lex, size_t start_index, size_t length, char* dest)
 {
     size_t token_length = lex->scan_length;
@@ -1072,6 +1085,10 @@ static void lexer_next_token(Lexer* lex)
     {
         lex->token = TOKEN_INT;
     }
+    else if (lexer_match_char(lex))
+    {
+        lex->token = TOKEN_CHAR;
+    }
     else if (lexer_match_symbol(lex))
     {
         lex->token = TOKEN_SYMBOL;
@@ -1125,6 +1142,14 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
             l = lisp_make_symbol(scratch, ctx);
             break;
         }
+        case TOKEN_CHAR:
+        {
+            lexer_copy_token(lex, 0, length, scratch);
+            scratch[length] = '\0';
+            // TODO: multiletter chars
+            l = lisp_make_char((int)scratch[1]);
+            break;
+        }
         default: 
             longjmp(error_jmp, LISP_ERROR_BAD_TOKEN);
     }
@@ -1165,7 +1190,6 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
                 {
                     Lisp x = parse_list_r(lex, error_jmp, ctx);
                     lisp_set_cdr(back, x);
-
                 }
             }
 
@@ -1181,6 +1205,12 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
         {
             // #
             lexer_next_token(lex);
+            
+            if (lex->token == TOKEN_SYMBOL)
+            {
+                return
+            }
+            
             if (lex->token != TOKEN_L_PAREN) longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
             lexer_next_token(lex);
             // (
@@ -1918,6 +1948,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
         {
             case LISP_INT:
             case LISP_REAL:
+            case LISP_CHAR:
             case LISP_STRING:
             case LISP_LAMBDA:
             case LISP_VECTOR:
@@ -3454,8 +3485,6 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-TAIL", sch_vector_tail },
     { "LIST->VECTOR", sch_list_to_vector },
     { "VECTOR->LIST", sch_vector_to_list },
-
-    // TODO vector->list
 
     // TODO: sort
 

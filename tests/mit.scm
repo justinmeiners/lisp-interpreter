@@ -16,7 +16,7 @@
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html
 
 ; TODO: add characters to reader
-; (assert (string=? (make-string 10 #\x) "xxxxxxxxxx"))
+(assert (string=? (make-string 10 #\x) "xxxxxxxxxx"))
 
 (assert (string? "Hi"))
 (assert (not (string? 'Hi)))
