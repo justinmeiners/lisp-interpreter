@@ -259,9 +259,9 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx)
     return p;
 }
 
-static void back_append(Lisp* front, Lisp* back, Lisp item, LispContext ctx)
+void lisp_fast_append(Lisp* front, Lisp* back, Lisp x, LispContext ctx)
 {
-    Lisp new_l = lisp_cons(item, lisp_make_null(), ctx);
+    Lisp new_l = lisp_cons(x, lisp_make_null(), ctx);
     if (lisp_is_null(*back))
     {
         *back = new_l;
@@ -280,7 +280,7 @@ Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
     Lisp back = front;
 
     for (int i = 0; i < n; ++i)
-        back_append(&front, &back, x, ctx);
+        lisp_fast_append(&front, &back, x, ctx);
     return front;
 }
 
@@ -297,7 +297,7 @@ Lisp lisp_make_listv(LispContext ctx, Lisp first, ...)
     {
         it = va_arg(args, Lisp);
         if (!lisp_is_null(it))
-            back_append(&front, &back, it, ctx);
+            lisp_fast_append(&front, &back, it, ctx);
     } while (!lisp_is_null(it));
 
     va_end(args);
@@ -1152,7 +1152,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             while (lex->token != TOKEN_R_PAREN && lex->token != TOKEN_DOT)
             {
                 Lisp x = parse_list_r(lex, error_jmp, ctx);
-                back_append(&front, &back, x, ctx);
+                lisp_fast_append(&front, &back, x, ctx);
             }
 
             // A dot at the end of a list assigns the cdr
@@ -1253,7 +1253,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
         while (lex->token != TOKEN_NONE)
         {
             Lisp next_result = parse_list_r(lex, error_jmp, ctx);
-            back_append(&front, &back, next_result, ctx);
+            lisp_fast_append(&front, &back, next_result, ctx);
         } 
 
        result = front;
@@ -1496,10 +1496,10 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                 Lisp var = lisp_list_ref(lisp_car(pairs), 0);
 
                 if (lisp_type(var) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_LET);
-                back_append(&vars_front, &vars_back, var, ctx);
+                lisp_fast_append(&vars_front, &vars_back, var, ctx);
 
                 Lisp val = expand_r(lisp_list_ref(lisp_car(pairs), 1), error_jmp, ctx);
-                back_append(&exprs_front, &exprs_back, val, ctx);
+                lisp_fast_append(&exprs_front, &exprs_back, val, ctx);
                 pairs = lisp_cdr(pairs);
             }
             
@@ -2065,7 +2065,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                         args_front = lisp_stack_pop(ctx);
                         args_back = lisp_stack_pop(ctx);
                         
-                        back_append(&args_front, &args_back, new_arg, ctx);
+                        lisp_fast_append(&args_front, &args_back, new_arg, ctx);
                         
                         arg_expr = lisp_stack_pop(ctx);
                     }
@@ -2633,7 +2633,7 @@ static Lisp sch_map(Lisp args, LispError* e, LispContext ctx)
         {
             Lisp expr = lisp_cons(op, lisp_cons(lisp_car(it), lisp_make_null(), ctx), ctx);
             Lisp result = lisp_eval(expr, lisp_env_global(ctx), NULL, ctx);
-            back_append(&front, &back, result, ctx);
+            lisp_fast_append(&front, &back, result, ctx);
             it = lisp_cdr(it);
         }
 
@@ -2947,6 +2947,15 @@ static Lisp sch_string_equal(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(result);
 }
 
+static Lisp sch_string_less(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    int result = strcmp(lisp_string(a), lisp_string(b)) < 0;
+    return lisp_make_int(result);
+}
+
 static Lisp sch_string_copy(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp val = lisp_car(args);
@@ -3035,7 +3044,7 @@ static Lisp sch_string_to_list(Lisp args, LispError* e, LispContext ctx)
     Lisp back = lisp_make_null();
     while (*c)
     {
-        back_append(&front, &back, lisp_make_char(*c), ctx);
+        lisp_fast_append(&front, &back, lisp_make_char(*c), ctx);
         ++c;
     }
     return front;
@@ -3054,6 +3063,11 @@ static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
         l = lisp_cdr(l);
     }
     return result;
+}
+
+static Lisp sch_is_char(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_int(lisp_type(lisp_car(args)) == LISP_CHAR);
 }
 
 static Lisp sch_is_int(Lisp args, LispError* e, LispContext ctx)
@@ -3291,7 +3305,7 @@ static Lisp sch_vector_to_list(Lisp args, LispError* e, LispContext ctx)
     int i;
     for (i = 0; i < n; ++i)
     {
-        back_append(&front, &back, lisp_vector_ref(v, i), ctx);
+        lisp_fast_append(&front, &back, lisp_vector_ref(v, i), ctx);
     }
     return front;
 }
@@ -3416,6 +3430,7 @@ static const LispFuncDef lib_defs[] = {
     { "STRING?", sch_is_string },
     { "MAKE-STRING", sch_make_string },
     { "STRING=?", sch_string_equal },
+    { "STRING<?", sch_string_less },
     { "STRING-COPY", sch_string_copy },
     { "STRING-LENGTH", sch_string_length },
     { "STRING-REF", sch_string_ref },
@@ -3424,6 +3439,11 @@ static const LispFuncDef lib_defs[] = {
     { "STRING-DOWNCASE", sch_string_downcase },
     { "STRING->LIST", sch_string_to_list },
     { "LIST->STRING", sch_list_to_string },
+    
+    // Characters https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Characters.html#Characters
+    { "char?", sch_is_char },
+    { "char=?", sch_equals },
+    { "char<?", sch_less },
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     { "ASSOC", sch_assoc },

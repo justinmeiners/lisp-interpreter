@@ -156,8 +156,10 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 #define lisp_is_pair(p) ((p).type == LISP_PAIR)
 
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
-// conveniece function for cons'ing together items. arguments must be null terminated
+// convenience function for cons'ing together items. arguments must be null terminated
 Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);
+// another helpful list building technique O(1)
+void lisp_fast_append(Lisp* front, Lisp* back, Lisp x, LispContext ctx);
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
 Lisp lisp_list_advance(Lisp l, int i); // O(n)
 Lisp lisp_list_ref(Lisp l, int i); // O(n)
