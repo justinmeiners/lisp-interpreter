@@ -3,7 +3,8 @@ lisp-interpreter
 
 ## About
 
-An embeddable lisp interepreter written in C. I created this while reading [SICP](https://github.com/justinmeiners/sicp-excercises) to improve my knowledge of lisp and to make an implementation that allows me to easily add scripting to my own programs.
+An embeddable lisp interepreter written in C.
+I created this while reading [SICP](https://github.com/justinmeiners/sicp-excercises) to improve my knowledge of lisp and to make an implementation that allows me to easily add scripting to my own programs.
 
 
 ### Philosophy
@@ -15,8 +16,8 @@ An embeddable lisp interepreter written in C. I created this while reading [SICP
 
 ### Features
 
-- Scheme-like (but not confined to) syntax. if, let, and, or, etc.
-- Closures
+- Basic scheme language: if, let, and, or, closures, etc.
+- Standard library which implements a subset of MIT Scheme.
 - Exact [garbage collection](#garbage-collection) with explicit invocation.
 - Symbol table
 - Easy integration of C functions.
@@ -146,15 +147,19 @@ lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
 
 ## Garbage Collection
 
-The lisp interpreter uses the [Cheney algorithim](https://en.wikipedia.org/wiki/Cheney%27s_algorithm) for garbage collection.
+You must call garbage collection yourself.
+This can be done from C after an evaluation, or in the middle of a lisp program by calling:
 
-Memory is allocated in fixed size pages. When an allocation is request and the current page does not have enough space remaining, a new page will be allocated to fulfill the allocation. So, allocations will continue to use up more memory until garbage collection is invoked by calling `lisp_collect`. Note that tail call recursion will not overflow the C stack, but will use additional memory for each function call.
+    (gc-flip)
+
+The lisp interpreter uses the [Cheney algorithim](https://en.wikipedia.org/wiki/Cheney%27s_algorithm) for garbage collection.
 
 The choice to use explicit, rather than automatic garbage collection, was made so that the interpreter does not need to keep track of every lisp object on the stack, only the most important objects. If garbage collection was allowed to trigger in the middle of a C function call, then the interpreter would need to be able to "see" all the lisp values on the call stack, in order to prevent them from being collected. Providing this feature would make integrating with C code much more complicated and conflict with the project's goal of being easily embeddable.
 
-This means that when `lisp_collect` is called, all lisp values which are not reachable from the global environment or the function's parameters become invalidated. Be conscious of when and where you call the garbage collector.
+This means that when `lisp_collect` is called, all lisp values which are not reachable from the global environment or the function's parameters become invalidated. Be conscious of when and where you call the garbage collector. You can learn about an alternative solution in the [Lua Scripting Language](https://www.lua.org/pil/24.2.html).
 
-You can learn about an alternative solution in the [Lua Scripting Language](https://www.lua.org/pil/24.2.html).
+Memory is allocated in fixed size pages. When an allocation is request and the current page does not have enough space remaining, a new page will be allocated to fulfill the allocation. So, allocations will continue to use up more memory until garbage collection.
+Note that tail call recursion will not overflow the stack, but will use additional memory for each function call.
 
 ## Project License
 
