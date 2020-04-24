@@ -12,7 +12,7 @@
 
 #include <stdio.h>
 
-#define LISP_DEBUG 1
+#define LISP_DEBUG 0
 
 /* how much data the parser reads
    into memory at once from a file */

@@ -2,11 +2,18 @@
 
 cd tests/
 
-for file in *.scm
+for FILE in *.scm
 do
-    echo "../lisp_i --load ${file}"
-    ../lisp_i --load $file
-    echo "FINISHED"
+    echo "$FILE"
+    ../lisp_i --load "$FILE"
+
+    printf "\n"
+    if [ $? = "0" ]
+    then
+        echo "FINISHED $FILE"
+    else
+        echo "*FAILED* $FILE"
+    fi
     printf "\n"
 done
 

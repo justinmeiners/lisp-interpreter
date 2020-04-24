@@ -64,6 +64,7 @@ int main(int argc, const char* argv[])
         if (error != LISP_ERROR_NONE)
         {
             fprintf(stderr, "%s\n", lisp_error_string(error));
+            exit(1);
         }
 
 
@@ -80,6 +81,7 @@ int main(int argc, const char* argv[])
         if (error != LISP_ERROR_NONE)
         {
             fprintf(stderr, "%s\n", lisp_error_string(error));
+            exit(1);
         }
 
         lisp_collect(lisp_make_null(), ctx);
@@ -103,6 +105,7 @@ int main(int argc, const char* argv[])
             if (error != LISP_ERROR_NONE)
             {
                 fprintf(stderr, "%s\n", lisp_error_string(error));
+                exit(1);
             }
 
             Lisp l = lisp_eval_global(code, &error, ctx);
@@ -111,6 +114,7 @@ int main(int argc, const char* argv[])
             if (error != LISP_ERROR_NONE)
             {
                 fprintf(stderr, "%s\n", lisp_error_string(error));
+                exit(1);
             }
 
             lisp_print(l);
@@ -123,6 +127,6 @@ int main(int argc, const char* argv[])
        }
     }
 
-    return 1;
+    return 0;
 }
 

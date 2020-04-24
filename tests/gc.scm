@@ -8,7 +8,6 @@
     (set! big-vector (make-vector 100 0))
     (set! counter (- counter 1))
     (gc-flip)
-    (display counter)
     (if (> counter 0)
       (basic-loop)
       '())
@@ -16,4 +15,6 @@
 
 
 (basic-loop)
+
+(print-gc-statistics)
 

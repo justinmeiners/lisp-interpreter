@@ -84,6 +84,9 @@ struct LispImpl
     Lisp global_env;
     Lisp reuse_env;
     int lambda_counter;
+    
+    size_t gc_stat_freed;
+    size_t gc_stat_time;
 };
 
 static void heap_init(Heap* heap, size_t page_size)
@@ -2242,6 +2245,8 @@ static Lisp gc_move(Lisp l, Heap* to)
 
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
+    time_t start_time = clock();
+
     Heap* to = &ctx.impl->to_heap;
 
     // move root object
@@ -2326,6 +2331,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
         }
     }
 
+    
     size_t diff = ctx.impl->heap.size - ctx.impl->to_heap.size;
 
     // swap the heaps
@@ -2336,10 +2342,10 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     // reset the heap
     heap_shutdown(&ctx.impl->to_heap);
     heap_init(&ctx.impl->to_heap, ctx.impl->heap.page_size);
+    time_t end_time = clock();
 
-    if (LISP_DEBUG)
-        printf("gc collected: %lu heap: %lu\n", diff, ctx.impl->heap.size);
-
+    ctx.impl->gc_stat_freed = diff;
+    ctx.impl->gc_stat_time = 1000000 * (end_time - start_time) / CLOCKS_PER_SEC;
     return result;
 }
 
@@ -2412,6 +2418,8 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
     ctx.impl->stack_ptr = 0;
     ctx.impl->stack_depth = stack_depth;
     ctx.impl->stack = malloc(sizeof(Lisp) * stack_depth);
+    ctx.impl->gc_stat_freed = 0;
+    ctx.impl->gc_stat_time = 0;
     
     heap_init(&ctx.impl->heap, page_size);
     heap_init(&ctx.impl->to_heap, page_size);
@@ -3254,6 +3262,12 @@ static Lisp sch_gc_flip(Lisp args, LispError* e, LispContext ctx)
     lisp_collect(lisp_make_null(), ctx);
     return lisp_make_null();
 }
+static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
+{
+    printf("gc collected: %lu\t time: %lu us\n", ctx.impl->gc_stat_freed, ctx.impl->gc_stat_time);
+    printf("heap size: %lu\t pages: %lu\n", ctx.impl->heap.size, ctx.impl->heap.page_count);
+    return lisp_make_null();
+}
 
 static const LispFuncDef lib_defs[] = {
     // NON STANDARD ADDITINONS
@@ -3373,7 +3387,8 @@ static const LispFuncDef lib_defs[] = {
     
     // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
     { "GC-FLIP", sch_gc_flip },
-
+    { "PRINT-GC-STATISTICS", sch_print_gc_stats },
+    
     { NULL, NULL }
 };
 
