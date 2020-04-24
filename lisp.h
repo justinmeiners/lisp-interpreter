@@ -4,6 +4,10 @@
 /*
  Created By: Justin Meiners (https://justinmeiners.github.io)
  License: MIT
+ 
+ You can build without  standard library which is a subset of MIT Scheme.
+ #define LISP_NO_LIB 1
+ 
  */
 
 #include <stdio.h>
@@ -16,11 +20,6 @@
 #define LISP_DEFAULT_PAGE_SIZE 8192
 #define LISP_DEFAULT_STACK_DEPTH 1024
 
-/*
- whether to build the standard library which is a subset of MIT Scheme.
- */
-#define LISP_BUILD_LIB 1
-
 typedef enum
 {
     LISP_NULL = 0,
@@ -32,7 +31,7 @@ typedef enum
     LISP_LAMBDA, // user defined lambda
     LISP_FUNC,   // C function
     LISP_TABLE,  // key/value storage
-    LISP_VECTOR, // homogenous array
+    LISP_VECTOR, // heterogenous array but contiguous allocation
 } LispType;
 
 typedef enum
@@ -82,7 +81,7 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 // SETUP
 // -----------------------------------------
-#if LISP_BUILD_LIB
+#ifndef LISP_NO_LIB
 LispContext lisp_init_lib(void);
 LispContext lisp_init_lib_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
 #endif
@@ -171,10 +170,11 @@ Lisp lisp_list_reverse(Lisp l); // O(n)
 
 Lisp lisp_make_vector(unsigned int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
-Lisp lisp_vector_ref(Lisp v, unsigned int i);
-void lisp_vector_set(Lisp v, unsigned int i, Lisp x);
+Lisp lisp_vector_ref(Lisp v, int i);
+void lisp_vector_set(Lisp v, int i, Lisp x);
 Lisp lisp_vector_assoc(Lisp v, Lisp key); // O(n)
 Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx);
+Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx);
 
 Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx);
