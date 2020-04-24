@@ -12,15 +12,15 @@
 
 
 (define (rand-item max-weight max-cost)
-  (cons (pseudo-rand max-weight)
-        (pseudo-rand max-cost)))
+  (cons (random max-weight)
+        (random max-cost)))
 
 (define (build-items n)
   (if (= n 0)
       '()
       (cons (rand-item 100 100)
         (build-items (- n 1)))))
-;(pseudo-seed! (unix-time))
+;(random-seed! (GET-UNIVERSAL-TIME))
 ;(define items (build-items 10))
 
 

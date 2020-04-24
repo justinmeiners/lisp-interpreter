@@ -1,18 +1,30 @@
 #ifndef LISP_H
 #define LISP_H
 
+/*
+ Created By: Justin Meiners (https://justinmeiners.github.io)
+ License: MIT
+ */
+
 #include <stdio.h>
 
 #define LISP_DEBUG 1
 
-// how much data the parser reads
-// into memory at once from a file
+/* how much data the parser reads
+   into memory at once from a file */
 #define LISP_FILE_CHUNK_SIZE 4096
+#define LISP_DEFAULT_PAGE_SIZE 8192
+#define LISP_DEFAULT_STACK_DEPTH 1024
+
+/*
+ whether to build the standard library which is a subset of MIT Scheme.
+ */
+#define LISP_BUILD_LIB 1
 
 typedef enum
 {
     LISP_NULL = 0,
-    LISP_FLOAT,  // decimal/floating point type
+    LISP_REAL,  // decimal/floating point type
     LISP_INT,    // integer type
     LISP_PAIR,   // cons pair (car, cdr)
     LISP_SYMBOL, // unquoted strings
@@ -66,12 +78,14 @@ typedef struct
     struct LispImpl* impl;
 } LispContext;
 
-typedef Lisp(*LispFunc)(Lisp, LispError*, LispContext);
+typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 // SETUP
 // -----------------------------------------
-LispContext lisp_init_lang(void);
-LispContext lisp_init_lang_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
+#if LISP_BUILD_LIB
+LispContext lisp_init_lib(void);
+LispContext lisp_init_lib_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
+#endif
 
 LispContext lisp_init_empty(void);
 LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
@@ -119,8 +133,8 @@ Lisp lisp_make_null(void);
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp x);
 
-Lisp lisp_make_float(float x);
-float lisp_float(Lisp x);
+Lisp lisp_make_real(float x);
+float lisp_real(Lisp x);
 
 Lisp lisp_make_string(const char* c_string, LispContext ctx);
 char lisp_string_ref(Lisp s, int n);
@@ -166,14 +180,22 @@ Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx);
 // returns the key value pair, or null if not found
 Lisp lisp_table_get(Lisp t, Lisp key, LispContext ctx);
-void lisp_table_add_funcs(Lisp t, const char** names, LispFunc* funcs, LispContext ctx);
+
+/* This struct is just for making definitions a little less error prone,
+   having separate arrays for names and functions leads to easy mistakes. */
+typedef struct
+{
+    const char* name;
+    LispCFunc func_ptr;
+} LispFuncDef;
+void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx);
 
 // programatically generate compound procedures
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
 
 // C functions
-Lisp lisp_make_func(LispFunc func);
-LispFunc lisp_func(Lisp l);
+Lisp lisp_make_func(LispCFunc func_ptr);
+LispCFunc lisp_func(Lisp l);
 
 // evaluation environments
 Lisp lisp_env_global(LispContext ctx);
