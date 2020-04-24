@@ -3070,6 +3070,42 @@ static Lisp sch_is_char(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(lisp_type(lisp_car(args)) == LISP_CHAR);
 }
 
+static Lisp sch_char_upcase(Lisp args, LispError* e, LispContext ctx)
+{
+    int c = lisp_char(lisp_car(args));
+    return lisp_make_char(toupper(c));
+}
+
+static Lisp sch_char_downcase(Lisp args, LispError* e, LispContext ctx)
+{
+    int c = lisp_char(lisp_car(args));
+    return lisp_make_char(tolower(c));
+}
+
+static Lisp sch_char_is_alphanum(Lisp args, LispError* e, LispContext ctx)
+{
+    int c = lisp_char(lisp_car(args));
+    return lisp_make_int(isalnum(c));
+}
+
+static Lisp sch_char_is_alpha(Lisp args, LispError* e, LispContext ctx)
+{
+    int c = lisp_char(lisp_car(args));
+    return lisp_make_int(isalpha(c));
+}
+
+static Lisp sch_char_is_number(Lisp args, LispError* e, LispContext ctx)
+{
+    int c = lisp_char(lisp_car(args));
+    return lisp_make_int(isnumber(c));
+}
+
+static Lisp sch_char_is_white(Lisp args, LispError* e, LispContext ctx)
+{
+    int c = lisp_char(lisp_car(args));
+    return lisp_make_int(isblank(c));
+}
+
 static Lisp sch_is_int(Lisp args, LispError* e, LispContext ctx)
 {
     while (lisp_is_pair(args))
@@ -3444,6 +3480,12 @@ static const LispFuncDef lib_defs[] = {
     { "char?", sch_is_char },
     { "char=?", sch_equals },
     { "char<?", sch_less },
+    { "char-upcase", sch_char_upcase },
+    { "char-downcase", sch_char_downcase },
+    { "char-whitespace?", sch_char_is_white },
+    { "char-alphanumeric?", sch_char_is_alphanum },
+    { "char-alphabetic?", sch_char_is_alpha },
+    { "char-numeric?", sch_char_is_number },
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     { "ASSOC", sch_assoc },
