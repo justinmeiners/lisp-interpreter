@@ -739,13 +739,13 @@ typedef enum
     TOKEN_L_PAREN,
     TOKEN_R_PAREN,
     TOKEN_HASH,
+    TOKEN_BSLASH,
     TOKEN_DOT,
     TOKEN_QUOTE,
     TOKEN_SYMBOL,
     TOKEN_STRING,
     TOKEN_INT,
     TOKEN_FLOAT,
-    TOKEN_CHAR,
 } TokenType;
 
 /* for debug
@@ -992,18 +992,6 @@ static int lexer_match_string(Lexer* lex)
     return 1;    
 }
 
-static int lexer_match_char(Lexer* lex)
-{
-    lexer_restart_scan(lex);
-    // start with quote
-    if (*lex->c != '\\') return 0;
-    lexer_step(lex);
-    if (!isalnum(*lex->c)) return 0;
-    lexer_step(lex);
-    while (isalnum(*lex->c)) lexer_step(lex);
-    return 1;
-}
-
 static void lexer_copy_token(Lexer* lex, size_t start_index, size_t length, char* dest)
 {
     size_t token_length = lex->scan_length;
@@ -1073,6 +1061,11 @@ static void lexer_next_token(Lexer* lex)
         lex->token = TOKEN_QUOTE;
         lexer_step(lex);
     }
+    else if (*lex->c == '\\')
+    {
+        lex->token = TOKEN_BSLASH;
+        lexer_step(lex);
+    }
     else if (lexer_match_string(lex))
     {
         lex->token = TOKEN_STRING;
@@ -1084,10 +1077,6 @@ static void lexer_next_token(Lexer* lex)
     else if (lexer_match_int(lex))
     {
         lex->token = TOKEN_INT;
-    }
-    else if (lexer_match_char(lex))
-    {
-        lex->token = TOKEN_CHAR;
     }
     else if (lexer_match_symbol(lex))
     {
@@ -1140,14 +1129,6 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
             lexer_copy_token(lex, 0, length, scratch);
             scratch[length] = '\0';
             l = lisp_make_symbol(scratch, ctx);
-            break;
-        }
-        case TOKEN_CHAR:
-        {
-            lexer_copy_token(lex, 0, length, scratch);
-            scratch[length] = '\0';
-            // TODO: multiletter chars
-            l = lisp_make_char((int)scratch[1]);
             break;
         }
         default: 
@@ -1205,10 +1186,17 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
         {
             // #
             lexer_next_token(lex);
-            
-            if (lex->token == TOKEN_SYMBOL)
+            if (lex->token == TOKEN_BSLASH)
             {
-                return
+                lexer_next_token(lex);
+                if (lex->token != TOKEN_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_TOKEN);
+
+                // TODO: multi chars
+                char c;
+                lexer_copy_token(lex, 0, 1, &c);
+                
+                lexer_next_token(lex);
+                return lisp_make_char(c);
             }
             
             if (lex->token != TOKEN_L_PAREN) longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
@@ -1831,11 +1819,11 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             int c = lisp_int(l);
             if (isprint(c))
             {
-                fprintf(file, "\\%c", (char)c);
+                fprintf(file, "#\\%c", (char)c);
             }
             else
             {
-                fprintf(file, "\\+%d", c);
+                fprintf(file, "#\\+%d", c);
             }
             break;
         }
