@@ -22,7 +22,7 @@ int main(int argc, const char* argv[])
         }
     }
     
-    LispContext ctx = lisp_init_lang_opt(512, page_size);
+    LispContext ctx = lisp_init_lang_opt(512, 1024, page_size);
 
     clock_t start_time, end_time;
         
