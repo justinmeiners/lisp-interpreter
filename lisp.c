@@ -2095,6 +2095,8 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
 
 Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 {
+    size_t save_stack = ctx.impl->stack_ptr;
+    
     jmp_buf error_jmp;
     LispError error = setjmp(error_jmp);
 
@@ -2110,7 +2112,6 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 
         if (out_error)
         {
-            ctx.impl->stack_ptr = 0;
             *out_error = error;
         }
 
@@ -2120,7 +2121,7 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
     {
         if (out_error)
         {
-            ctx.impl->stack_ptr = 0;
+            ctx.impl->stack_ptr = save_stack;
             *out_error = error;
         }
 
@@ -2988,6 +2989,18 @@ static Lisp sch_is_odd(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(1);
 }
 
+static Lisp sch_exp(Lisp args, LispError* e, LispContext ctx)
+{
+    float x = expf(lisp_real(lisp_car(args)));
+    return lisp_make_real(x);
+}
+
+static Lisp sch_log(Lisp args, LispError* e, LispContext ctx)
+{
+    float x = logf(lisp_real(lisp_car(args)));
+    return lisp_make_real(x);
+}
+
 static Lisp sch_sin(Lisp args, LispError* e, LispContext ctx)
 {
     float x = sinf(lisp_real(lisp_car(args)));
@@ -3010,6 +3023,18 @@ static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
 {
     float x = sqrtf(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
+}
+
+static Lisp sch_is_vector(Lisp args, LispError* e, LispContext ctx)
+{
+    if (lisp_type(lisp_car(args)) == LISP_VECTOR)
+    {
+        return lisp_make_int(1);
+    }
+    else
+    {
+        return lisp_make_int(0);
+    }
 }
 
 static Lisp sch_make_vector(Lisp args, LispError* e, LispContext ctx)
@@ -3195,6 +3220,11 @@ static Lisp sch_expand(Lisp args, LispError* e, LispContext ctx)
     return result;
 }
 
+static Lisp sch_eval(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_eval(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
+}
+
 static Lisp sch_global_env(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_env_global(ctx);
@@ -3230,8 +3260,10 @@ static const LispFuncDef lib_defs[] = {
     { "LIST-REF", sch_list_ref },
     { "MAP", sch_map },
     { "REVERSE!", sch_reverse_inplace },
+    
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
+    { "VECTOR?", sch_is_vector },
     { "MAKE-VECTOR", sch_make_vector },
     { "VECTOR-GROW", sch_vector_grow },
     { "VECTOR-LENGTH", sch_vector_length },
@@ -3241,7 +3273,8 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-HEAD", sch_vector_head },
     { "VECTOR-TAIL", sch_vector_tail },
     { "LIST->VECTOR", sch_list_to_vector },
-    
+    // TODO vector->list
+
     // TODO: sort
 
     // TODO: Non Standard
@@ -3255,6 +3288,8 @@ static const LispFuncDef lib_defs[] = {
     { "STRING-SET!", sch_string_set },
     { "STRING-UPCASE", sch_string_upcase },
     { "STRING-DOWNCASE", sch_string_downcase },
+    // TODO: string->list
+    // TODO: list->string
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     { "ASSOC", sch_assoc },
@@ -3273,6 +3308,8 @@ static const LispFuncDef lib_defs[] = {
     { "EVEN?", sch_is_even },
     { "ODD?", sch_is_odd },
     { "REAL?", sch_is_real },
+    { "EXP", sch_exp },
+    { "LOG", sch_log },
     { "SIN", sch_sin },
     { "COS", sch_cos },
     { "TAN", sch_tan },
@@ -3286,7 +3323,9 @@ static const LispFuncDef lib_defs[] = {
     { "SYMBOL->STRING", sch_symbol_to_string },
 
     // Environments https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_14.html
+    { "EVAL", sch_eval },
     { "SYSTEM-GLOBAL-ENVIRONMENT", sch_global_env },
+    // { "THE-ENVIRONMENT", sch_current_env },
     // TODO: purify
     
     // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
