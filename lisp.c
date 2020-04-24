@@ -2459,6 +2459,12 @@ static Lisp sch_eq(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(lisp_eq(a, b));
 }
 
+static Lisp sch_not(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp x = lisp_car(args);
+    return lisp_make_int(!lisp_int(x));
+}
+
 static Lisp sch_is_null(Lisp args, LispError* e, LispContext ctx)
 {
     while (!lisp_is_null(args))
@@ -2845,6 +2851,10 @@ static Lisp sch_symbol_to_string(Lisp args, LispError* e, LispContext ctx)
     }
 }
 
+static Lisp sch_is_symbol(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_int(lisp_type(lisp_car(args)) == LISP_SYMBOL);
+}
 
 static Lisp sch_string_to_symbol(Lisp args, LispError* e, LispContext ctx)
 {
@@ -2868,6 +2878,15 @@ static Lisp sch_is_string(Lisp args, LispError* e, LispContext ctx)
         args = lisp_cdr(args);
     }
     return lisp_make_int(1);
+}
+
+static Lisp sch_string_equal(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    int result = strcmp(lisp_string(a), lisp_string(b)) == 0;
+    return lisp_make_int(result);
 }
 
 static Lisp sch_string_copy(Lisp args, LispError* e, LispContext ctx)
@@ -3248,6 +3267,9 @@ static const LispFuncDef lib_defs[] = {
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_eq },
     
+    // Booleans https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Booleans.html
+    { "NOT", sch_not },
+    
     // Lists https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
     { "CONS", sch_cons },
     { "CAR", sch_car },
@@ -3260,7 +3282,6 @@ static const LispFuncDef lib_defs[] = {
     { "LIST-REF", sch_list_ref },
     { "MAP", sch_map },
     { "REVERSE!", sch_reverse_inplace },
-    
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
     { "VECTOR?", sch_is_vector },
@@ -3281,7 +3302,9 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-ASSOC", sch_vector_assoc },
 
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
+    // TODO: make string
     { "STRING?", sch_is_string },
+    { "STRING=?", sch_string_equal },
     { "STRING-COPY", sch_string_copy },
     { "STRING-LENGTH", sch_string_length },
     { "STRING-REF", sch_string_ref },
@@ -3319,6 +3342,7 @@ static const LispFuncDef lib_defs[] = {
     { "EXACT", sch_to_exact },
     
     // Symbols https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Symbols.html
+    { "SYMBOL?", sch_is_symbol },
     { "STRING->SYMBOL", sch_string_to_symbol },
     { "SYMBOL->STRING", sch_symbol_to_string },
 
@@ -3330,8 +3354,8 @@ static const LispFuncDef lib_defs[] = {
     
     // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
     // TODO: apply
-    // TOOD: Almost standard
     { "PROCEDURE?", sch_is_lambda},
+    // TOOD: Almost standard
     { "PROCEDURE-BODY", sch_lambda_body },
     
     // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
