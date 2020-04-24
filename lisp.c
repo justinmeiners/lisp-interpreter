@@ -554,7 +554,7 @@ static String* get_string(Lisp s)
     return s.val.ptr_val;
 }
 
-const char* lisp_string(Lisp s)
+char* lisp_string(Lisp s)
 {
     return get_string(s)->string;
 }
@@ -2920,6 +2920,34 @@ static Lisp sch_string_set(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
+static Lisp sch_string_upcase(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp s = lisp_car(args);
+    Lisp r = lisp_make_string(lisp_string(s), ctx);
+    
+    char* c = lisp_string(r);
+    while (*c)
+    {
+        *c = toupper(*c);
+        ++c;
+    }
+    return r;
+}
+
+static Lisp sch_string_downcase(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp s = lisp_car(args);
+    Lisp r = lisp_make_string(lisp_string(s), ctx);
+    
+    char* c = lisp_string(r);
+    while (*c)
+    {
+        *c = tolower(*c);
+        ++c;
+    }
+    return r;
+}
+
 static Lisp sch_is_int(Lisp args, LispError* e, LispContext ctx)
 {
     while (lisp_is_pair(args))
@@ -3213,6 +3241,8 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-HEAD", sch_vector_head },
     { "VECTOR-TAIL", sch_vector_tail },
     { "LIST->VECTOR", sch_list_to_vector },
+    
+    // TODO: sort
 
     // TODO: Non Standard
     { "VECTOR-ASSOC", sch_vector_assoc },
@@ -3222,8 +3252,10 @@ static const LispFuncDef lib_defs[] = {
     { "STRING-COPY", sch_string_copy },
     { "STRING-LENGTH", sch_string_length },
     { "STRING-REF", sch_string_ref },
-    { "STRING_SET!", sch_string_set },
-    
+    { "STRING-SET!", sch_string_set },
+    { "STRING-UPCASE", sch_string_upcase },
+    { "STRING-DOWNCASE", sch_string_downcase },
+
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     { "ASSOC", sch_assoc },
     
