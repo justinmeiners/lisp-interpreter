@@ -49,7 +49,6 @@ $ ./lisp_i
 ### Embedding in a program
 
 ```c
-// setup lisp with 1 MB of heap
 LispContext ctx = lisp_init_interpreter();
 
 // load lisp program (add 1 and 2)
@@ -72,6 +71,7 @@ lisp_shutdown(ctx, env);
 ### Loading Data
 
 Lisp s-expressions can be used as a lightweight substitute to JSON or XML.
+Looking up keys which are reused is even more efficient due to symbol comparison.
 
 JSON
 ```json
@@ -91,7 +91,7 @@ Lisp
 Loading the structure in C.
 
 ```c
-// setup lisp with 1 MB of heap
+// setup lisp without any library
 LispContext ctx = lisp_init_empty();
 // load lisp structure
 Lisp data = lisp_read_file(file, ctx);
