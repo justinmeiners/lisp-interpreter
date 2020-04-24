@@ -5,8 +5,17 @@
  Created By: Justin Meiners (https://justinmeiners.github.io)
  License: MIT
  
- You can build without  standard library which is a subset of MIT Scheme.
- #define LISP_NO_LIB 1
+Build without standard library. (subset of MIT Scheme)
+The basic manipulation functions are still available in C.
+#define LISP_NO_LIB 1
+ 
+ Build without functions which give lisp access to the system,
+ such as file access.
+#define LISP_NO_SYSTEM_LIB 1
+ 
+ Additional options: override how much data
+ the parser reads into memory at once from a file.
+ #define LISP_FILE_CHUNK_SIZE 4096
  
  */
 
@@ -17,8 +26,7 @@
 /* how much data the parser reads
    into memory at once from a file */
 #define LISP_FILE_CHUNK_SIZE 4096
-#define LISP_DEFAULT_PAGE_SIZE 8192
-#define LISP_DEFAULT_STACK_DEPTH 1024
+
 
 typedef enum
 {
@@ -80,6 +88,11 @@ typedef struct
 
 typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
+/* no need to change these, just use the _opt variant */
+#define LISP_DEFAULT_SYMBOL_TABLE_SIZE 512
+#define LISP_DEFAULT_PAGE_SIZE 8192
+#define LISP_DEFAULT_STACK_DEPTH 1024
+
 // SETUP
 // -----------------------------------------
 #ifndef LISP_NO_LIB
@@ -105,19 +118,17 @@ Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
 Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
-// expands Lisp syntax (For code)
+// expands special Lisp forms (For code)
+// The default eval will do this for you, but this can prepare statements
+// that are run multiple times
 Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx);
-// read and then expand for convenience
-Lisp lisp_read_expand(const char* text, LispError* out_error, LispContext ctx);
-Lisp lisp_read_expand_file(FILE* file, LispError* out_error, LispContext ctx);
-Lisp lisp_read_expand_path(const char* path, LispError* out_error, LispContext ctx);
 
 // EVALUATION
 // -----------------------------------------
 // evaluate a lisp expression
-Lisp lisp_eval(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
+Lisp lisp_eval_opt(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
 // same as above but uses global environment
-Lisp lisp_eval_global(Lisp expr, LispError* out_error, LispContext ctx);
+Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
 
 // print out a lisp structure
 void lisp_print(Lisp l);

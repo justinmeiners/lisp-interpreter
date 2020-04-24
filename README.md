@@ -51,14 +51,14 @@ $ ./lisp_i
 ### Embedding in a program
 
 ```c
-LispContext ctx = lisp_init_interpreter();
+LispContext ctx = lisp_init_lib();
 
 // load lisp program (add 1 and 2)
 LispError error;
-Lisp program = lisp_read_expand("(+ 1 2)", &error, ctx);
+Lisp program = lisp_read("(+ 1 2)", &error, ctx);
 
 // execute program using global environment
-Lisp result = lisp_eval_global(program, &error, ctx);
+Lisp result = lisp_eval(program, &error, ctx);
 
 // prints 3
 lisp_print(result);

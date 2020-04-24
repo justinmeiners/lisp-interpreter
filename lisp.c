@@ -82,7 +82,6 @@ struct LispImpl
 
     Lisp symbol_table;
     Lisp global_env;
-    Lisp reuse_env;
     int lambda_counter;
     
     size_t gc_stat_freed;
@@ -1139,7 +1138,7 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
     return l;
 }
 
-static const char* char_name_table[] =
+static const char* ascii_char_name_table[] =
 {
     "NUL", "SOH", "STX", "ETX", "EOT",
     "ENQ", "ACK", "BEL", "backspace", "tab",
@@ -1166,7 +1165,7 @@ static int parse_char_token(Lexer* lex)
         lexer_copy_token(lex, 0, length, scratch);
         scratch[length] = '\0';
         
-        const char** name_it = char_name_table;
+        const char** name_it = ascii_char_name_table;
         
         int c = 0;
         while (*name_it)
@@ -1693,48 +1692,6 @@ Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx)
     }
 }
 
-Lisp lisp_read_expand(const char* text, LispError* out_error, LispContext ctx)
-{
-    LispError e;
-    Lisp data = lisp_read(text, &e, ctx);
-
-    if (e != LISP_ERROR_NONE) 
-    {
-        if (out_error) *out_error = e;
-        return lisp_make_null();
-    }
-
-    return lisp_expand(data, out_error, ctx);
-}
-
-Lisp lisp_read_expand_file(FILE* file, LispError* out_error, LispContext ctx)
-{
-    LispError e;
-    Lisp data = lisp_read_file(file, &e, ctx);
-    
-    if (e != LISP_ERROR_NONE)
-    {
-        if (out_error) *out_error = e;
-        return lisp_make_null();
-    }
-    
-    return lisp_expand(data, out_error, ctx);
-}
-
-Lisp lisp_read_expand_path(const char* path, LispError* out_error, LispContext ctx)
-{
-    LispError e;
-    Lisp data = lisp_read_path(path, &e, ctx);
-    
-    if (e != LISP_ERROR_NONE)
-    {
-        if (out_error) *out_error = e;
-        return lisp_make_null();
-    }
-    
-    return lisp_expand(data, out_error, ctx);
-}
-
 // TODO?
 static const char* lisp_type_name[] = {
     "NULL",
@@ -1856,7 +1813,12 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
         case LISP_CHAR:
         {
             int c = lisp_int(l);
-            if (isprint(c))
+            
+            if (c < 33)
+            {
+                fprintf(file, "#\\%s", ascii_char_name_table[c]);
+            }
+            else if (isprint(c))
             {
                 fprintf(file, "#\\%c", (char)c);
             }
@@ -1960,6 +1922,66 @@ static Lisp lisp_stack_pop(LispContext ctx)
 static Lisp* lisp_stack_peek(size_t i, LispContext ctx)
 {
     return ctx.impl->stack + (ctx.impl->stack_ptr - i);
+}
+
+static int eval_apply(Lisp operator, Lisp args, Lisp* out_val, Lisp* out_env, LispError* error, LispContext ctx)
+{
+    switch (lisp_type(operator))
+    {
+        case LISP_LAMBDA: // lambda call (compound procedure)
+        {
+            const Lambda* lambda = lisp_lambda(operator);
+            
+            if (lisp_is_null(lambda->args))
+            {
+                *out_env = lambda->env;
+            }
+            else
+            {
+                // make a new environment
+                Lisp new_table = lisp_make_table(13, ctx);
+                
+                // bind parameters to arguments
+                // to pass into function call
+                Lisp keyIt = lambda->args;
+                Lisp valIt = args;
+
+                while (lisp_is_pair(keyIt))
+                {
+                    lisp_table_set(new_table, lisp_car(keyIt), lisp_car(valIt), ctx);
+                    keyIt = lisp_cdr(keyIt);
+                    valIt = lisp_cdr(valIt);
+                }
+                
+                if (lisp_type(keyIt) == LISP_SYMBOL)
+                {
+                    // variable length arguments
+                    lisp_table_set(new_table, keyIt, valIt, ctx);
+                }
+                
+                // extend the environment
+                *out_env = lisp_env_extend(lambda->env, new_table, ctx);
+            }
+            
+            // normally we would eval the body here
+            // but while will eval
+            *out_val = lambda->body;
+            return 1;
+        }
+        case LISP_FUNC: // call into C functions
+        {
+            // no environment required
+            LispCFunc func = lisp_func(operator);
+            Lisp result = func(args, error, ctx);
+            *out_val = result;
+            return 0;
+        }
+        default:
+        {
+            *error = LISP_ERROR_BAD_OP;
+            return 0;
+        }
+    }
 }
 
 static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
@@ -2130,62 +2152,15 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     
                     operator = lisp_stack_pop(ctx);
                     
-                    switch (lisp_type(operator))
-                    {
-                        case LISP_LAMBDA: // lambda call (compound procedure)
-                        {
-                            const Lambda* lambda = lisp_lambda(operator);
-                            
-                            if (lisp_is_null(lambda->args))
-                            {
-                                *env = lambda->env;
-                            }
-                            else
-                            {
-                                // make a new environment
-                                Lisp new_table = lisp_make_table(13, ctx);
-                                
-                                // bind parameters to arguments
-                                // to pass into function call
-                                Lisp keyIt = lambda->args;
-                                Lisp valIt = args_front;
+                    LispError error = LISP_ERROR_NONE;
+                    int needs_to_eval = eval_apply(operator, args_front, x, env, &error, ctx);
+                    if (error != LISP_ERROR_NONE) longjmp(error_jmp, error);
 
-                                while (lisp_is_pair(keyIt))
-                                {
-                                    lisp_table_set(new_table, lisp_car(keyIt), lisp_car(valIt), ctx);
-                                    keyIt = lisp_cdr(keyIt);
-                                    valIt = lisp_cdr(valIt);
-                                }
-                                
-                                if (lisp_type(keyIt) == LISP_SYMBOL)
-                                {
-                                    // variable length arguments
-                                    lisp_table_set(new_table, keyIt, valIt, ctx);
-                                }
-                                
-                                // extend the environment
-                                *env = lisp_env_extend(lambda->env, new_table, ctx);
-                            }
-                            
-                            // normally we would eval the body here
-                            // but while will eval
-                            *x = lambda->body;
-                            break;
-                        }
-                        case LISP_FUNC: // call into C functions
-                        {
-                            // no environment required
-                            LispCFunc func = lisp_func(operator);
-                            LispError e = LISP_ERROR_NONE;
-                            Lisp result = func(args_front, &e, ctx);
-                            if (e != LISP_ERROR_NONE) longjmp(error_jmp, e);
-                            return result;
-                        }
-                        default:
-                            
-                            fprintf(stderr, "apply error: not an operator %s\n", lisp_type_name[operator.type]);
-                            longjmp(error_jmp, LISP_ERROR_BAD_OP);
+                    if (!needs_to_eval)
+                    {
+                        return *x;
                     }
+                    // Otherwise while will eval
                 }
                 break;
             }
@@ -2196,17 +2171,26 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
 }
 
 
-Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
+Lisp lisp_eval_opt(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 {
+    LispError error;
+    Lisp expanded = lisp_expand(l, &error, ctx);
+    
+    if (error != LISP_ERROR_NONE)
+    {
+        if (out_error) *out_error = error;
+        return lisp_make_null();
+    }
+    
     size_t save_stack = ctx.impl->stack_ptr;
     
     jmp_buf error_jmp;
-    LispError error = setjmp(error_jmp);
+    error = setjmp(error_jmp);
 
     if (error == LISP_ERROR_NONE)
     {
         lisp_stack_push(env, ctx);
-        lisp_stack_push(l, ctx);
+        lisp_stack_push(expanded, ctx);
         
         Lisp result = eval_r(error_jmp, ctx);
         
@@ -2232,9 +2216,9 @@ Lisp lisp_eval(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
     }
 }
 
-Lisp lisp_eval_global(Lisp expr, LispError* out_error, LispContext ctx)
+Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
 {
-    return lisp_eval(expr, lisp_env_global(ctx), out_error, ctx);
+    return lisp_eval_opt(expr, lisp_env_global(ctx), out_error, ctx);
 }
 
 static Lisp gc_move(Lisp l, Heap* to)
@@ -2526,13 +2510,13 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
 
     ctx.impl->symbol_table = lisp_make_table(symbol_table_size, ctx);
     ctx.impl->global_env = lisp_make_null();
-    ctx.impl->reuse_env = lisp_make_null();
     return ctx;
 }
 
+
 LispContext lisp_init_empty(void)
 {
-    return lisp_init_empty_opt(512, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
+    return lisp_init_empty_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
 }
 
 #ifndef LISP_NO_LIB
@@ -2689,8 +2673,10 @@ static Lisp sch_map(Lisp args, LispError* e, LispContext ctx)
 
         while (lisp_is_pair(it))
         {
+            // TODO: garbage collection might fail
+            // TODO: wrong environment
             Lisp expr = lisp_cons(op, lisp_cons(lisp_car(it), lisp_make_null(), ctx), ctx);
-            Lisp result = lisp_eval(expr, lisp_env_global(ctx), NULL, ctx);
+            Lisp result = lisp_eval(expr, NULL, ctx);
             lisp_fast_append(&front, &back, result, ctx);
             it = lisp_cdr(it);
         }
@@ -3425,11 +3411,26 @@ static Lisp sch_univeral_time(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int((int)time(NULL));
 }
 
-static Lisp sch_read_path(Lisp args, LispError *e, LispContext ctx)
+static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
 {
-    const char* path = lisp_string(lisp_car(args));
-    Lisp result = lisp_read_path(path, e, ctx);
-    return result;
+    Lisp operator = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp op_args = lisp_car(args);
+    
+    // TODO: argument passing is a little more sophisitaed
+    Lisp x;
+    Lisp env;
+    int needs_to_eval = eval_apply(operator, op_args, &x, &env, e, ctx);
+    
+    if (needs_to_eval)
+    {
+        // TODO: I don't think its safe to garbage collect
+        return lisp_eval_opt(x, env, e, ctx);
+    }
+    else
+    {
+        return x;
+    }
 }
 
 static Lisp sch_is_lambda(Lisp args, LispError* e, LispContext ctx)
@@ -3454,7 +3455,7 @@ static Lisp sch_expand(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_eval(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_eval(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
+    return lisp_eval_opt(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
 }
 
 static Lisp sch_global_env(Lisp args, LispError* e, LispContext ctx)
@@ -3474,14 +3475,27 @@ static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
+#ifndef LISP_NO_SYSTEM_LIB
+static Lisp sch_read_path(Lisp args, LispError *e, LispContext ctx)
+{
+    const char* path = lisp_string(lisp_car(args));
+    Lisp result = lisp_read_path(path, e, ctx);
+    return result;
+}
+#endif
+
 static const LispFuncDef lib_defs[] = {
     // NON STANDARD ADDITINONS
     { "ASSERT", sch_assert },
+    
+#ifndef LISP_NO_SYSTEM_LIB
     { "READ-PATH", sch_read_path },
-    { "READ-EXPAND", sch_expand },
+#endif
+    
+    { "EXPAND", sch_expand },
+    
     // TODO: do I want this?
     { "NAV", sch_nav },
-    
     
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_eq },
@@ -3514,11 +3528,8 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-TAIL", sch_vector_tail },
     { "LIST->VECTOR", sch_list_to_vector },
     { "VECTOR->LIST", sch_vector_to_list },
-
     // TODO: sort
 
-    // TODO: Non Standard
-    { "VECTOR-ASSOC", sch_vector_assoc },
 
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
     { "STRING?", sch_is_string },
@@ -3535,20 +3546,22 @@ static const LispFuncDef lib_defs[] = {
     { "LIST->STRING", sch_list_to_string },
     
     // Characters https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Characters.html#Characters
-    { "char?", sch_is_char },
-    { "char=?", sch_equals },
-    { "char<?", sch_less },
-    { "char-upcase", sch_char_upcase },
-    { "char-downcase", sch_char_downcase },
-    { "char-whitespace?", sch_char_is_white },
-    { "char-alphanumeric?", sch_char_is_alphanum },
-    { "char-alphabetic?", sch_char_is_alpha },
-    { "char-numeric?", sch_char_is_number },
-    { "char->integer", sch_to_exact },
+    { "CHAR?", sch_is_char },
+    { "CHAR=?", sch_equals },
+    { "CHAR<?", sch_less },
+    { "CHAR-UPCASE", sch_char_upcase },
+    { "CHAR-DOWNCASE", sch_char_downcase },
+    { "CHAR-WHITESPACE?", sch_char_is_white },
+    { "CHAR-ALPHANUMERIC?", sch_char_is_alphanum },
+    { "CHAR-ALPHABETIC?", sch_char_is_alpha },
+    { "CHAR-NUMERIC?", sch_char_is_number },
+    { "CHAR->INTEGER", sch_to_exact },
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     { "ASSOC", sch_assoc },
-    
+    // TODO: Non Standard
+    { "VECTOR-ASSOC", sch_vector_assoc },
+
     // Numerical operations https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Numerical-operations.html
     { "=", sch_equals },
     { "+", sch_add },
@@ -3585,7 +3598,7 @@ static const LispFuncDef lib_defs[] = {
     // TODO: purify
     
     // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
-    // TODO: apply
+    { "APPLY", sch_apply },
     { "PROCEDURE?", sch_is_lambda},
     // TOOD: Almost standard
     { "PROCEDURE-BODY", sch_lambda_body },
@@ -3612,7 +3625,7 @@ static const LispFuncDef lib_defs[] = {
 
 LispContext lisp_init_lib(void)
 {
-    return lisp_init_lib_opt(512, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
+    return lisp_init_lib_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
 }
 
 LispContext lisp_init_lib_opt(int symbol_table_size, size_t stack_depth, size_t page_size)
