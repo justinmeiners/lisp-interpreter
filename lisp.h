@@ -25,6 +25,7 @@ typedef enum
     LISP_NULL = 0,
     LISP_REAL,  // decimal/floating point type
     LISP_INT,    // integer type
+    LISP_CHAR,
     LISP_PAIR,   // cons pair (car, cdr)
     LISP_SYMBOL, // unquoted strings
     LISP_STRING, // quoted strings
@@ -136,9 +137,13 @@ Lisp lisp_make_real(float x);
 float lisp_real(Lisp x);
 
 Lisp lisp_make_string(const char* c_string, LispContext ctx);
+Lisp lisp_make_empty_string(unsigned int n, char c, LispContext ctx);
 char lisp_string_ref(Lisp s, int n);
 void lisp_string_set(Lisp s, int n, char c);
 char* lisp_string(Lisp s);
+
+Lisp lisp_make_char(int c);
+int lisp_char(Lisp l);
 
 Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
 const char* lisp_symbol(Lisp x);

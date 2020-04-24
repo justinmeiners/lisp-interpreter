@@ -539,6 +539,18 @@ Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx)
     }
 }
 
+Lisp lisp_make_empty_string(unsigned int n, char c, LispContext ctx)
+{
+    String* string = gc_alloc(sizeof(String) + n + 1, LISP_STRING, ctx);
+    memset(string->string, c, n);
+    string->string[n] = '\0';
+    
+    Lisp l;
+    l.type = string->block.type;
+    l.val.ptr_val = string;
+    return l;
+}
+
 Lisp lisp_make_string(const char* c_string, LispContext ctx)
 {
     size_t length = strlen(c_string) + 1;
@@ -579,6 +591,19 @@ const char* lisp_symbol(Lisp l)
     assert(l.type == LISP_SYMBOL);
     Symbol* symbol = l.val.ptr_val;
     return symbol->string;
+}
+
+Lisp lisp_make_char(int c)
+{
+    Lisp l;
+    l.type = LISP_CHAR;
+    l.val.int_val = c;
+    return l;
+}
+
+int lisp_char(Lisp l)
+{
+    return lisp_int(l);
 }
 
 static unsigned int symbol_hash(Lisp l)
@@ -1771,6 +1796,19 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
         case LISP_STRING:
             fprintf(file, "\"%s\"", lisp_string(l));
             break;
+        case LISP_CHAR:
+        {
+            int c = lisp_int(l);
+            if (isprint(c))
+            {
+                fprintf(file, "\\%c", (char)c);
+            }
+            else
+            {
+                fprintf(file, "\\+%d", c);
+            }
+            break;
+        }
         case LISP_LAMBDA:
             fprintf(file, "lambda-%i", lisp_lambda(l)->identifier);
             break;
@@ -1793,10 +1831,14 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
         case LISP_VECTOR:
         {
             fprintf(file, "#(");
-            for (int i = 0; i < lisp_vector_length(l); ++i)
+            int N = lisp_vector_length(l);
+            for (int i = 0; i < N; ++i)
             {
                 lisp_print_r(file, lisp_vector_ref(l, i), 0);
-                fprintf(file, " ");
+                if (i + 1 < N)
+                {
+                    fprintf(file, " ");
+                }
             }
             fprintf(file, ")");
             break;
@@ -2888,6 +2930,14 @@ static Lisp sch_is_string(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(1);
 }
 
+static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp n = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp c = lisp_car(args);
+    return lisp_make_empty_string(lisp_int(n), lisp_char(c), ctx);
+}
+
 static Lisp sch_string_equal(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
@@ -2974,6 +3024,36 @@ static Lisp sch_string_downcase(Lisp args, LispError* e, LispContext ctx)
         ++c;
     }
     return r;
+}
+
+static Lisp sch_string_to_list(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp s = lisp_car(args);
+    char* c = lisp_string(s);
+    
+    Lisp front = lisp_make_null();
+    Lisp back = lisp_make_null();
+    while (*c)
+    {
+        back_append(&front, &back, lisp_make_char(*c), ctx);
+        ++c;
+    }
+    return front;
+}
+
+static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp l = lisp_car(args);
+    Lisp result = lisp_make_empty_string(lisp_list_length(l), '\0', ctx);
+    char* s = lisp_string(result);
+    
+    while (lisp_is_pair(l))
+    {
+        *s = (char)lisp_char(lisp_car(l));
+        ++s;
+        l = lisp_cdr(l);
+    }
+    return result;
 }
 
 static Lisp sch_is_int(Lisp args, LispError* e, LispContext ctx)
@@ -3201,6 +3281,21 @@ static Lisp sch_list_to_vector(Lisp args, LispError* e, LispContext ctx)
     return v;
 }
 
+static Lisp sch_vector_to_list(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp v = lisp_car(args);
+    unsigned int n = lisp_vector_length(v);
+    
+    Lisp front = lisp_make_null();
+    Lisp back = lisp_make_null();
+    int i;
+    for (i = 0; i < n; ++i)
+    {
+        back_append(&front, &back, lisp_vector_ref(v, i), ctx);
+    }
+    return front;
+}
+
 static Lisp sch_pseudo_seed(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp seed = lisp_car(args);
@@ -3308,6 +3403,8 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-HEAD", sch_vector_head },
     { "VECTOR-TAIL", sch_vector_tail },
     { "LIST->VECTOR", sch_list_to_vector },
+    { "VECTOR->LIST", sch_vector_to_list },
+
     // TODO vector->list
 
     // TODO: sort
@@ -3316,8 +3413,8 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-ASSOC", sch_vector_assoc },
 
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
-    // TODO: make string
     { "STRING?", sch_is_string },
+    { "MAKE-STRING", sch_make_string },
     { "STRING=?", sch_string_equal },
     { "STRING-COPY", sch_string_copy },
     { "STRING-LENGTH", sch_string_length },
@@ -3325,8 +3422,8 @@ static const LispFuncDef lib_defs[] = {
     { "STRING-SET!", sch_string_set },
     { "STRING-UPCASE", sch_string_upcase },
     { "STRING-DOWNCASE", sch_string_downcase },
-    // TODO: string->list
-    // TODO: list->string
+    { "STRING->LIST", sch_string_to_list },
+    { "LIST->STRING", sch_list_to_string },
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     { "ASSOC", sch_assoc },
