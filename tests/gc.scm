@@ -7,12 +7,13 @@
   (begin
     (set! big-vector (make-vector 100 0))
     (set! counter (- counter 1))
-    (gc-collect)
-    (print counter)
+    (gc-flip)
+    (display counter)
     (if (> counter 0)
-
       (basic-loop)
       '())
     )  )
 
+
+(basic-loop)
 
