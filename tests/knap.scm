@@ -17,32 +17,20 @@
 
 (define (build-items n)
   (if (= n 0)
-      '()
-      (cons (rand-item 100 100)
-        (build-items (- n 1)))))
+    '()
+    (cons (rand-item 100 100)
+          (build-items (- n 1)))))
 ;(random-seed! (GET-UNIVERSAL-TIME))
 ;(define items (build-items 10))
 
 
-
 (define items '((23 . 505) (26 . 352) (18 . 220) (32 . 354) (27 . 414) (29 . 498) (26 . 545) (30 . 473) (27 . 543)))
-
-(define (reduce f accum ls)
-    (if (null? ls)
-        accum
-        (reduce f (f accum (car ls)) (cdr ls))))
-
-(define (max . ls)
-  (reduce (lambda (m x) 
-            (if (> x m)
-                x
-                m)) (car ls) (cdr ls)))
 
 (define (knapsack remaining items)
   (if (or (null? items) (<= remaining 0))
     0
     (let ((weight (car (car items)))
-           (val (cdr (car items))))
+          (val (cdr (car items))))
       (max
         (if (>= (- remaining weight) 0)
           (+ val (knapsack (- remaining weight) (cdr items)))
