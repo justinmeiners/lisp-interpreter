@@ -90,7 +90,7 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 /* no need to change these, just use the _opt variant */
 #define LISP_DEFAULT_SYMBOL_TABLE_SIZE 512
-#define LISP_DEFAULT_PAGE_SIZE 65536
+#define LISP_DEFAULT_PAGE_SIZE 32768
 #define LISP_DEFAULT_STACK_DEPTH 1024
 
 // SETUP
@@ -167,6 +167,7 @@ void lisp_set_cdr(Lisp p, Lisp x);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 #define lisp_is_pair(p) ((p).type == LISP_PAIR)
 
+Lisp lisp_list_copy(Lisp x, LispContext ctx);
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
 // convenience function for cons'ing together items. arguments must be null terminated
 Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);

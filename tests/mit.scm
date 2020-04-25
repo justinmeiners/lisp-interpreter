@@ -1,4 +1,4 @@
-(assert (equal? (reverse! '(a b c)) '(c b a)))
+(assert (equal? (reverse '(a b c)) '(c b a)))
 
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
 (assert (pair? '(a . b)))

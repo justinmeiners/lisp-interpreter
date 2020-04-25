@@ -336,6 +336,19 @@ void lisp_fast_append(Lisp* front, Lisp* back, Lisp x, LispContext ctx)
     }
 }
 
+Lisp lisp_list_copy(Lisp x, LispContext ctx)
+{
+    Lisp front = lisp_make_null();
+    Lisp back = lisp_make_null();
+    
+    while (lisp_is_pair(x))
+    {
+        lisp_fast_append(&front, &back, lisp_car(x), ctx);
+        x = lisp_cdr(x);
+    }
+    return front;
+}
+
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
 {
     Lisp front = lisp_make_null();
@@ -2708,6 +2721,10 @@ static Lisp sch_equals(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_list(Lisp args, LispError* e, LispContext ctx) { return args; }
 
+static Lisp sch_list_copy(Lisp args, LispError* e, LispContext ctx) {
+    return lisp_list_copy(lisp_car(args), ctx);
+}
+
 static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp l = lisp_car(args);
@@ -3178,6 +3195,7 @@ static Lisp sch_string_to_list(Lisp args, LispError* e, LispContext ctx)
     return front;
 }
 
+
 static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp l = lisp_car(args);
@@ -3593,6 +3611,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "NULL?", sch_is_null },
     { "PAIR?", sch_is_pair },
     { "LIST", sch_list },
+    { "LIST-COPY", sch_list_copy },
     { "LENGTH", sch_length },
     { "APPEND", sch_append },
     { "LIST-REF", sch_list_ref },
@@ -3707,8 +3726,9 @@ static const LispFuncDef lib_cfunc_defs[] = {
 };
 
 const char* lib_program_defs = " \
-    (define (vector-head v end) (subvector v 0 end)) \
-    (define (vector-tail v start) (subvector v start (vector-length v))) \
+(define (reverse l) (reverse! (list-copy l))) \
+(define (vector-head v end) (subvector v 0 end)) \
+(define (vector-tail v start) (subvector v start (vector-length v))) \
 ";
 
 LispContext lisp_init_lib(void)
@@ -3725,17 +3745,6 @@ LispContext lisp_init_lib_opt(int symbol_table_size, size_t stack_depth, size_t 
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
     Lisp system_env = lisp_env_extend(lisp_make_null(), table, ctx);
     ctx.impl->global_env = lisp_env_extend(system_env, lisp_make_table(20, ctx), ctx);
-    
-    /*
-    const char* program = " \
-    (define (tree-copy tree) \
-        (let loop ((tree tree)) \
-          (if (pair? tree) \
-              (cons (loop (car tree)) (loop (cdr tree)))";
-     */
-    
-
-    
     lisp_eval_opt(lisp_read(lib_program_defs, NULL, ctx), system_env, NULL, ctx);
     return ctx;
 }
