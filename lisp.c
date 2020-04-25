@@ -3723,9 +3723,22 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "PRINT-GC-STATISTICS", sch_print_gc_stats },
     
     { NULL, NULL }
+    
 };
 
+
 const char* lib_program_defs = " \
+(define (filter pred l) \
+  (define (helper l result) \
+    (cond ((null? l) result) \
+          ((pred (car l)) \
+           (helper (cdr l) (cons (car l) result))) \
+          (else \
+            (helper (cdr l) result)))) \
+  (reverse! (helper l '()))) \
+(define (reduce op acc lst) \
+    (if (null? lst) acc \
+        (reduce op (op acc (car lst)) (cdr lst)))) \
 (define (reverse l) (reverse! (list-copy l))) \
 (define (vector-head v end) (subvector v 0 end)) \
 (define (vector-tail v start) (subvector v start (vector-length v))) \
