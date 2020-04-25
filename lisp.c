@@ -3328,6 +3328,32 @@ static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_real(x);
 }
 
+static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
+{
+    int a = lisp_int(lisp_car(args));
+    args = lisp_cdr(args);
+    int b = lisp_int(lisp_car(args));
+    return lisp_make_int(a % b);
+}
+
+static Lisp sch_gcd(Lisp args, LispError* e, LispContext ctx)
+{
+    if (lisp_is_null(args))
+    {
+        return lisp_make_int(0);
+    }
+    
+    int a = lisp_int(lisp_car(args));
+    args = lisp_cdr(args);
+    int b = lisp_int(lisp_car(args));
+    
+    int c;
+    while ( a != 0 ) {
+       c = a; a = b % a;  b = c;
+    }
+    return lisp_make_int(abs(b));
+}
+
 static Lisp sch_is_vector(Lisp args, LispError* e, LispContext ctx)
 {
     if (lisp_type(lisp_car(args)) == LISP_VECTOR)
@@ -3681,6 +3707,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "COS", sch_cos },
     { "TAN", sch_tan },
     { "SQRT", sch_sqrt },
+    { "MODULO", sch_modulo },
+    { "GCD", sch_gcd },
     
     { "INEXACT", sch_to_inexact },
     { "EXACT", sch_to_exact },

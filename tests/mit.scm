@@ -51,4 +51,8 @@
 ; https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
 (assert (procedure? (lambda (x) x)))
 
+(assert (= (gcd 32 -36) 4))
+(assert (= (gcd) 0))
+
+
 
