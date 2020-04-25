@@ -73,13 +73,13 @@ typedef struct
 {
     union LispVal
     {
-        float float_val;
+        float real_val;
         int int_val;  
         void* ptr_val;
     } val;
     
     LispType type;
-} Lisp; // holds all lisp values
+} Lisp; 
 
 typedef struct
 {
@@ -138,7 +138,9 @@ void lisp_printf(FILE* file, Lisp l);
 // -----------------------------------------
 #define lisp_type(x) ((x).type)
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
+int lisp_eq_r(Lisp a, Lisp b);
 Lisp lisp_make_null(void);
+
 #define lisp_is_null(x) ((x).type == LISP_NULL)
 
 Lisp lisp_make_int(int n);
@@ -217,6 +219,8 @@ LispCFunc lisp_func(Lisp l);
 
 // evaluation environments
 Lisp lisp_env_global(LispContext ctx);
+void lisp_env_set_global(Lisp env, LispContext ctx);
+
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
 Lisp lisp_env_lookup(Lisp l, Lisp key, LispContext ctx);
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);

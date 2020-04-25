@@ -1,3 +1,5 @@
+(assert (equal? (reverse! '(a b c)) '(c b a)))
+
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
 (assert (pair? '(a . b)))
 (assert (pair? '(a b c)))
@@ -35,6 +37,9 @@
 
 (assert (string=? "FLYING-FISH" (symbol->string 'flying-fish)))
 
+
+; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_13.html
+(assert (= (apply + (list 3 4 5 6)) 18))
 
 ; Universl Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
 (assert (integer? (get-universal-time)))

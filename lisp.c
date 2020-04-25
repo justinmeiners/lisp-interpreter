@@ -183,6 +183,57 @@ Lisp lisp_make_null()
     return l;
 }
 
+int lisp_eq_r(Lisp a, Lisp b)
+{
+    if (a.type != b.type)
+    {
+        return 0;
+    }
+
+    switch (a.type)
+    {
+        case LISP_NULL:
+            return 1;
+        case LISP_CHAR:
+            return lisp_char(a) == lisp_char(b);
+        case LISP_INT:
+            return lisp_int(a) == lisp_int(b);
+        case LISP_REAL:
+            return lisp_real(a) == lisp_real(b);
+        case LISP_VECTOR:
+        {
+            int N = lisp_vector_length(a);
+            if (lisp_vector_length(b) != N) return 0;
+            
+            int i;
+            for (i = 0; i < N; ++i)
+            {
+                if (!lisp_eq_r(lisp_vector_ref(a, i), lisp_vector_ref(b, i)))
+                    return 0;
+            }
+            
+            return 1;
+        }
+        case LISP_PAIR:
+        {
+            while (lisp_is_pair(a) && lisp_is_pair(b))
+            {
+                if (!lisp_eq_r(lisp_car(a), lisp_car(b)))
+                {
+                    return 0;
+                }
+                
+                a = lisp_cdr(a);
+                b = lisp_cdr(b);
+            }
+            
+            return lisp_eq_r(a, b);
+        }
+        default:
+            return a.val.ptr_val == b.val.ptr_val;
+    }
+}
+
 static Table* lisp_table(Lisp t)
 {
     assert(lisp_type(t) == LISP_TABLE);
@@ -200,7 +251,7 @@ Lisp lisp_make_int(int n)
 int lisp_int(Lisp x)
 {
     if (x.type == LISP_REAL)
-        return (int)x.val.float_val;
+        return (int)x.val.real_val;
     return x.val.int_val;
 }
 
@@ -208,7 +259,7 @@ Lisp lisp_make_real(float x)
 {
     Lisp l;
     l.type = LISP_REAL;
-    l.val.float_val = x;
+    l.val.real_val = x;
     return l;
 }
 
@@ -216,7 +267,7 @@ float lisp_real(Lisp x)
 {
     if (x.type == LISP_INT)
         return(float)x.val.int_val;
-    return x.val.float_val;
+    return x.val.real_val;
 }
 
 Lisp lisp_car(Lisp p)
@@ -1319,6 +1370,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     return result;
 }
 
+
 static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 {
     // 1. expand extended syntax into primitive syntax
@@ -1691,19 +1743,6 @@ Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx)
         return lisp_make_null();
     }
 }
-
-// TODO?
-static const char* lisp_type_name[] = {
-    "NULL",
-    "FLOAT",
-    "INT",
-    "PAIR",
-    "SYMBOL",
-    "STRING",
-    "LAMBDA",
-    "PROCEDURE",
-    "ENV",
-};
 
 Lisp lisp_make_table(unsigned int capacity, LispContext ctx)
 {
@@ -2438,6 +2477,11 @@ Lisp lisp_env_global(LispContext ctx)
     return ctx.impl->global_env;
 }
 
+void lisp_env_set_global(Lisp env, LispContext ctx)
+{
+    ctx.impl->global_env = env;
+}
+
 void lisp_shutdown(LispContext ctx)
 {
     heap_shutdown(&ctx.impl->heap);
@@ -2544,11 +2588,21 @@ static Lisp sch_nav(Lisp args, LispError* e, LispContext ctx)
     return lisp_list_nav(l, lisp_string(path));
 }
 
-static Lisp sch_eq(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_exact_eq(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
-    Lisp b = lisp_car(lisp_cdr(args));
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
     return lisp_make_int(lisp_eq(a, b));
+}
+
+static Lisp sch_recursive_eq(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    
+    return lisp_make_int(lisp_eq_r(a, b));
 }
 
 static Lisp sch_not(Lisp args, LispError* e, LispContext ctx)
@@ -2733,7 +2787,7 @@ static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
         }
         else if (lisp_type(accum) == LISP_REAL)
         {
-            accum.val.float_val += lisp_real(lisp_car(args));
+            accum.val.real_val += lisp_real(lisp_car(args));
         }
         args = lisp_cdr(args);
     }
@@ -2753,7 +2807,7 @@ static Lisp sch_sub(Lisp args, LispError* e, LispContext ctx)
         }
         else if (lisp_type(accum) == LISP_REAL)
         {
-            accum.val.float_val -= lisp_real(lisp_car(args));
+            accum.val.real_val -= lisp_real(lisp_car(args));
         }
         else
         {
@@ -2778,7 +2832,7 @@ static Lisp sch_mult(Lisp args, LispError* e, LispContext ctx)
         }
         else if (lisp_type(accum) == LISP_REAL)
         {
-            accum.val.float_val *= lisp_real(lisp_car(args));
+            accum.val.real_val *= lisp_real(lisp_car(args));
         }
         else
         {
@@ -2803,7 +2857,7 @@ static Lisp sch_divide(Lisp args, LispError* e, LispContext ctx)
         }
         else if (lisp_type(accum) == LISP_REAL)
         {
-            accum.val.float_val /= lisp_real(lisp_car(args));
+            accum.val.real_val /= lisp_real(lisp_car(args));
         }
         else
         {
@@ -3458,7 +3512,12 @@ static Lisp sch_eval(Lisp args, LispError* e, LispContext ctx)
     return lisp_eval_opt(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
 }
 
-static Lisp sch_global_env(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_system_env(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_cdr(lisp_env_global(ctx));
+}
+
+static Lisp sch_user_env(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_env_global(ctx);
 }
@@ -3498,7 +3557,9 @@ static const LispFuncDef lib_defs[] = {
     { "NAV", sch_nav },
     
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
-    { "EQ?", sch_eq },
+    { "EQ?", sch_exact_eq },
+    { "EQV?", sch_exact_eq },
+    { "EQUAL?", sch_recursive_eq },
     
     // Booleans https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Booleans.html
     { "NOT", sch_not },
@@ -3593,7 +3654,9 @@ static const LispFuncDef lib_defs[] = {
 
     // Environments https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_14.html
     { "EVAL", sch_eval },
-    { "SYSTEM-GLOBAL-ENVIRONMENT", sch_global_env },
+    { "SYSTEM-GLOBAL-ENVIRONMENT", sch_system_env },
+    { "USER-INITIAL-ENVIRONMENT", sch_user_env },
+
     // { "THE-ENVIRONMENT", sch_current_env },
     // TODO: purify
     
@@ -3635,7 +3698,8 @@ LispContext lisp_init_lib_opt(int symbol_table_size, size_t stack_depth, size_t 
     Lisp table = lisp_make_table(300, ctx);
     //lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_make_null(), ctx);
     lisp_table_define_funcs(table, lib_defs, ctx);
-    ctx.impl->global_env = lisp_env_extend(ctx.impl->global_env, table, ctx);
+    Lisp system_env = lisp_env_extend(lisp_make_null(), table, ctx);
+    ctx.impl->global_env = lisp_env_extend(system_env, lisp_make_table(20, ctx), ctx);
     return ctx;
 }
 
