@@ -200,6 +200,8 @@ Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx);
 // returns the key value pair, or null if not found
 Lisp lisp_table_get(Lisp t, Lisp key, LispContext ctx);
+unsigned int lisp_table_size(Lisp t);
+Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx);
 
 /* This struct is just for making definitions a little less error prone,
    having separate arrays for names and functions leads to easy mistakes. */

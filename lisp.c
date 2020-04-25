@@ -1812,6 +1812,30 @@ Lisp lisp_table_get(Lisp t, Lisp symbol, LispContext ctx)
     return lisp_list_assoc(table->entries[index], symbol);
 }
 
+Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx)
+{
+    const Table* table = lisp_table(t);
+    Lisp result = lisp_make_null();
+    
+    int i;
+    for (i = 0; i < table->capacity; ++i)
+    {
+        Lisp it = table->entries[i];
+        while (!lisp_is_null(it))
+        {
+            result = lisp_cons(lisp_car(it), result, ctx);
+            it = lisp_cdr(it);
+        }
+    }
+    return result;
+}
+
+unsigned int lisp_table_size(Lisp t)
+{
+    const Table* table = lisp_table(t);
+    return table->size;
+}
+
 void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx)
 {
     while (defs->name)
@@ -2744,6 +2768,7 @@ static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
     return l;
 }
 
+/*
 static Lisp sch_map(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp op = lisp_car(args);
@@ -2793,7 +2818,7 @@ static Lisp sch_map(Lisp args, LispError* e, LispContext ctx)
     {
         return result_lists;
     }
-}
+} */
 
 static Lisp sch_list_ref(Lisp args, LispError* e, LispContext ctx)
 {
@@ -3521,6 +3546,50 @@ static Lisp sch_univeral_time(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int((int)time(NULL));
 }
 
+static Lisp sch_table_make(Lisp args, LispError* e, LispContext ctx)
+{
+    if (!lisp_is_null(args))
+    {
+        Lisp x = lisp_car(args);
+        return lisp_make_table(lisp_int(x), ctx);
+    }
+    else
+    {
+        return lisp_make_table(23, ctx);
+    }
+}
+
+static Lisp sch_table_get(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp table = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp key = lisp_car(args);
+    return lisp_table_get(table, key, ctx);
+}
+
+static Lisp sch_table_set(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp table = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp key = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp x = lisp_car(args);
+    lisp_table_set(table, key, x, ctx);
+    return lisp_make_null();
+}
+
+static Lisp sch_table_size(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp table = lisp_car(args);
+    return lisp_make_int(lisp_table_size(table));
+}
+
+static Lisp sch_table_to_alist(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp table = lisp_car(args);
+    return lisp_table_to_assoc_list(table, ctx);
+}
+
 static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp operator = lisp_car(args);
@@ -3641,7 +3710,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "LENGTH", sch_length },
     { "APPEND", sch_append },
     { "LIST-REF", sch_list_ref },
-    { "MAP", sch_map },
     { "REVERSE!", sch_reverse_inplace },
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
@@ -3722,9 +3790,15 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "EVAL", sch_eval },
     { "SYSTEM-GLOBAL-ENVIRONMENT", sch_system_env },
     { "USER-INITIAL-ENVIRONMENT", sch_user_env },
-
     // { "THE-ENVIRONMENT", sch_current_env },
     // TODO: purify
+    
+    // Hash Tables https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Basic-Hash-Table-Operations.html#Basic-Hash-Table-Operations
+    { "MAKE-HASH-TABLE", sch_table_make },
+    { "HASH-TABLE-SET!", sch_table_set },
+    { "HASH-TABLE-REF", sch_table_get },
+    { "HASH-TABLE-SIZE", sch_table_size },
+    { "HASH-TABLE->ALIST", sch_table_to_alist },
     
     // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
     { "APPLY", sch_apply },
@@ -3764,6 +3838,42 @@ const char* lib_program_defs = " \
           (else \
             (helper (cdr l) result)))) \
   (reverse! (helper l '()))) \
+\
+(define (some? pred l) \
+  (cond ((null? l) '()) \
+        ((pred (car l)) 1) \
+        (else (some? pred (cdr l))))) \
+\
+(define (map1 proc l result) \
+  (if (null? l) \
+    (reverse! result) \
+    (map1 proc \
+          (cdr l) \
+          (cons (proc (car l)) result)))) \
+\
+(define (map proc . rest) \
+  (define (helper lists result) \
+    (if (some? null? lists) \
+      (reverse! result) \
+      (helper (map1 cdr lists '()) \
+              (cons (apply proc (map1 car lists '())) result)))) \
+  (reverse! (helper rest '()))) \
+\
+(define (for-each proc . rest) \
+  (define (helper lists) \
+    (if (some? null? lists) \
+      '() \
+      (begin \
+        (apply proc (map1 car lists '())) \
+        (helper (map1 cdr lists '()))))) \
+  (helper rest)) \
+\
+(define (alist->hash-table alist) \
+  (define h (make-hash-table)) \
+  (for-each (lambda (pair) \
+              (hash-table-set! h (car pair) (cdr pair))) \
+            alist) \
+  h) \
 \
 (define (reduce op acc lst) \
     (if (null? lst) acc \

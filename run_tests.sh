@@ -5,7 +5,7 @@ cd tests/
 for FILE in *.scm
 do
     echo "$FILE"
-    ../lisp_i --load "$FILE"
+    ../lisp --script "$FILE"
     RESULT=$?
 
     printf "\n"

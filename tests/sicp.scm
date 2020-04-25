@@ -105,6 +105,7 @@
 (assert (= (fast-mul 3 4) 12))
 (assert (= (fast-mul 100 10) 1000))
 
+
 ; 2.21 - square list
 
 (define (square-list items)
@@ -128,7 +129,6 @@
 
 (define justin (make-account 100))
 (define ryan (make-account 200))
-
 ((justin 'deposit) 20)
 ((ryan 'withdraw) 20)
 

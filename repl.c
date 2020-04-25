@@ -9,12 +9,18 @@ int main(int argc, const char* argv[])
 {
     const char* file_path = NULL;
     size_t page_size = LISP_DEFAULT_PAGE_SIZE;
+    int run_script = 0;
     
     for (int i = 1; i < argc; ++i)
     {
         if (strcmp(argv[i], "--load") == 0)
         {
             file_path = argv[i + 1];
+        }
+        if (strcmp(argv[i], "--script") == 0)
+        {
+            file_path = argv[i + 1];
+            run_script = 1;
         }
         else if (strcmp(argv[i], "--page-size") == 0)
         {
@@ -89,7 +95,8 @@ int main(int argc, const char* argv[])
         if (LISP_DEBUG)
             printf("eval (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
     }
-    else
+
+    if (!run_script)
     {
         // REPL
         while (!feof(stdin))
@@ -105,7 +112,7 @@ int main(int argc, const char* argv[])
             if (error != LISP_ERROR_NONE)
             {
                 fprintf(stderr, "%s\n", lisp_error_string(error));
-                exit(1);
+                continue;
             }
 
             Lisp l = lisp_eval(code, &error, ctx);
@@ -114,7 +121,6 @@ int main(int argc, const char* argv[])
             if (error != LISP_ERROR_NONE)
             {
                 fprintf(stderr, "%s\n", lisp_error_string(error));
-                exit(1);
             }
 
             lisp_print(l);
