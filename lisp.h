@@ -90,7 +90,7 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 /* no need to change these, just use the _opt variant */
 #define LISP_DEFAULT_SYMBOL_TABLE_SIZE 512
-#define LISP_DEFAULT_PAGE_SIZE 8192
+#define LISP_DEFAULT_PAGE_SIZE 65536
 #define LISP_DEFAULT_STACK_DEPTH 1024
 
 // SETUP
@@ -107,11 +107,11 @@ void lisp_shutdown(LispContext ctx);
 // garbage collection. 
 // this will free all objects which are not reachable from root_to_save or the global env
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
-const char* lisp_error_string(LispError error);
 
-// LOADING
+// REPL
 // -----------------------------------------
-// reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure). 
+
+// reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure).
 // This is primarily for using Lisp as JSON/XML
 // For code call expand after reading
 Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
@@ -123,8 +123,6 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 // that are run multiple times
 Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx);
 
-// EVALUATION
-// -----------------------------------------
 // evaluate a lisp expression
 Lisp lisp_eval_opt(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
 // same as above but uses global environment
@@ -133,6 +131,7 @@ Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
 // print out a lisp structure
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
+const char* lisp_error_string(LispError error);
 
 // DATA STRUCTURES
 // -----------------------------------------

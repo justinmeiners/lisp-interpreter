@@ -1,8 +1,6 @@
-TARGET = lisp_i
-SRC = *.c
 CFLAGS = -O3 -Wall
 LDLIBS = -lm
-CC = cc
+CC=cc
 
-${TARGET}: ${SRC}
-	${CC} $^ -o $@ ${CFLAGS} ${LDLIBS}
+lisp_i: lisp_i.c lisp.c lisp.h
+	${CC} lisp_i.c lisp.c -o $@ ${CFLAGS} ${LDLIBS}

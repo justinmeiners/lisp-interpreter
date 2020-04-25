@@ -37,6 +37,10 @@
 
 (assert (string=? "FLYING-FISH" (symbol->string 'flying-fish)))
 
+; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html
+
+(assert (equal? (vector-head #(1 2 3) 2) #(1 2)))
+
 
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_13.html
 (assert (= (apply + (list 3 4 5 6)) 18))

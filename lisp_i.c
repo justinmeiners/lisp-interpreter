@@ -8,7 +8,7 @@
 int main(int argc, const char* argv[])
 {
     const char* file_path = NULL;
-    size_t page_size = 8192;
+    size_t page_size = LISP_DEFAULT_PAGE_SIZE;
     
     for (int i = 1; i < argc; ++i)
     {
@@ -22,7 +22,7 @@ int main(int argc, const char* argv[])
         }
     }
     
-    LispContext ctx = lisp_init_lib_opt(512, 1024, page_size);
+    LispContext ctx = lisp_init_lib_opt(512, LISP_DEFAULT_STACK_DEPTH, page_size);
 
     clock_t start_time, end_time;
         

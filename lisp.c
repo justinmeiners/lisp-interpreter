@@ -53,8 +53,8 @@ void page_destroy(Page* page) { free(page); }
 
 typedef struct
 {
-    Page* first_page;
-    Page* page;
+    Page* bottom;
+    Page* top;
     size_t size;
     size_t page_count;
     size_t page_size;
@@ -90,53 +90,65 @@ struct LispImpl
 
 static void heap_init(Heap* heap, size_t page_size)
 {
-    heap->first_page = NULL;
-    heap->page = heap->first_page;
-    heap->size = 0;
-    heap->page_count = 0;
     heap->page_size = page_size;
+    heap->bottom = page_create(page_size);
+    heap->top = heap->bottom;
+    
+    heap->size = 0;
+    heap->page_count = 1;
 }
 
 static void heap_shutdown(Heap* heap)
 {
-    Page* page = heap->first_page;
+    Page* page = heap->bottom;
     while (page)
     {
         Page* next = page->next;
         page_destroy(page);
         page = next;
     }
-    heap->first_page = NULL;
+    heap->bottom = NULL;
 }
 
 static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
+    Page* to_use;
+    
     assert(alloc_size > 0);
-    
-    size_t desired_page_size =  (alloc_size <= heap->page_size) ? heap->page_size : alloc_size;
-    
-    if (!heap->page)
+    if (alloc_size >= heap->page_size)
     {
-        // need a new page because we don't have one
-        heap->first_page = page_create(desired_page_size);
-        heap->page = heap->first_page;
+        /* add to bottom of stack.
+         As soon as this page is made it it is full and can't be used.
+         However, our current page may still have room.
+         */
+        to_use = page_create(alloc_size);
+        to_use->next = heap->bottom;
+        heap->bottom = to_use;
         ++heap->page_count;
     }
-    else if (alloc_size > heap->page->capacity - heap->page->size)
+    else if (alloc_size + heap->top->size > heap->top->capacity)
     {
-        // need a new page because ours is full
-        heap->page->next = page_create(desired_page_size);
-        heap->page = heap->page->next;
+        /* add to top of the stack.
+         need a new page because ours is full */
+        to_use = page_create(heap->page_size);
+        heap->top->next = to_use;
+        heap->top = heap->top->next;
         ++heap->page_count;
     }
+    else
+    {
+        /* use the current page on top */
+        to_use = heap->top;
+    }
     
-    void* address = heap->page->buffer + heap->page->size;
+    void* address = to_use->buffer + to_use->size;
+    to_use->size += alloc_size;
+    heap->size += alloc_size;
+
     Block* block = address;
     block->gc_flags = GC_CLEAR;
     block->size = alloc_size;
     block->type = type;
-    heap->page->size += alloc_size;
-    heap->size += alloc_size;
     return address;
 }
 
@@ -242,7 +254,7 @@ static Table* lisp_table(Lisp t)
 
 Lisp lisp_make_int(int n)
 {
-    Lisp l;
+    Lisp l = lisp_make_null();
     l.type = LISP_INT;
     l.val.int_val = n;
     return l;
@@ -257,7 +269,7 @@ int lisp_int(Lisp x)
 
 Lisp lisp_make_real(float x)
 {
-    Lisp l;
+    Lisp l = lisp_make_null();
     l.type = LISP_REAL;
     l.val.real_val = x;
     return l;
@@ -645,7 +657,7 @@ const char* lisp_symbol(Lisp l)
 
 Lisp lisp_make_char(int c)
 {
-    Lisp l;
+    Lisp l = lisp_make_null();
     l.type = LISP_CHAR;
     l.val.int_val = c;
     return l;
@@ -1202,20 +1214,18 @@ static const char* ascii_char_name_table[] =
 
 static int parse_char_token(Lexer* lex)
 {
+    char scratch[SCRATCH_MAX];
     size_t length = lex->scan_length;
+    lexer_copy_token(lex, 0, length, scratch);
+    
     if (length == 1)
     {
         // TODO: multi chars
-        char c;
-        lexer_copy_token(lex, 0, 1, &c);
-        return (int)c;
+        return (int)scratch[0];
     }
     else
     {
-        char scratch[SCRATCH_MAX];
-        lexer_copy_token(lex, 0, length, scratch);
         scratch[length] = '\0';
-        
         const char** name_it = ascii_char_name_table;
         
         int c = 0;
@@ -2371,6 +2381,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     time_t start_time = clock();
 
     Heap* to = &ctx.impl->to_heap;
+    heap_init(to, ctx.impl->heap.page_size);
 
     // move root object
     ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
@@ -2385,7 +2396,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     Lisp result = gc_move(root_to_save, to);
 
     // move references
-    const Page* page = to->first_page;
+    const Page* page = to->bottom;
     int page_counter = 0;
     while (page)
     {
@@ -2440,7 +2451,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     if (LISP_DEBUG)
     {
         // DEBUG, check offsets
-        const Page* page = to->first_page;
+        const Page* page = to->bottom;
         while (page)
         {
             size_t offset = 0;
@@ -2464,9 +2475,8 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     
     // reset the heap
     heap_shutdown(&ctx.impl->to_heap);
-    heap_init(&ctx.impl->to_heap, ctx.impl->heap.page_size);
+    
     time_t end_time = clock();
-
     ctx.impl->gc_stat_freed = diff;
     ctx.impl->gc_stat_time = 1000000 * (end_time - start_time) / CLOCKS_PER_SEC;
     return result;
@@ -2578,6 +2588,24 @@ static Lisp sch_car(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_cdr(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_cdr(lisp_car(args));
+}
+
+static Lisp sch_set_car(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    lisp_set_car(a, b);
+    return lisp_make_null();
+}
+
+static Lisp sch_set_cdr(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    lisp_set_cdr(a, b);
+    return lisp_make_null();
 }
 
 static Lisp sch_nav(Lisp args, LispError* e, LispContext ctx)
@@ -3399,22 +3427,6 @@ static Lisp sch_subvector(Lisp args, LispError* e, LispContext ctx)
     return lisp_subvector(v, lisp_int(start), lisp_int(end), ctx);
 }
 
-static Lisp sch_vector_head(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp end = lisp_car(args);
-    return lisp_subvector(v, 0, lisp_int(end), ctx);
-}
-
-static Lisp sch_vector_tail(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp start = lisp_car(args);
-    return lisp_subvector(v, lisp_int(start), lisp_vector_length(v), ctx);
-}
-
 static Lisp sch_list_to_vector(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp l = lisp_car(args);
@@ -3529,8 +3541,16 @@ static Lisp sch_gc_flip(Lisp args, LispError* e, LispContext ctx)
 }
 static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
 {
-    printf("gc collected: %lu\t time: %lu us\n", ctx.impl->gc_stat_freed, ctx.impl->gc_stat_time);
+    Page* page = ctx.impl->heap.bottom;
+    
+    while (page)
+    {
+        printf("%lu/%lu ", page->size, page->capacity);
+        page = page->next;
+    }
+    printf("\ngc collected: %lu\t time: %lu us\n", ctx.impl->gc_stat_freed, ctx.impl->gc_stat_time);
     printf("heap size: %lu\t pages: %lu\n", ctx.impl->heap.size, ctx.impl->heap.page_count);
+    
     return lisp_make_null();
 }
 
@@ -3543,7 +3563,7 @@ static Lisp sch_read_path(Lisp args, LispError *e, LispContext ctx)
 }
 #endif
 
-static const LispFuncDef lib_defs[] = {
+static const LispFuncDef lib_cfunc_defs[] = {
     // NON STANDARD ADDITINONS
     { "ASSERT", sch_assert },
     
@@ -3568,6 +3588,8 @@ static const LispFuncDef lib_defs[] = {
     { "CONS", sch_cons },
     { "CAR", sch_car },
     { "CDR", sch_cdr },
+    { "SET-CAR!", sch_set_car },
+    { "SET-CDR!", sch_set_cdr },
     { "NULL?", sch_is_null },
     { "PAIR?", sch_is_pair },
     { "LIST", sch_list },
@@ -3585,12 +3607,9 @@ static const LispFuncDef lib_defs[] = {
     { "VECTOR-SET!", sch_vector_set },
     { "VECTOR-REF", sch_vector_ref },
     { "SUBVECTOR", sch_subvector },
-    { "VECTOR-HEAD", sch_vector_head },
-    { "VECTOR-TAIL", sch_vector_tail },
     { "LIST->VECTOR", sch_list_to_vector },
     { "VECTOR->LIST", sch_vector_to_list },
     // TODO: sort
-
 
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
     { "STRING?", sch_is_string },
@@ -3669,6 +3688,7 @@ static const LispFuncDef lib_defs[] = {
     // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
     { "DISPLAY", sch_display },
     { "NEWLINE", sch_newline },
+    // TODO: { "FLUSH-OUTPUT_PORT", sch_flush },
     
     // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
     { "RANDOM", sch_pseudo_rand },
@@ -3686,6 +3706,11 @@ static const LispFuncDef lib_defs[] = {
     { NULL, NULL }
 };
 
+const char* lib_program_defs = " \
+    (define (vector-head v end) (subvector v 0 end)) \
+    (define (vector-tail v start) (subvector v start (vector-length v))) \
+";
+
 LispContext lisp_init_lib(void)
 {
     return lisp_init_lib_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
@@ -3697,9 +3722,21 @@ LispContext lisp_init_lib_opt(int symbol_table_size, size_t stack_depth, size_t 
 
     Lisp table = lisp_make_table(300, ctx);
     //lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_make_null(), ctx);
-    lisp_table_define_funcs(table, lib_defs, ctx);
+    lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
     Lisp system_env = lisp_env_extend(lisp_make_null(), table, ctx);
     ctx.impl->global_env = lisp_env_extend(system_env, lisp_make_table(20, ctx), ctx);
+    
+    /*
+    const char* program = " \
+    (define (tree-copy tree) \
+        (let loop ((tree tree)) \
+          (if (pair? tree) \
+              (cons (loop (car tree)) (loop (cdr tree)))";
+     */
+    
+
+    
+    lisp_eval_opt(lisp_read(lib_program_defs, NULL, ctx), system_env, NULL, ctx);
     return ctx;
 }
 
