@@ -1,5 +1,5 @@
 *.out
-lisp_i
+lisp
 *.exe
 *.stackdump
 temp/
