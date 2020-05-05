@@ -3268,7 +3268,7 @@ static Lisp sch_char_is_alpha(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_char_is_number(Lisp args, LispError* e, LispContext ctx)
 {
     int c = lisp_char(lisp_car(args));
-    return lisp_make_int(isnumber(c));
+    return lisp_make_int(isdigit(c));
 }
 
 static Lisp sch_char_is_white(Lisp args, LispError* e, LispContext ctx)
