@@ -3100,6 +3100,13 @@ static Lisp sch_is_string(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(1);
 }
 
+static Lisp sch_string_is_null(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    int result = lisp_string(a)[0] == '\0';
+    return lisp_make_int(result);
+}
+
 static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp n = lisp_car(args);
@@ -3730,6 +3737,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "STRING=?", sch_string_equal },
     { "STRING<?", sch_string_less },
     { "STRING-COPY", sch_string_copy },
+    { "STRING-NULL?", sch_string_is_null },
     { "STRING-LENGTH", sch_string_length },
     { "STRING-REF", sch_string_ref },
     { "STRING-SET!", sch_string_set },
