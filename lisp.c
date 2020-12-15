@@ -3368,6 +3368,20 @@ static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(a % b);
 }
 
+static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
+{
+    switch (lisp_type(lisp_car(args)))
+    {
+        case LISP_INT:
+            return lisp_make_int(abs(lisp_int(lisp_car(args))));
+        case LISP_REAL:
+            return lisp_make_real(fabs(lisp_real(lisp_car(args))));
+        default:
+            *e = LISP_ERROR_BAD_ARG;
+            return lisp_make_null();
+    }
+}
+
 static Lisp sch_gcd(Lisp args, LispError* e, LispContext ctx)
 {
     if (lisp_is_null(args))
@@ -3784,6 +3798,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "TAN", sch_tan },
     { "SQRT", sch_sqrt },
     { "MODULO", sch_modulo },
+    { "ABS", sch_abs },
     { "GCD", sch_gcd },
     
     { "INEXACT", sch_to_inexact },
