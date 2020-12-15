@@ -25,6 +25,8 @@
 #include <time.h>
 #include "lisp.h"
 
+#define SCRATCH_MAX 1024
+
 enum
 {
     GC_CLEAR = 0,
@@ -83,6 +85,7 @@ struct LispImpl
     Lisp symbol_table;
     Lisp global_env;
     int lambda_counter;
+    int symbol_counter;
     
     size_t gc_stat_freed;
     size_t gc_stat_time;
@@ -733,6 +736,13 @@ static unsigned int hash_string(const char* c)
 
 Lisp lisp_make_symbol(const char* string, LispContext ctx)
 {
+    char scratch[SCRATCH_MAX];
+    if (!string)
+    {
+        snprintf(scratch, SCRATCH_MAX, ":G%d", ctx.impl->symbol_counter++);
+        string = scratch;
+    }
+
     unsigned int hash = hash_string(string);
     Lisp pair = table_get_string(ctx.impl->symbol_table, string, hash);
     
@@ -1162,8 +1172,6 @@ static void lexer_next_token(Lexer* lex)
         lex->token = TOKEN_NONE;
     }
 }
-
-#define SCRATCH_MAX 1024
 
 static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
 { 
@@ -1643,19 +1651,90 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
             return lisp_cons(expand_r(lambda, error_jmp, ctx), exprs_front, ctx);
         }
-        /*
         else if (op && strcmp(op, "DO") == 0)
         {
-            // (DO ((<var0> <init0> <step0>) ...) (<test> <result>) <loop>)
+            // (DO ((<var0> <init0> <step0>) ...) (<test> <result>) <body>)
             // -> ((lambda (f)
             //        (set! f (lambda (<var0> ... <varN>)
             //                   (if <test>
             //                       <result>
             //                       (begin
-            //                          <loop>
+            //                          <body>
             //                          (f <step0> ... <stepN>)))))
             //        (f <init0> ... <initN>)) NULL)
-        } */
+
+
+            Lisp rest = expand_r(lisp_cdr(l), error_jmp, ctx);
+
+            // TODO: gensym?
+            Lisp f = lisp_make_symbol(NULL, ctx);
+            Lisp lambdaSym = lisp_make_symbol("LAMBDA", ctx);
+
+            Lisp varList = lisp_car(lisp_cdr(l));
+
+            Lisp vars = lisp_make_null();
+            Lisp inits = lisp_make_null();
+            Lisp steps = lisp_make_null();
+
+            while (lisp_is_pair(varList))
+            {
+                Lisp v = lisp_car(varList);
+                vars = lisp_cons(lisp_list_ref(v, 0), vars, ctx);
+                inits = lisp_cons(lisp_list_ref(v, 1), inits, ctx);
+                steps = lisp_cons(lisp_list_ref(v, 2), steps, ctx);
+                varList = lisp_cdr(varList);
+            }
+
+            vars = lisp_list_reverse(vars);
+            inits = lisp_list_reverse(inits);
+            steps = lisp_list_reverse(steps);
+
+            Lisp loopTest = lisp_car(lisp_list_ref(l, 2));
+            Lisp loopResult = lisp_car(lisp_cdr(lisp_list_ref(l, 2)));
+            Lisp body = lisp_list_ref(l, 3);
+
+            Lisp lambda = lisp_make_listv(
+                    ctx,
+                    lambdaSym,
+                    vars, 
+                    lisp_make_listv(
+                        ctx,
+                        lisp_make_symbol("IF", ctx),
+                        loopTest,
+                        loopResult, 
+                        lisp_make_listv(
+                            ctx,
+                            lisp_make_symbol("BEGIN", ctx),
+                            body,
+                            lisp_cons(f, steps, ctx),
+                            lisp_make_null()
+                            ),
+                        lisp_make_null()
+                        ),
+                    lisp_make_null()
+                    );
+
+            Lisp outerLambda = lisp_make_listv(
+                    ctx,
+                    lambdaSym,
+                    lisp_cons(f, lisp_make_null(), ctx),
+                    lisp_make_listv(
+                        ctx,
+                        lisp_make_symbol("SET!", ctx),
+                        f,
+                        lambda,
+                        lisp_make_null()
+                    ),
+                    lisp_cons(f, inits, ctx),
+                    lisp_make_null()
+                    );
+
+            return lisp_cons(
+                    outerLambda,
+                    lisp_cons(lisp_make_null(), lisp_make_null(), ctx),
+                    ctx
+                    );
+        }
         else if (op && strcmp(op, "LAMBDA") == 0)
         {
             // (LAMBDA (<var0> ... <varN>) <expr0> ... <exprN>)
@@ -2590,6 +2669,7 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
     if (!ctx.impl) return ctx;
 
     ctx.impl->lambda_counter = 0;
+    ctx.impl->symbol_counter = 0;
     ctx.impl->stack_ptr = 0;
     ctx.impl->stack_depth = stack_depth;
     ctx.impl->stack = malloc(sizeof(Lisp) * stack_depth);
@@ -3088,6 +3168,11 @@ static Lisp sch_string_to_symbol(Lisp args, LispError* e, LispContext ctx)
     {
         return lisp_make_symbol(lisp_string(val), ctx);
     }
+}
+
+static Lisp sch_gensym(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_symbol(NULL, ctx);
 }
 
 static Lisp sch_is_string(Lisp args, LispError* e, LispContext ctx)
@@ -3808,6 +3893,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SYMBOL?", sch_is_symbol },
     { "STRING->SYMBOL", sch_string_to_symbol },
     { "SYMBOL->STRING", sch_symbol_to_string },
+    { "GENERATE-UNINTERNED-SYMBOL", sch_gensym },
 
     // Environments https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_14.html
     { "EVAL", sch_eval },
@@ -3917,6 +4003,14 @@ const char* lib_program_defs = " \
 (define (reverse l) (reverse! (list-copy l))) \
 (define (vector-head v end) (subvector v 0 end)) \
 (define (vector-tail v start) (subvector v start (vector-length v))) \
+\
+(define (vector-map fn v) \
+  (let ((N (vector-length v)) \
+        (o (make-vector (vector-length v) '() ))) \
+    (do ((i 0 (+ i 1))) \
+        ((>= i N) o) \
+        (vector-set! o i (fn (vector-ref v i))) \
+        ))) \
 ";
 
 LispContext lisp_init_lib(void)
