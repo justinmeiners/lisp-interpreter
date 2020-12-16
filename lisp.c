@@ -1664,13 +1664,11 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             //                          (f <step0> ... <stepN>)))))
             //          (f <init0> ... <initN>))) NULL)
 
-            Lisp rest = expand_r(lisp_cdr(l), error_jmp, ctx);
-
             Lisp f = lisp_make_symbol(NULL, ctx);
             Lisp lambda_symbol = lisp_make_symbol("LAMBDA", ctx);
             Lisp begin_symbol = lisp_make_symbol("BEGIN", ctx);
 
-            Lisp var_list = lisp_car(rest);
+            Lisp var_list = lisp_list_ref(l, 1);
 
             Lisp vars = lisp_make_null();
             Lisp inits = lisp_make_null();
@@ -1692,9 +1690,9 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             inits = lisp_list_reverse(inits);
             steps = lisp_list_reverse(steps);
 
-            Lisp loop_test = lisp_car(lisp_list_ref(rest, 1));
-            Lisp loop_result = lisp_car(lisp_cdr(lisp_list_ref(rest, 1)));
-            Lisp body = lisp_list_ref(rest, 2);
+            Lisp loop_test = lisp_car(lisp_list_ref(l, 2));
+            Lisp loop_result = lisp_car(lisp_cdr(lisp_list_ref(l, 2)));
+            Lisp body = lisp_list_ref(l, 3);
 
             Lisp lambda = lisp_make_listv(
                     ctx,
@@ -1717,7 +1715,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                     lisp_make_null()
                     );
 
-            Lisp outerLambda = lisp_make_listv(
+            Lisp outer_lambda = lisp_make_listv(
                     ctx,
                     lambda_symbol,
                     lisp_cons(f, lisp_make_null(), ctx),
@@ -1737,11 +1735,13 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                     lisp_make_null()
                     );
 
-            return lisp_cons(
-                    outerLambda,
+            Lisp call = lisp_cons(
+                    outer_lambda,
                     lisp_cons(lisp_make_null(), lisp_make_null(), ctx),
                     ctx
                     );
+
+            return expand_r(call, error_jmp, ctx);
         }
         else if (op && strcmp(op, "LAMBDA") == 0)
         {
@@ -3205,9 +3205,13 @@ static Lisp sch_string_is_null(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp n = lisp_car(args);
+    int c = '_';
+    
     args = lisp_cdr(args);
-    Lisp c = lisp_car(args);
-    return lisp_make_empty_string(lisp_int(n), lisp_char(c), ctx);
+    if (lisp_is_pair(args)) {
+        c = lisp_char(lisp_car(args));
+    }
+    return lisp_make_empty_string(lisp_int(n), c, ctx);
 }
 
 static Lisp sch_string_equal(Lisp args, LispError* e, LispContext ctx)
