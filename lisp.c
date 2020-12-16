@@ -1616,95 +1616,99 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
         else if (op && strcmp(op, "LET") == 0)
         {
             // (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
-            //  -> ((LAMBDA (<var0> ... <varN>) <body0> ... <bodyN>) <expr0> ... <expr1>)            
+            //  -> ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
             Lisp pairs = lisp_list_ref(l, 1);
             if (lisp_type(pairs) != LISP_PAIR) longjmp(error_jmp, LISP_ERROR_BAD_LET);
 
             Lisp body = lisp_list_advance(l, 2);
 
-            Lisp vars_front = lisp_make_null();
-            Lisp vars_back = vars_front;
-            
-            Lisp exprs_front = lisp_make_null();
-            Lisp exprs_back = exprs_front;
+            Lisp vars = lisp_make_null();
+            Lisp exprs = lisp_make_null();
             
             while (lisp_is_pair(pairs))
             {
                 if (!lisp_is_pair(lisp_car(pairs))) longjmp(error_jmp, LISP_ERROR_BAD_LET);
 
                 Lisp var = lisp_list_ref(lisp_car(pairs), 0);
-
                 if (lisp_type(var) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_LET);
-                lisp_fast_append(&vars_front, &vars_back, var, ctx);
+                vars = lisp_cons(var, vars, ctx);
 
-                Lisp val = expand_r(lisp_list_ref(lisp_car(pairs), 1), error_jmp, ctx);
-                lisp_fast_append(&exprs_front, &exprs_back, val, ctx);
+                exprs = lisp_cons(lisp_list_ref(lisp_car(pairs), 1), exprs, ctx);
                 pairs = lisp_cdr(pairs);
             }
+            vars = lisp_list_reverse(vars);
+            exprs = lisp_list_reverse(exprs);
             
             Lisp lambda = lisp_make_listv(ctx, 
                                         lisp_make_symbol("LAMBDA", ctx), 
-                                        vars_front, 
+                                        vars, 
+                                        lisp_cons(
+                                            lisp_make_symbol("BEGIN", ctx),
+                                            expand_r(body, error_jmp, ctx),
+                                            ctx
+                                        ),
                                         lisp_make_null());
 
-            lisp_set_cdr(lisp_cdr(lambda), body);
-
-            return lisp_cons(expand_r(lambda, error_jmp, ctx), exprs_front, ctx);
+            return lisp_cons(lambda, expand_r(exprs, error_jmp, ctx), ctx);
         }
         else if (op && strcmp(op, "DO") == 0)
         {
             // (DO ((<var0> <init0> <step0>) ...) (<test> <result>) <body>)
             // -> ((lambda (f)
-            //        (set! f (lambda (<var0> ... <varN>)
+            //        (begin
+            //          (set! f (lambda (<var0> ... <varN>)
             //                   (if <test>
             //                       <result>
             //                       (begin
             //                          <body>
             //                          (f <step0> ... <stepN>)))))
-            //        (f <init0> ... <initN>)) NULL)
+            //          (f <init0> ... <initN>))) NULL)
 
 
             Lisp rest = expand_r(lisp_cdr(l), error_jmp, ctx);
 
-            // TODO: gensym?
             Lisp f = lisp_make_symbol(NULL, ctx);
-            Lisp lambdaSym = lisp_make_symbol("LAMBDA", ctx);
+            Lisp lambda_symbol = lisp_make_symbol("LAMBDA", ctx);
+            Lisp begin_symbol = lisp_make_symbol("BEGIN", ctx);
 
-            Lisp varList = lisp_car(lisp_cdr(l));
+            Lisp var_list = lisp_car(lisp_cdr(l));
 
             Lisp vars = lisp_make_null();
             Lisp inits = lisp_make_null();
             Lisp steps = lisp_make_null();
 
-            while (lisp_is_pair(varList))
+            while (lisp_is_pair(var_list))
             {
-                Lisp v = lisp_car(varList);
+                Lisp v = lisp_car(var_list);
+
                 vars = lisp_cons(lisp_list_ref(v, 0), vars, ctx);
+                if (lisp_type(lisp_car(vars)) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_DO);
+
                 inits = lisp_cons(lisp_list_ref(v, 1), inits, ctx);
                 steps = lisp_cons(lisp_list_ref(v, 2), steps, ctx);
-                varList = lisp_cdr(varList);
+                var_list = lisp_cdr(var_list);
             }
 
             vars = lisp_list_reverse(vars);
             inits = lisp_list_reverse(inits);
             steps = lisp_list_reverse(steps);
 
-            Lisp loopTest = lisp_car(lisp_list_ref(l, 2));
-            Lisp loopResult = lisp_car(lisp_cdr(lisp_list_ref(l, 2)));
+            Lisp loop_test = lisp_car(lisp_list_ref(l, 2));
+            Lisp loop_result = lisp_car(lisp_cdr(lisp_list_ref(l, 2)));
             Lisp body = lisp_list_ref(l, 3);
 
             Lisp lambda = lisp_make_listv(
                     ctx,
-                    lambdaSym,
+                    lambda_symbol,
                     vars, 
                     lisp_make_listv(
                         ctx,
                         lisp_make_symbol("IF", ctx),
-                        loopTest,
-                        loopResult, 
+                        loop_test,
+                        loop_result, 
                         lisp_make_listv(
                             ctx,
-                            lisp_make_symbol("BEGIN", ctx),
+                            begin_symbol,
                             body,
                             lisp_cons(f, steps, ctx),
                             lisp_make_null()
@@ -1716,16 +1720,21 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
             Lisp outerLambda = lisp_make_listv(
                     ctx,
-                    lambdaSym,
+                    lambda_symbol,
                     lisp_cons(f, lisp_make_null(), ctx),
                     lisp_make_listv(
                         ctx,
-                        lisp_make_symbol("SET!", ctx),
-                        f,
-                        lambda,
+                        begin_symbol,
+                        lisp_make_listv(
+                            ctx,
+                            lisp_make_symbol("SET!", ctx),
+                            f,
+                            lambda,
+                            lisp_make_null()
+                        ),
+                        lisp_cons(f, inits, ctx),
                         lisp_make_null()
                     ),
-                    lisp_cons(f, inits, ctx),
                     lisp_make_null()
                     );
 
@@ -2644,6 +2653,8 @@ const char* lisp_error_string(LispError error)
             return "expand error: bad or (or a b)";
         case LISP_ERROR_BAD_LET:
             return "expand error: bad let";
+        case LISP_ERROR_BAD_DO:
+            return "expand error: bad do";
         case LISP_ERROR_BAD_LAMBDA:
             return "expand error: bad lambda";
         case LISP_ERROR_UNKNOWN_VAR:
@@ -3966,7 +3977,7 @@ const char* lib_program_defs = " \
       (reverse! result) \
       (helper (map1 cdr lists '()) \
               (cons (apply proc (map1 car lists '())) result)))) \
-  (reverse! (helper rest '()))) \
+  (helper rest '())) \
 \
 (define (for-each proc . rest) \
   (define (helper lists) \

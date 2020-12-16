@@ -50,9 +50,18 @@
 
 ; https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
 (assert (procedure? (lambda (x) x)))
+(assert (not (procedure? 3)))
+(assert (= 18 (apply + (list 3 4 5 6))))
 
 (assert (= (gcd 32 -36) 4))
 (assert (= (gcd) 0))
+
+(assert (= (abs -1) 1))
+
+(assert (equal? '(3 3 3) (map + '(1 1 1) '(2 2 2))))
+
+(assert (equal? '(1 2 3) (map abs '(-1 -2 3))))
+(assert (equal? #(1 2 3) (vector-map abs #(-1 -2 3))))
 
 
 
