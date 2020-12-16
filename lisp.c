@@ -1664,14 +1664,13 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             //                          (f <step0> ... <stepN>)))))
             //          (f <init0> ... <initN>))) NULL)
 
-
             Lisp rest = expand_r(lisp_cdr(l), error_jmp, ctx);
 
             Lisp f = lisp_make_symbol(NULL, ctx);
             Lisp lambda_symbol = lisp_make_symbol("LAMBDA", ctx);
             Lisp begin_symbol = lisp_make_symbol("BEGIN", ctx);
 
-            Lisp var_list = lisp_car(lisp_cdr(l));
+            Lisp var_list = lisp_car(rest);
 
             Lisp vars = lisp_make_null();
             Lisp inits = lisp_make_null();
@@ -1693,9 +1692,9 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             inits = lisp_list_reverse(inits);
             steps = lisp_list_reverse(steps);
 
-            Lisp loop_test = lisp_car(lisp_list_ref(l, 2));
-            Lisp loop_result = lisp_car(lisp_cdr(lisp_list_ref(l, 2)));
-            Lisp body = lisp_list_ref(l, 3);
+            Lisp loop_test = lisp_car(lisp_list_ref(rest, 1));
+            Lisp loop_result = lisp_car(lisp_cdr(lisp_list_ref(rest, 1)));
+            Lisp body = lisp_list_ref(rest, 2);
 
             Lisp lambda = lisp_make_listv(
                     ctx,
