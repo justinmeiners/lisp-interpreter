@@ -4018,13 +4018,14 @@ const char* lib_program_defs = " \
         (vector-set! o i (fn (vector-ref v i))) \
         ))) \
 \
-(define (sort l op)  \
+(define (quicksort-list l op)  \
   (if (null? l) '()  \
-      (append (sort (filter (lambda (x) (op x (car l))) \
+      (append (quicksort-list (filter (lambda (x) (op x (car l))) \
                                  (cdr l)) op) \
               (list (car l)) \
-              (sort (filter (lambda (x) (not (op x (car l)))) \
+              (quicksort-list (filter (lambda (x) (not (op x (car l)))) \
                                  (cdr l)) op)))) \
+(define sort quicksort-list) \
 ";
 
 LispContext lisp_init_lib(void)
