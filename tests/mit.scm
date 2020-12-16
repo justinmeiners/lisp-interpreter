@@ -15,6 +15,10 @@
 
 (assert (eq? (list-ref '(a b c d) 2) 'c))
 
+(assert (equal? '(a b c d) (append '(a) '(b c d))))   
+
+(assert (equal? '(1 2 3 4 6) (sort '(1 4 2 6 3) <)))
+
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html
 
 ; TODO: add characters to reader

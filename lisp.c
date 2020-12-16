@@ -383,24 +383,20 @@ Lisp lisp_make_listv(LispContext ctx, Lisp first, ...)
     return front;
 }
 
-Lisp lisp_list_append(Lisp l, Lisp l2, LispContext ctx)
+Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx)
 {
-    if (!lisp_is_pair(l)) return l;
+    // (a b) (c) -> (a b c)
 
-    Lisp tail = lisp_cons(lisp_car(l), lisp_make_null(), ctx);
-    Lisp start = tail;
-    l = lisp_cdr(l);
+    l = lisp_list_reverse(lisp_list_copy(l, ctx));
 
     while (lisp_is_pair(l))
     {
-        Lisp pair = lisp_cons(lisp_car(l), lisp_make_null(), ctx);
-        lisp_set_cdr(tail, pair);
-        tail = pair;
+        Lisp head = l;
         l = lisp_cdr(l);
+        lisp_set_cdr(head, tail);
+        tail = head;
     }
-
-    lisp_set_cdr(tail, l2);
-    return start;
+    return tail;
 }
 
 Lisp lisp_list_advance(Lisp l, int i)
@@ -2841,14 +2837,8 @@ static Lisp sch_list_copy(Lisp args, LispError* e, LispContext ctx) {
 
 static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp l = lisp_car(args);
+    Lisp l = lisp_make_null();  
 
-    if (lisp_type(l) != LISP_PAIR)
-    {
-        *e = LISP_ERROR_BAD_ARG;
-        return lisp_make_null();
-    }
-    args = lisp_cdr(args);
     while (lisp_is_pair(args))
     {
         l = lisp_list_append(l, lisp_car(args), ctx);
@@ -2924,6 +2914,7 @@ static Lisp sch_length(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
 {
+
     return lisp_list_reverse(lisp_car(args));
 }
 
@@ -3783,6 +3774,7 @@ static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
     }
     printf("\ngc collected: %lu\t time: %lu us\n", ctx.impl->gc_stat_freed, ctx.impl->gc_stat_time);
     printf("heap size: %lu\t pages: %lu\n", ctx.impl->heap.size, ctx.impl->heap.page_count);
+    printf("symbols: %lu \n", lisp_table_size(ctx.impl->symbol_table));
     
     return lisp_make_null();
 }
@@ -4025,6 +4017,14 @@ const char* lib_program_defs = " \
         ((>= i N) o) \
         (vector-set! o i (fn (vector-ref v i))) \
         ))) \
+\
+(define (sort l op)  \
+  (if (null? l) '()  \
+      (append (sort (filter (lambda (x) (op x (car l))) \
+                                 (cdr l)) op) \
+              (list (car l)) \
+              (sort (filter (lambda (x) (not (op x (car l)))) \
+                                 (cdr l)) op)))) \
 ";
 
 LispContext lisp_init_lib(void)
