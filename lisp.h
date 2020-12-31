@@ -19,6 +19,10 @@ The basic manipulation functions are still available in C.
  
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 
 #define LISP_DEBUG 0
@@ -228,5 +232,9 @@ Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
 Lisp lisp_env_lookup(Lisp l, Lisp key, LispContext ctx);
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);
 void lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
