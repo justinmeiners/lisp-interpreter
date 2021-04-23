@@ -142,7 +142,7 @@ const char* lisp_error_string(LispError error);
 // -----------------------------------------
 #define lisp_type(x) ((x).type)
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
-int lisp_eq_r(Lisp a, Lisp b);
+int lisp_equal_r(Lisp a, Lisp b);
 Lisp lisp_make_null(void);
 
 #define lisp_is_null(x) ((x).type == LISP_NULL)

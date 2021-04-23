@@ -198,7 +198,7 @@ Lisp lisp_make_null()
     return l;
 }
 
-int lisp_eq_r(Lisp a, Lisp b)
+int lisp_equal_r(Lisp a, Lisp b)
 {
     if (a.type != b.type)
     {
@@ -223,7 +223,7 @@ int lisp_eq_r(Lisp a, Lisp b)
             int i;
             for (i = 0; i < N; ++i)
             {
-                if (!lisp_eq_r(lisp_vector_ref(a, i), lisp_vector_ref(b, i)))
+                if (!lisp_equal_r(lisp_vector_ref(a, i), lisp_vector_ref(b, i)))
                     return 0;
             }
             
@@ -233,7 +233,7 @@ int lisp_eq_r(Lisp a, Lisp b)
         {
             while (lisp_is_pair(a) && lisp_is_pair(b))
             {
-                if (!lisp_eq_r(lisp_car(a), lisp_car(b)))
+                if (!lisp_equal_r(lisp_car(a), lisp_car(b)))
                 {
                     return 0;
                 }
@@ -242,7 +242,7 @@ int lisp_eq_r(Lisp a, Lisp b)
                 b = lisp_cdr(b);
             }
             
-            return lisp_eq_r(a, b);
+            return lisp_equal_r(a, b);
         }
         default:
             return a.val.ptr_val == b.val.ptr_val;
@@ -2747,13 +2747,13 @@ static Lisp sch_exact_eq(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(lisp_eq(a, b));
 }
 
-static Lisp sch_recursive_eq(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_recursive_equal(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
     args = lisp_cdr(args);
     Lisp b = lisp_car(args);
     
-    return lisp_make_int(lisp_eq_r(a, b));
+    return lisp_make_int(lisp_equal_r(a, b));
 }
 
 static Lisp sch_not(Lisp args, LispError* e, LispContext ctx)
@@ -3804,7 +3804,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_exact_eq },
     { "EQV?", sch_exact_eq },
-    { "EQUAL?", sch_recursive_eq },
+    { "EQUAL?", sch_recursive_equal },
     
     // Booleans https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Booleans.html
     { "NOT", sch_not },
