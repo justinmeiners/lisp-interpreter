@@ -3945,6 +3945,12 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
 
 const char* lib_program_defs = " \
+(define (make-list k elem) \
+   (define (helper k l) \
+       (if (= k 0) l \
+	   (helper (- k 1) (cons elem l)))) \
+   (reverse! (helper k '()))) \
+\
 (define (filter pred l) \
   (define (helper l result) \
     (cond ((null? l) result) \

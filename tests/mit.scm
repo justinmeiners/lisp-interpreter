@@ -19,6 +19,8 @@
 
 (assert (equal? '(1 2 3 4 6) (sort '(1 4 2 6 3) <)))
 
+(assert (equal? '(1 1 1 1) (make-list 4 1)))
+
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html
 
 ; TODO: add characters to reader
