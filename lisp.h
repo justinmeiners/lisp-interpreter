@@ -116,16 +116,13 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 // REPL
 // -----------------------------------------
 
-// reads text raw s-expressions. But does not apply any syntax expansions (equivalent to quoting the whole structure).
-// This is primarily for using Lisp as JSON/XML
-// For code call expand after reading
+// Reads text into raw s-expressions. 
 Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
 Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
-// expands special Lisp forms (For code)
-// The default eval will do this for you, but this can prepare statements
-// that are run multiple times
+// Expands special Lisp forms (for code).
+// The default eval will do this for you, but this can prepare statements that are run multiple times.
 Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx);
 
 // evaluate a lisp expression
