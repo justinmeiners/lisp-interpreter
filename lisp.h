@@ -219,6 +219,8 @@ void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx);
 
 // programatically generate compound procedures
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
+Lisp lisp_lambda_env(Lisp l);
+
 
 // C functions
 Lisp lisp_make_func(LispCFunc func_ptr);

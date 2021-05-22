@@ -3857,6 +3857,15 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
 #ifndef LISP_NO_SYSTEM_LIB
     { "READ-PATH", sch_read_path },
+
+    // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
+    { "DISPLAY", sch_display },
+    { "NEWLINE", sch_newline },
+    // TODO: { "FLUSH-OUTPUT_PORT", sch_flush },
+    
+   
+    // Universal Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
+    { "GET-UNIVERSAL-TIME", sch_univeral_time },
 #endif
     
     { "EXPAND", sch_expand },
@@ -3988,21 +3997,13 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "PROCEDURE-ENVIRONMENT", sch_lambda_env },
     // TOOD: Almost standard
     { "PROCEDURE-BODY", sch_lambda_body },
-    
-    // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
-    { "DISPLAY", sch_display },
-    { "NEWLINE", sch_newline },
-    // TODO: { "FLUSH-OUTPUT_PORT", sch_flush },
-    
+
     // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
     { "RANDOM", sch_pseudo_rand },
     
     // TODO: this is nonstandard
     { "RANDOM-SEED!", sch_pseudo_seed },
-    
-    // Universl Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
-    { "GET-UNIVERSAL-TIME", sch_univeral_time },
-    
+   
     // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
     { "GC-FLIP", sch_gc_flip },
     { "PRINT-GC-STATISTICS", sch_print_gc_stats },

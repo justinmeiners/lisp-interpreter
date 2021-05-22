@@ -8,14 +8,13 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 ### Philosophy
 
 - **Simple**: Interpreters can easily get complicated with fancy features
-This project doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation.
-It is just a robust foundation for scripting. 
+    This project doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation.
+    It is just a robust foundation for scripting. 
 
-    Where there is a standard name or scheme convention for an implemented feature it will try to follow it.
-    If you need a more complete implementation try [s7](https://ccrma.stanford.edu/software/snd/snd/s7.html)
+   If you need a more complete implementation try [s7](https://ccrma.stanford.edu/software/snd/snd/s7.html)
     or [chicken](https://www.call-cc.org)
 
-- **Data & Code**: Lisp is undervalued as an alternative to JSON or XML.
+- **Data & Code**: Lisp s-expressions are undervalued as an alternative to JSON or XML.
     This implementation provides first-class support for working with data or code.
 
 - **Unintrusive**: Just copy in the header and source file.
@@ -25,16 +24,27 @@ It is just a robust foundation for scripting.
 - **Unsurprising**: You should be able to read the source code and understand how it works.
   The header API should work how you expect.
 
+
 ### Features
 
-- Core scheme language features: if, let, lambdas, cons, car, vector, eval, etc.
-- Standard library which implements a subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html).
+- Single header and source file.
+- Core scheme language: if, let, do, lambda, cons, car, eval, etc.
+- Data structures: lists, vectors, hash tables, integers, real numbers, characters, strings, and integers.
+- Standard library: subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html).
+  (If we choose to implement a feature, and it exists in MIT Scheme, we will try to follow their conventions.)
 - Exact [garbage collection](#garbage-collection) with explicit invocation.
 - Symbol table
 - Easy integration of C functions.
 - REPL command line tool.
 - Efficient data loading and manipulation.
-- Single header and source file.
+
+### Non-Features
+
+- complex numbers
+- rational numbers
+- call/cc
+- port IO
+- unix system library
 
 ## Examples
 
@@ -155,6 +165,7 @@ Lisp pi = lisp_make_float(3.1415);
 lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
 ```
 
+
 ## Garbage Collection
 
 You must call garbage collection yourself.
@@ -169,6 +180,7 @@ This means that when `lisp_collect` is called, all lisp values which are not rea
 
 The interpreter uses the [Cheney algorithim](https://en.wikipedia.org/wiki/Cheney%27s_algorithm) for garbage collection. Memory is allocated in fixed size pages. When an allocation is request and the current page does not have enough space remaining, a new page will be allocated to fulfill the allocation. So, allocations will continue to use up more memory until garbage collection.
 Note that tail call recursion will not overflow the stack, but will use additional memory for each function call.
+ 
 
 ## Project License
 
