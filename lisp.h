@@ -186,7 +186,7 @@ Lisp lisp_list_assoc(Lisp l, Lisp key); // O(n)
 // given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
 Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
  // concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
-Lisp lisp_list_nav(Lisp p, const char* path);
+Lisp lisp_list_accessor_mnemonic(Lisp p, const char* path);
 // This operation modifys the list
 Lisp lisp_list_reverse(Lisp l); // O(n)
 

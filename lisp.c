@@ -470,7 +470,7 @@ Lisp lisp_list_for_key(Lisp l, Lisp key)
     }
 }
 
-Lisp lisp_list_nav(Lisp p, const char* c)
+Lisp lisp_list_accessor_mnemonic(Lisp p, const char* c)
 {
     if (toupper(*c) != 'C') return lisp_make_null();
 
@@ -2738,12 +2738,12 @@ static Lisp sch_set_cdr(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
-static Lisp sch_nav(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_accessor_mnemonic(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp path = lisp_car(args);
     Lisp l = lisp_car(lisp_cdr(args));
 
-    return lisp_list_nav(l, lisp_string(path));
+    return lisp_list_accessor_mnemonic(l, lisp_string(path));
 }
 
 static Lisp sch_exact_eq(Lisp args, LispError* e, LispContext ctx)
@@ -3870,8 +3870,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
     { "EXPAND", sch_expand },
     
-    // TODO: do I want this?
-    { "NAV", sch_nav },
+    { "ACCESSOR-MNEMONIC", sch_accessor_mnemonic },
     
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_exact_eq },
