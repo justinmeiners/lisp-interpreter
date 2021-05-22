@@ -70,4 +70,12 @@
 (assert (equal? #(1 2 3) (vector-map abs #(-1 -2 3))))
 
 
+;https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Construction-of-Vectors.html
+
+(assert (equal? (vector 'a 'b 'c) #(A B C)))
+(assert (equal? (list->vector '(dididit dah)) #(dididit dah)))
+
+(assert (equal? (make-initialized-vector 5 (lambda (x) (* x x))) #(0 1 4 9 16)))
+
+
 

@@ -3490,6 +3490,19 @@ static Lisp sch_gcd(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(abs(b));
 }
 
+static Lisp sch_vector(Lisp args, LispError* e, LispContext ctx)
+{
+    int N = lisp_list_length(args);
+
+    Lisp v = lisp_make_vector(N, lisp_make_null(), ctx);
+    for (int i = 0; i < N; ++i)
+    {
+        lisp_vector_set(v, i, lisp_car(args));
+        args = lisp_cdr(args);
+    }
+    return v;
+}
+
 static Lisp sch_is_vector(Lisp args, LispError* e, LispContext ctx)
 {
     if (lisp_type(lisp_car(args)) == LISP_VECTOR)
@@ -3505,12 +3518,23 @@ static Lisp sch_is_vector(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_make_vector(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp length = lisp_car(args);
-    Lisp val = lisp_car(lisp_cdr(args));
 
     if (lisp_type(length) != LISP_INT)
     {
         *e = LISP_ERROR_BAD_ARG;
         return lisp_make_null();
+    }
+
+    Lisp next = lisp_cdr(args);
+
+    Lisp val;
+    if (lisp_is_null(next))
+    {
+        val = lisp_make_null();
+    }
+    else
+    {
+        val = lisp_car(lisp_cdr(args));
     }
 
     return lisp_make_vector(lisp_int(length), val, ctx);
@@ -3825,6 +3849,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "REVERSE!", sch_reverse_inplace },
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
+    { "VECTOR", sch_vector },
     { "VECTOR?", sch_is_vector },
     { "MAKE-VECTOR", sch_make_vector },
     { "VECTOR-GROW", sch_vector_grow },
@@ -4016,13 +4041,16 @@ const char* lib_program_defs = " \
 (define (vector-head v end) (subvector v 0 end)) \
 (define (vector-tail v start) (subvector v start (vector-length v))) \
 \
+(define (make-initialized-vector l fn) \
+  (let ((v (make-vector l '()))) \
+	(do ((i 0 (+ i 1))) \
+	  ((>= i l) v) \
+	  (vector-set! v i (fn i))))) \
+\
 (define (vector-map fn v) \
-  (let ((N (vector-length v)) \
-        (o (make-vector (vector-length v) '() ))) \
-    (do ((i 0 (+ i 1))) \
-        ((>= i N) o) \
-        (vector-set! o i (fn (vector-ref v i))) \
-        ))) \
+ (make-initialized-vector \
+  (vector-length v) \
+  (lambda (i) (fn (vector-ref v i))))) \
 \
 (define (quicksort-list l op)  \
   (if (null? l) '()  \
