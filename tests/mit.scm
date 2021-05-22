@@ -70,10 +70,23 @@
 (assert (equal? #(1 2 3) (vector-map abs #(-1 -2 3))))
 
 
+; Numbers
+
+(assert (= (modulo -13 4) 3))
+(assert (= (remainder -13 4) -1))
+
+(assert (= (remainder 13 -4) 1))
+
+
 ;https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Construction-of-Vectors.html
 
 (assert (equal? (vector 'a 'b 'c) #(A B C)))
 (assert (equal? (list->vector '(dididit dah)) #(dididit dah)))
+
+
+(assert (= (vector-binary-search #(1 2 3 4 5) < (lambda (x) x) 3) 3))
+(assert (null? (vector-binary-search #(1 2 2 4 5) < (lambda (x) x) 3)))
+
 
 (assert (equal? (make-initialized-vector 5 (lambda (x) (* x x))) #(0 1 4 9 16)))
 

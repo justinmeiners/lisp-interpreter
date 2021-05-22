@@ -3450,12 +3450,31 @@ static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_real(x);
 }
 
-static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_quotient(Lisp args, LispError* e, LispContext ctx)
+{
+    int a = lisp_int(lisp_car(args));
+    args = lisp_cdr(args);
+    int b = lisp_int(lisp_car(args));
+    return lisp_make_int(a / b);
+}
+
+static Lisp sch_remainder(Lisp args, LispError* e, LispContext ctx)
 {
     int a = lisp_int(lisp_car(args));
     args = lisp_cdr(args);
     int b = lisp_int(lisp_car(args));
     return lisp_make_int(a % b);
+
+}
+
+static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
+{
+    int m = lisp_int(sch_remainder(args, e, ctx));
+    if (m < 0) {
+        int b = lisp_int(lisp_car(lisp_cdr(args)));
+        m = (b < 0) ? m - b : m + b;
+    }
+    return lisp_make_int(m);
 }
 
 static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
@@ -3913,6 +3932,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "COS", sch_cos },
     { "TAN", sch_tan },
     { "SQRT", sch_sqrt },
+    { "QUOTIENT", sch_quotient },
+    { "REMAINDER", sch_remainder },
     { "MODULO", sch_modulo },
     { "ABS", sch_abs },
     { "GCD", sch_gcd },
@@ -4051,6 +4072,17 @@ const char* lib_program_defs = " \
  (make-initialized-vector \
   (vector-length v) \
   (lambda (i) (fn (vector-ref v i))))) \
+\
+(define (vector-binary-search v key< unwrap-key key) \
+  (define (helper low high mid) \
+    (if (<= (- high low) 1) \
+        (if (key< (unwrap-key (vector-ref v low)) key) '() (vector-ref v low)) \
+        (begin \
+          (set! mid (+ low (quotient (- high low) 2))) \
+          (if (key< key (unwrap-key (vector-ref v mid))) \
+              (helper low mid 0) \
+              (helper mid high 0))))) \
+  (helper 0 (vector-length v) 0)) \
 \
 (define (quicksort-list l op)  \
   (if (null? l) '()  \
