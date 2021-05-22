@@ -3866,6 +3866,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
    
     // Universal Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
     { "GET-UNIVERSAL-TIME", sch_univeral_time },
+
+    { "PRINT-GC-STATISTICS", sch_print_gc_stats },
 #endif
     
     { "EXPAND", sch_expand },
@@ -4005,7 +4007,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
    
     // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
     { "GC-FLIP", sch_gc_flip },
-    { "PRINT-GC-STATISTICS", sch_print_gc_stats },
     
     { NULL, NULL }
     
