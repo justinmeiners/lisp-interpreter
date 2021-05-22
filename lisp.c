@@ -811,7 +811,14 @@ Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
 
 static Lambda* lisp_lambda(Lisp l)
 {
+    assert(l.type == LISP_LAMBDA);
     return l.val.ptr_val;
+}
+
+Lisp lisp_lambda_env(Lisp l)
+{
+    Lambda* lambda = lisp_lambda(l);
+    return lambda->env;
 }
 
 typedef enum
@@ -3768,8 +3775,21 @@ static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_is_lambda(Lisp args, LispError* e, LispContext ctx)
 {
-    if (lisp_type(lisp_car(args)) != LISP_LAMBDA) return lisp_make_int(0);
-    return lisp_make_int(1);
+    int type = lisp_type(lisp_car(args));
+    return lisp_make_int(type == LISP_LAMBDA ? 1 : 0);
+}
+
+static Lisp sch_lambda_env(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_lambda_env(lisp_car(args));
+}
+
+
+
+static Lisp sch_is_func(Lisp args, LispError* e, LispContext ctx)
+{
+    int type = lisp_type(lisp_car(args));
+    return lisp_make_int(type == LISP_FUNC ? 1 : 0);
 }
 
 static Lisp sch_lambda_body(Lisp args, LispError* e, LispContext ctx)
@@ -3963,7 +3983,9 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
     // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
     { "APPLY", sch_apply },
-    { "PROCEDURE?", sch_is_lambda},
+    { "COMPILED-PROCEDURE?", sch_is_func },
+    { "COMPOUND-PROCEDURE?", sch_is_lambda },
+    { "PROCEDURE-ENVIRONMENT", sch_lambda_env },
     // TOOD: Almost standard
     { "PROCEDURE-BODY", sch_lambda_body },
     
@@ -4092,6 +4114,8 @@ const char* lib_program_defs = " \
               (quicksort-list (filter (lambda (x) (not (op x (car l)))) \
                                  (cdr l)) op)))) \
 (define sort quicksort-list) \
+\
+(define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) \
 ";
 
 LispContext lisp_init_lib(void)

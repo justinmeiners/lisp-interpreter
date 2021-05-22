@@ -56,8 +56,11 @@
 
 ; https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
 (assert (procedure? (lambda (x) x)))
+(assert (compound-procedure? (lambda (x) x)))
+(assert (not (compiled-procedure? (lambda (x) x))))
 (assert (not (procedure? 3)))
 (assert (= 18 (apply + (list 3 4 5 6))))
+(assert (compiled-procedure? eval))
 
 (assert (= (gcd 32 -36) 4))
 (assert (= (gcd) 0))
