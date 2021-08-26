@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <math.h>
 #include <setjmp.h>
+#include <stdint.h>
 #include <time.h>
 #include "lisp.h"
 
@@ -715,11 +716,12 @@ static Lisp table_get_string(Lisp l, const char* string, unsigned int hash)
     return lisp_make_null();
 }
 
-static unsigned int hash_string(const char* c)
+static uint32_t hash_string(const char* c)
 {     
     // adler 32
-    int s1 = 1;
-    int s2 = 0;
+    // https://en.wikipedia.org/wiki/Adler-32
+    uint32_t s1 = 1;
+    uint32_t s2 = 0;
 
     while (*c)
     {
@@ -739,8 +741,8 @@ Lisp lisp_make_symbol(const char* string, LispContext ctx)
         string = scratch;
     }
 
-    unsigned int hash = hash_string(string);
-    Lisp pair = table_get_string(ctx.impl->symbol_table, string, hash);
+    uint32_t hash = hash_string(string);
+    Lisp pair = table_get_string(ctx.impl->symbol_table, string, (unsigned int)hash);
     
     if (lisp_is_null(pair))
     {
