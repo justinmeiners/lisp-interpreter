@@ -291,7 +291,7 @@ int lisp_int(Lisp x)
     return x.val.int_val;
 }
 
-Lisp lisp_make_real(float x)
+Lisp lisp_make_real(double x)
 {
     Lisp l = lisp_make_null();
     l.type = LISP_REAL;
@@ -299,10 +299,10 @@ Lisp lisp_make_real(float x)
     return l;
 }
 
-float lisp_real(Lisp x)
+double lisp_real(Lisp x)
 {
     if (x.type == LISP_INT)
-        return(float)x.val.int_val;
+        return(double)x.val.int_val;
     return x.val.real_val;
 }
 
@@ -3463,37 +3463,37 @@ static Lisp sch_is_odd(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_exp(Lisp args, LispError* e, LispContext ctx)
 {
-    float x = expf(lisp_real(lisp_car(args)));
+    double x = exp(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_log(Lisp args, LispError* e, LispContext ctx)
 {
-    float x = logf(lisp_real(lisp_car(args)));
+    double x = log(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_sin(Lisp args, LispError* e, LispContext ctx)
 {
-    float x = sinf(lisp_real(lisp_car(args)));
+    double x = sin(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_cos(Lisp args, LispError* e, LispContext ctx)
 {
-    float x = cosf(lisp_real(lisp_car(args)));
+    double x = cos(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_tan(Lisp args, LispError* e, LispContext ctx)
 {
-    float x = tanf(lisp_real(lisp_car(args)));
+    double x = tan(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
 {
-    float x = sqrtf(lisp_real(lisp_car(args)));
+    double x = sqrt(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 

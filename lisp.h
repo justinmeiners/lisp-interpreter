@@ -78,7 +78,7 @@ typedef struct
 {
     union LispVal
     {
-        float real_val;
+        double real_val;
         int int_val;  
         void* ptr_val;
     } val;
@@ -147,8 +147,8 @@ Lisp lisp_make_null(void);
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp x);
 
-Lisp lisp_make_real(float x);
-float lisp_real(Lisp x);
+Lisp lisp_make_real(double x);
+double lisp_real(Lisp x);
 
 Lisp lisp_make_string(const char* c_string, LispContext ctx);
 Lisp lisp_make_empty_string(unsigned int n, char c, LispContext ctx);
@@ -160,7 +160,7 @@ Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
 
 Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
-const char* lisp_symbol(Lisp x);
+const char* lisp_symbol_string(Lisp x);
 
 Lisp lisp_car(Lisp p);
 Lisp lisp_cdr(Lisp p);
