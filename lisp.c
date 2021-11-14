@@ -1385,7 +1385,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
              // '
              lexer_next_token(lex);
              Lisp l = lisp_cons(parse_list_r(lex, error_jmp, ctx), lisp_make_null(), ctx);
-             return lisp_cons(lisp_make_symbol("QUOTE", ctx), l, ctx);
+             return lisp_cons(get_sym(SYM_QUOTE, ctx), l, ctx);
         }
         default:
         {

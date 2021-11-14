@@ -65,9 +65,10 @@
 ((justin 'deposit) 20)
 ((ryan 'withdraw) 20)
 
+(gc-flip)
+
 (assert (= ((justin 'withdraw) 0) 120))
 (assert (= ((ryan 'deposity) 0) 180))
-
 
 ; and or expansion
 (let ((a 1))
