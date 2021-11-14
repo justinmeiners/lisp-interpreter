@@ -74,6 +74,22 @@ typedef struct Block
     unsigned char type;
 } Block;
 
+enum {
+    SYM_IF = 0,
+    SYM_BEGIN,
+    SYM_QUOTE,
+    SYM_DEFINE,
+    SYM_SET,
+    SYM_LAMBDA,
+    SYM_COND,
+    SYM_AND,
+    SYM_OR,
+    SYM_LET,
+    SYM_DO,
+    SYM_ASSERT,
+    SYM_COUNT
+};
+
 struct LispImpl
 {
     Heap heap;
@@ -87,10 +103,14 @@ struct LispImpl
     Lisp global_env;
     int lambda_counter;
     int symbol_counter;
-    
+
+    Lisp symbol_cache[SYM_COUNT];
+
     size_t gc_stat_freed;
     size_t gc_stat_time;
 };
+
+#define get_sym(_sym, _ctx) ((_ctx).impl->symbol_cache[(_sym)])
 
 static void heap_init(Heap* heap, size_t page_size)
 {
@@ -661,7 +681,7 @@ void lisp_string_set(Lisp s, int n, char c)
     string->string[n] = c;
 }
 
-const char* lisp_symbol(Lisp l)
+const char* lisp_symbol_string(Lisp l)
 {
     assert(l.type == LISP_SYMBOL);
     Symbol* symbol = l.val.ptr_val;
@@ -705,7 +725,7 @@ static Lisp table_get_string(Lisp l, const char* string, unsigned int hash)
         Lisp pair = lisp_car(it);
         Lisp symbol = lisp_car(pair);
 
-        if (strncasecmp(lisp_symbol(symbol), string, 2048) == 0)
+        if (strncasecmp(lisp_symbol_string(symbol), string, 2048) == 0)
         {
             return pair;
         }
@@ -1412,25 +1432,25 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     // 1. expand extended syntax into primitive syntax
     // 2. perform optimizations
     // 3. check syntax    
-    if (lisp_type(l) == LISP_SYMBOL &&
-        strcmp(lisp_symbol(l), "QUOTE") == 0)
+
+    LispType type = lisp_type(l);
+    if (type == LISP_SYMBOL && lisp_eq(l, get_sym(SYM_QUOTE, ctx))) 
     {
         // don't expand quotes
         return l;
     }
-    else if (lisp_type(l) == LISP_PAIR)
+    else if (type == LISP_PAIR)
     {
-        const char* op = NULL;
-        if (lisp_type(lisp_car(l)) == LISP_SYMBOL)
-            op = lisp_symbol(lisp_car(l));
+        Lisp op = lisp_car(l);
+        int op_valid = lisp_type(op) == LISP_SYMBOL;
 
-        if (op && strcmp(op, "QUOTE") == 0)
+        if (lisp_eq(op, get_sym(SYM_QUOTE, ctx)) && op_valid)
         {
             if (lisp_list_length(l) != 2) longjmp(error_jmp, LISP_ERROR_BAD_QUOTE);
             // don't expand quotes
             return l;
         }
-        else if (op && strcmp(op, "DEFINE") == 0)
+        else if (lisp_eq(op, get_sym(SYM_DEFINE, ctx)) && op_valid)
         {
             int length = lisp_list_length(l);
 
@@ -1452,7 +1472,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                     Lisp args = lisp_cdr(signature);
                     Lisp lambda = lisp_cdr(rest); // start with body
                     lambda = lisp_cons(args, lambda, ctx);
-                    lambda = lisp_cons(lisp_make_symbol("LAMBDA", ctx), lambda, ctx);
+                    lambda = lisp_cons(get_sym(SYM_LAMBDA, ctx), lambda, ctx);
 
                     lisp_set_cdr(l, lisp_make_listv(ctx,
                                                     name,
@@ -1471,7 +1491,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                     break;
             }
         }
-        else if (op && strcmp(op, "SET!") == 0)
+        else if (lisp_eq(op, get_sym(SYM_SET, ctx)) && op_valid)
         {
             if (lisp_list_length(l) != 3) longjmp(error_jmp, LISP_ERROR_BAD_SET);
 
@@ -1485,7 +1505,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                     expr,
                     lisp_make_null());
         }
-        else if (op && strcmp(op, "COND") == 0)
+        else if (lisp_eq(op, get_sym(SYM_COND, ctx)) && op_valid)
         {
             // (COND (<pred0> <expr0>)
             //       (<pred1> <expr1>)
@@ -1510,14 +1530,14 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             Lisp cond_expr = lisp_make_null();
 
             if ((lisp_type(cond_pred) == LISP_SYMBOL) &&
-                    strcmp(lisp_symbol(cond_pred), "ELSE") == 0)
+                    strcmp(lisp_symbol_string(cond_pred), "ELSE") == 0)
             {
                 cond_expr = expand_r(lisp_car(lisp_cdr(cond_pair)), error_jmp, ctx);
                 outer = cond_expr;
                 conds = lisp_cdr(conds);
             }
 
-            Lisp if_symbol = lisp_make_symbol("IF", ctx);
+            Lisp if_symbol = get_sym(SYM_IF, ctx);
        
             while (lisp_is_pair(conds))
             {
@@ -1542,7 +1562,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
             return outer;
         }
-        else if (op && strcmp(op, "AND") == 0)
+        else if (lisp_eq(op, get_sym(SYM_AND, ctx)) && op_valid)
         {
             // (AND <pred0> <pred1> ... <predN>) 
             // -> (IF <pred0> 
@@ -1550,7 +1570,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             //          (IF <predN> t f)
             if (lisp_list_length(l) < 2) longjmp(error_jmp, LISP_ERROR_BAD_AND);
 
-            Lisp if_symbol = lisp_make_symbol("IF", ctx);
+            Lisp if_symbol = get_sym(SYM_IF, ctx);
 
             Lisp preds = lisp_list_reverse(lisp_cdr(l));
             Lisp p = expand_r(lisp_car(preds), error_jmp, ctx);
@@ -1580,7 +1600,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                       
            return outer;
         }
-        else if (op && strcmp(op, "OR") == 0)
+        else if (lisp_eq(op, get_sym(SYM_OR, ctx)) && op_valid)
         {
             // (OR <pred0> <pred1> ... <predN>)
             // -> (IF (<pred0>) t
@@ -1588,7 +1608,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             //          (if <predN> t f))
             if (lisp_list_length(l) < 2) longjmp(error_jmp, LISP_ERROR_BAD_OR);
 
-            Lisp if_symbol = lisp_make_symbol("IF", ctx);
+            Lisp if_symbol = get_sym(SYM_IF, ctx);
 
             Lisp preds = lisp_list_reverse(lisp_cdr(l));
             Lisp p = expand_r(lisp_car(preds), error_jmp, ctx);
@@ -1618,7 +1638,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
            return outer;
 
         }
-        else if (op && strcmp(op, "LET") == 0)
+        else if (lisp_eq(op, get_sym(SYM_LET, ctx)) && op_valid)
         {
             // (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
             //  -> ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
@@ -1645,10 +1665,10 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             exprs = lisp_list_reverse(exprs);
             
             Lisp lambda = lisp_make_listv(ctx, 
-                                        lisp_make_symbol("LAMBDA", ctx), 
+                                        get_sym(SYM_LAMBDA, ctx),
                                         vars, 
                                         lisp_cons(
-                                            lisp_make_symbol("BEGIN", ctx),
+                                            get_sym(SYM_BEGIN, ctx),
                                             expand_r(body, error_jmp, ctx),
                                             ctx
                                         ),
@@ -1656,7 +1676,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
             return lisp_cons(lambda, expand_r(exprs, error_jmp, ctx), ctx);
         }
-        else if (op && strcmp(op, "DO") == 0)
+        else if (lisp_eq(op, get_sym(SYM_DO, ctx)) && op_valid)
         {
             // (DO ((<var0> <init0> <step0>) ...) (<test> <result>) <body>)
             // -> ((lambda (f)
@@ -1670,8 +1690,8 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             //          (f <init0> ... <initN>))) NULL)
 
             Lisp f = lisp_make_symbol(NULL, ctx);
-            Lisp lambda_symbol = lisp_make_symbol("LAMBDA", ctx);
-            Lisp begin_symbol = lisp_make_symbol("BEGIN", ctx);
+            Lisp lambda_symbol = get_sym(SYM_LAMBDA, ctx);
+            Lisp begin_symbol = get_sym(SYM_BEGIN, ctx);
 
             Lisp var_list = lisp_list_ref(l, 1);
 
@@ -1705,7 +1725,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                     vars, 
                     lisp_make_listv(
                         ctx,
-                        lisp_make_symbol("IF", ctx),
+                        get_sym(SYM_IF, ctx),
                         loop_test,
                         loop_result, 
                         lisp_make_listv(
@@ -1729,7 +1749,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                         begin_symbol,
                         lisp_make_listv(
                             ctx,
-                            lisp_make_symbol("SET!", ctx),
+                            get_sym(SYM_SET, ctx),
                             f,
                             lambda,
                             lisp_make_null()
@@ -1748,7 +1768,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
             return expand_r(call, error_jmp, ctx);
         }
-        else if (op && strcmp(op, "LAMBDA") == 0)
+        else if (lisp_eq(op, get_sym(SYM_LAMBDA, ctx)) && op_valid)
         {
             // (LAMBDA (<var0> ... <varN>) <expr0> ... <exprN>)
             // (LAMBDA (<var0> ... <varN>) (BEGIN <expr0> ... <expr1>)) 
@@ -1757,7 +1777,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             if (length > 3)
             {
                 Lisp body_exprs = expand_r(lisp_list_advance(l, 2), error_jmp, ctx); 
-                Lisp begin = lisp_cons(lisp_make_symbol("BEGIN", ctx), body_exprs, ctx);
+                Lisp begin = lisp_cons(get_sym(SYM_BEGIN, ctx), body_exprs, ctx);
 
                 Lisp vars = lisp_list_ref(l, 1);
                 if (!lisp_is_pair(vars) && !lisp_is_null(vars)) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
@@ -1774,13 +1794,13 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                 return l;
             }
         }
-        else if (op && strcmp(op, "ASSERT") == 0)
+        else if (lisp_eq(op, get_sym(SYM_ASSERT, ctx)) && op_valid)
         {
             Lisp statement = lisp_car(lisp_cdr(l));
             // here we save a quoted version of the code so we can see
             // what happened to trigger the assertion
             Lisp quoted = lisp_make_listv(ctx,
-                                         lisp_make_symbol("QUOTE", ctx),
+                                         get_sym(SYM_QUOTE, ctx),
                                          statement,
                                          lisp_make_null());
             return lisp_make_listv(ctx,
@@ -1964,7 +1984,7 @@ void lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx)
     Lisp pair = lisp_env_lookup(l, key, ctx);
     if (lisp_is_null(pair))
     {
-        fprintf(stderr, "error: unknown variable: %s\n", lisp_symbol(key));
+        fprintf(stderr, "error: unknown variable: %s\n", lisp_symbol_string(key));
     }
     lisp_set_cdr(pair, x);
 }
@@ -1983,7 +2003,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             fprintf(file, "NIL");
             break;
         case LISP_SYMBOL:
-            fprintf(file, "%s", lisp_symbol(l));
+            fprintf(file, "%s", lisp_symbol_string(l));
             break;
         case LISP_STRING:
             fprintf(file, "\"%s\"", lisp_string(l));
@@ -1992,7 +2012,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
         {
             int c = lisp_int(l);
             
-            if (c < 33)
+            if (c >= 0 && c < 33)
             {
                 fprintf(file, "#\\%s", ascii_char_name_table[c]);
             }
@@ -2187,7 +2207,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 
                 if (lisp_is_null(pair))
                 {
-                    fprintf(stderr, "cannot find variable: %s\n", lisp_symbol(*x));
+                    fprintf(stderr, "cannot find variable: %s\n", lisp_symbol_string(*x));
                     longjmp(error_jmp, LISP_ERROR_UNKNOWN_VAR); 
                     return lisp_make_null();
                 }
@@ -2195,12 +2215,12 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
             }
             case LISP_PAIR:
             {
-                const char* op_name = NULL;
-                if (lisp_type(lisp_car(*x)) == LISP_SYMBOL)
-                    op_name = lisp_symbol(lisp_car(*x));
+                Lisp op_sym = lisp_car(*x);
+                int op_valid = lisp_type(op_sym) == LISP_SYMBOL;
 
-                if (op_name && strcmp(op_name, "IF") == 0) // if conditional statemetns
+                if (lisp_eq(op_sym, get_sym(SYM_IF, ctx)) && op_valid) 
                 {
+                    // if conditional statemetns
                     Lisp predicate = lisp_list_ref(*x, 1);
                     
                     lisp_stack_push(*env, ctx);
@@ -2222,7 +2242,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     lisp_stack_pop(ctx);
                     lisp_stack_pop(ctx);
                 }
-                else if (op_name && strcmp(op_name, "BEGIN") == 0)
+                else if (lisp_eq(op_sym, get_sym(SYM_BEGIN, ctx)) && op_valid)
                 {
                     Lisp it = lisp_cdr(*x);
                     if (lisp_is_null(it)) return it;
@@ -2248,12 +2268,13 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     *x = lisp_car(it);
                     // while will eval last
                 }
-                else if (op_name && strcmp(op_name, "QUOTE") == 0)
+                else if (lisp_eq(op_sym, get_sym(SYM_QUOTE, ctx)) && op_valid)
                 {
                     return lisp_list_ref(*x, 1);
                 }
-                else if (op_name && strcmp(op_name, "DEFINE") == 0) // variable definitions
+                else if (lisp_eq(op_sym, get_sym(SYM_DEFINE, ctx))) 
                 {
+                    // variable definitions
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_list_ref(*x, 2), ctx);
                     
@@ -2266,7 +2287,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     lisp_env_define(*env, symbol, value, ctx);
                     return lisp_make_null();
                 }
-                else if (op_name && strcmp(op_name, "SET!") == 0)
+                else if (lisp_eq(op_sym, get_sym(SYM_SET, ctx)) && op_valid)
                 {
                     // mutablity
                     // like def, but requires existence
@@ -2284,14 +2305,16 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     lisp_env_set(*env, symbol, value, ctx);
                     return lisp_make_null();
                 }
-                else if (op_name && strcmp(op_name, "LAMBDA") == 0) // lambda defintions (compound procedures)
+                else if (lisp_eq(op_sym, get_sym(SYM_LAMBDA, ctx)) && op_valid) 
                 {
+                    // lambda defintions (compound procedures)
                     Lisp args = lisp_list_ref(*x, 1);
                     Lisp body = lisp_list_ref(*x, 2);
                     return lisp_make_lambda(args, body, *env, ctx);
                 }
-                else // operator application
+                else 
                 {
+                    // operator application
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_car(*x), ctx);
                     
@@ -2504,6 +2527,12 @@ static Lisp gc_move(Lisp l, Heap* to)
     }
 }
 
+static void gc_move_v(Lisp* start, int n, Heap* to)
+{
+    int i;
+    for (i = 0; i < n; ++i)
+        start[i] = gc_move(start[i], to);
+}
 
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
@@ -2516,12 +2545,9 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
     ctx.impl->global_env = gc_move(ctx.impl->global_env, to);
 
-    int i;
-    for (i = 0; i < ctx.impl->stack_ptr; ++i)
-    {
-        ctx.impl->stack[i] = gc_move(ctx.impl->stack[i], to);
-    }
-    
+    gc_move_v(ctx.impl->symbol_cache, SYM_COUNT, to);
+    gc_move_v(ctx.impl->stack, ctx.impl->stack_ptr, to);
+
     Lisp result = gc_move(root_to_save, to);
 
     // move references
@@ -2550,10 +2576,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                     case LISP_VECTOR:
                     {
                         Vector* vector = (Vector*)block;
-                        for (int i = 0; i < vector->length; ++i)
-                        {
-                            vector->entries[i] = gc_move(vector->entries[i], to);
-                        }
+                        gc_move_v(vector->entries, vector->length, to);
                         break;
                     }
                     case LISP_LAMBDA:
@@ -2696,6 +2719,21 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
 
     ctx.impl->symbol_table = lisp_make_table(symbol_table_size, ctx);
     ctx.impl->global_env = lisp_make_null();
+
+
+    Lisp* c = ctx.impl->symbol_cache;
+    c[SYM_IF] = lisp_make_symbol("IF", ctx);
+    c[SYM_BEGIN] = lisp_make_symbol("BEGIN", ctx);
+    c[SYM_QUOTE] = lisp_make_symbol("QUOTE", ctx);
+    c[SYM_DEFINE] = lisp_make_symbol("DEFINE", ctx);
+    c[SYM_SET] = lisp_make_symbol("SET!", ctx);
+    c[SYM_DO] = lisp_make_symbol("DO", ctx);
+    c[SYM_LAMBDA] = lisp_make_symbol("LAMBDA", ctx);
+    c[SYM_AND] = lisp_make_symbol("AND", ctx);
+    c[SYM_OR] = lisp_make_symbol("OR", ctx);
+    c[SYM_LET] = lisp_make_symbol("LET", ctx);
+    c[SYM_COND] = lisp_make_symbol("COND", ctx);
+    c[SYM_ASSERT] = lisp_make_symbol("ASSERT", ctx);
     return ctx;
 }
 
@@ -3138,7 +3176,7 @@ static Lisp sch_to_string(Lisp args, LispError* e, LispContext ctx)
             snprintf(scratch, SCRATCH_MAX, "%i", lisp_int(val));
             return lisp_make_string(scratch, ctx);
         case LISP_SYMBOL:
-            return lisp_make_string(lisp_symbol(val), ctx);
+            return lisp_make_string(lisp_symbol_string(val), ctx);
         case LISP_STRING:
             return val;
         default:
@@ -3157,7 +3195,7 @@ static Lisp sch_symbol_to_string(Lisp args, LispError* e, LispContext ctx)
     }
     else
     {
-        return lisp_make_string(lisp_symbol(val), ctx);
+        return lisp_make_string(lisp_symbol_string(val), ctx);
     }
 }
 
