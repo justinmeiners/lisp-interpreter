@@ -1787,6 +1787,9 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
         }
         default:
         {
+            lisp_printf(stderr, operator);
+            fprintf(stderr, " is not an operator.\n");
+
             *error = LISP_ERROR_BAD_OP;
             return 0;
         }
@@ -1818,7 +1821,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 
                 if (lisp_is_null(pair))
                 {
-                    fprintf(stderr, "cannot find variable: %s\n", lisp_symbol_string(*x));
+                    fprintf(stderr, "%s is not defined.\n", lisp_symbol_string(*x));
                     longjmp(error_jmp, LISP_ERROR_UNKNOWN_VAR); 
                     return lisp_make_null();
                 }
@@ -2140,6 +2143,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
         if (!lisp_is_null(entry))
         {
+            // EXPAND MACRO
             Lisp proc = lisp_cdr(entry);
 
             // TODO: need to make sure collection is not triggered
@@ -2491,9 +2495,9 @@ const char* lisp_error_string(LispError error)
         case LISP_ERROR_BAD_COND:
             return "expand error: bad cond";
         case LISP_ERROR_BAD_AND:
-            return "expand error: bad and (and a b)";
+            return "expand error: bad and (and a b ...)";
         case LISP_ERROR_BAD_OR:
-            return "expand error: bad or (or a b)";
+            return "expand error: bad or (or a b ... )";
         case LISP_ERROR_BAD_LET:
             return "expand error: bad let";
         case LISP_ERROR_BAD_DO:
@@ -2507,7 +2511,7 @@ const char* lisp_error_string(LispError error)
         case LISP_ERROR_UNKNOWN_VAR:
             return "eval error: unknown variable";
         case LISP_ERROR_BAD_OP:
-            return "eval error: application was not an operator";
+            return "eval error: attempt to apply something which was not an operator";
         case LISP_ERROR_UNKNOWN_EVAL:
             return "eval error: got into a bad state";
         case LISP_ERROR_BAD_ARG:
@@ -4295,7 +4299,7 @@ LispContext lisp_init_lib_opt(int symbol_table_size, size_t stack_depth, size_t 
 
     if (error != LISP_ERROR_NONE)
     {
-        fprintf(stderr, "failed to eval system library: %s\n", lisp_error_string(error));
+        fprintf(stderr, "failed to init system library: %s\n", lisp_error_string(error));
         lisp_shutdown(ctx);
     }
 
