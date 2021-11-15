@@ -45,6 +45,7 @@ typedef enum
     LISP_FUNC,   // C function
     LISP_TABLE,  // key/value storage
     LISP_VECTOR, // heterogenous array but contiguous allocation
+    LISP_INTERNAL
 } LispType;
 
 typedef enum
@@ -64,7 +65,9 @@ typedef enum
     LISP_ERROR_BAD_OR,
     LISP_ERROR_BAD_LET,
     LISP_ERROR_BAD_DO,
+    LISP_ERROR_BAD_MACRO,
     LISP_ERROR_BAD_LAMBDA,
+    LISP_ERROR_MACRO_NO_EVAL,
 
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
@@ -159,6 +162,7 @@ char* lisp_string(Lisp s);
 Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
 
+// Pass NULL to generate a symbol
 Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
 const char* lisp_symbol_string(Lisp x);
 
@@ -171,8 +175,10 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 
 Lisp lisp_list_copy(Lisp x, LispContext ctx);
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
-// convenience function for cons'ing together items. arguments must be null terminated
+// convenience function for cons'ing together items. arguments must be terminated with end of list entry.
 Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);
+Lisp lisp_make_terminate();
+
 // another helpful list building technique O(1)
 void lisp_fast_append(Lisp* front, Lisp* back, Lisp x, LispContext ctx);
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
