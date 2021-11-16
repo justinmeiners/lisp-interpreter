@@ -1,3 +1,10 @@
+; Conditionals
+https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Conditionals.html
+
+(assert '())
+(assert (and (= 2 2) (> 2 1)))
+(assert (and))
+ 
 (assert (equal? (reverse '(a b c)) '(c b a)))
 
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
@@ -85,6 +92,8 @@
 (assert (= (remainder -13 4) -1))
 
 (assert (= (remainder 13 -4) 1))
+
+
 
 
 ;https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Construction-of-Vectors.html
