@@ -75,6 +75,12 @@
 
 ; Numbers
 
+(assert (< 3 4))
+(assert (> 4 3))
+(assert (>= 4 3))
+(assert (<= 3 4))
+(assert (not (> 3 4)))
+
 (assert (= (modulo -13 4) 3))
 (assert (= (remainder -13 4) -1))
 
