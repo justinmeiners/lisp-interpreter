@@ -27,13 +27,13 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 ### Features
 
-- Single header and source file.
-- Core scheme language: if, let, do, lambda, cons, car, eval, etc.
+- Core scheme language: if, let, do, lambda, cons, car, eval, symbols, etc.
 - Data structures: lists, vectors, hash tables, integers, real numbers, characters, strings, and integers.
 - Standard library: subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html).
   (If we choose to implement a feature, and it exists in MIT Scheme, we will try to follow their conventions.)
 - Exact [garbage collection](#garbage-collection) with explicit invocation.
-- Symbol table
+- Common lisp style unhygenic macros `define-macro`.
+- Single header and source file.
 - Easy integration of C functions.
 - REPL command line tool.
 - Efficient data loading and manipulation.

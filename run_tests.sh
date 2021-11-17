@@ -2,6 +2,8 @@
 
 cd tests/
 
+PASS=1
+
 for FILE in *.scm
 do
     echo "$FILE"
@@ -14,7 +16,15 @@ do
         echo "FINISHED $FILE"
     else
         echo "*FAILED* $FILE"
+        PASS=0
     fi
     printf "\n"
 done
 
+
+if [ $PASS = "0" ]
+then
+  echo "**TESTS FAILED**"
+else
+  echo "**TESTS PASSED**"
+fi

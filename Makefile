@@ -1,4 +1,4 @@
-CFLAGS = -O3 -Wall
+CFLAGS = -Wall -O3
 LDLIBS = -lm
 CC=cc
 

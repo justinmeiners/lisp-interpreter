@@ -31,7 +31,6 @@ extern "C" {
    into memory at once from a file */
 #define LISP_FILE_CHUNK_SIZE 4096
 
-
 typedef enum
 {
     LISP_NULL = 0,
@@ -44,7 +43,9 @@ typedef enum
     LISP_LAMBDA, // user defined lambda
     LISP_FUNC,   // C function
     LISP_TABLE,  // key/value storage
+    LISP_BOOL,
     LISP_VECTOR, // heterogenous array but contiguous allocation
+    LISP_INTERNAL
 } LispType;
 
 typedef enum
@@ -53,6 +54,7 @@ typedef enum
     LISP_ERROR_FILE_OPEN,
     LISP_ERROR_PAREN_UNEXPECTED,
     LISP_ERROR_PAREN_EXPECTED,
+    LISP_ERROR_HASH_UNEXPECTED,
     LISP_ERROR_DOT_UNEXPECTED,
     LISP_ERROR_BAD_TOKEN,
     
@@ -64,13 +66,17 @@ typedef enum
     LISP_ERROR_BAD_OR,
     LISP_ERROR_BAD_LET,
     LISP_ERROR_BAD_DO,
+    LISP_ERROR_BAD_MACRO,
     LISP_ERROR_BAD_LAMBDA,
+    LISP_ERROR_MACRO_NO_EVAL,
 
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_UNKNOWN_EVAL,
     LISP_ERROR_OUT_OF_BOUNDS,
 
+    LISP_ERROR_SPLICE,
+    LISP_EVAL_ERROR,
     LISP_ERROR_BAD_ARG,
 } LispError;
 
@@ -98,6 +104,7 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 #define LISP_DEFAULT_PAGE_SIZE 32768
 #define LISP_DEFAULT_STACK_DEPTH 1024
 
+// -----------------------------------------
 // SETUP
 // -----------------------------------------
 #ifndef LISP_NO_LIB
@@ -112,7 +119,9 @@ void lisp_shutdown(LispContext ctx);
 // garbage collection. 
 // this will free all objects which are not reachable from root_to_save or the global env
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
+void lisp_print_collect_stats(LispContext ctx);
 
+// -----------------------------------------
 // REPL
 // -----------------------------------------
 
@@ -135,7 +144,8 @@ void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 const char* lisp_error_string(LispError error);
 
-// DATA STRUCTURES
+// -----------------------------------------
+// PRIMITIVES
 // -----------------------------------------
 #define lisp_type(x) ((x).type)
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
@@ -144,12 +154,30 @@ Lisp lisp_make_null(void);
 
 #define lisp_is_null(x) ((x).type == LISP_NULL)
 
+// Pairs
+Lisp lisp_car(Lisp p);
+Lisp lisp_cdr(Lisp p);
+void lisp_set_car(Lisp p, Lisp x);
+void lisp_set_cdr(Lisp p, Lisp x);
+Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
+#define lisp_is_pair(p) ((p).type == LISP_PAIR)
+
+
+// Numbers
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp x);
 
 Lisp lisp_make_real(double x);
 double lisp_real(Lisp x);
 
+// Bools
+Lisp lisp_make_bool(int t);
+int lisp_bool(Lisp x);
+#define lisp_true() (lisp_make_bool(1))
+#define lisp_false() (lisp_make_bool(0))
+int lisp_is_true(Lisp x);
+
+// Strings
 Lisp lisp_make_string(const char* c_string, LispContext ctx);
 Lisp lisp_make_empty_string(unsigned int n, char c, LispContext ctx);
 char lisp_string_ref(Lisp s, int n);
@@ -159,20 +187,22 @@ char* lisp_string(Lisp s);
 Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
 
+// Symbols
+// Pass NULL to generate a symbol
 Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
 const char* lisp_symbol_string(Lisp x);
 
-Lisp lisp_car(Lisp p);
-Lisp lisp_cdr(Lisp p);
-void lisp_set_car(Lisp p, Lisp x);
-void lisp_set_cdr(Lisp p, Lisp x);
-Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
-#define lisp_is_pair(p) ((p).type == LISP_PAIR)
+// -----------------------------------------
+// DATA STRUCTURES
+// -----------------------------------------
 
+// Lists
 Lisp lisp_list_copy(Lisp x, LispContext ctx);
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
-// convenience function for cons'ing together items. arguments must be null terminated
+// convenience function for cons'ing together items. arguments must be terminated with end of list entry.
 Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);
+Lisp lisp_make_terminate();
+
 // another helpful list building technique O(1)
 void lisp_fast_append(Lisp* front, Lisp* back, Lisp x, LispContext ctx);
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
@@ -183,6 +213,9 @@ int lisp_list_length(Lisp l); // O(n)
 // given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))
 // returns the pair with the given key or null of none
 Lisp lisp_list_assoc(Lisp l, Lisp key); // O(n)
+
+Lisp lisp_list_assq(Lisp l, Lisp key); // O(n)
+
 // given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
 Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
  // concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
@@ -190,14 +223,17 @@ Lisp lisp_list_accessor_mnemonic(Lisp p, const char* path);
 // This operation modifys the list
 Lisp lisp_list_reverse(Lisp l); // O(n)
 
+
+// Vectors
 Lisp lisp_make_vector(unsigned int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, int i);
 void lisp_vector_set(Lisp v, int i, Lisp x);
-Lisp lisp_vector_assoc(Lisp v, Lisp key); // O(n)
+Lisp lisp_vector_assq(Lisp v, Lisp key); // O(n)
 Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx);
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx);
 
+// Hash tables
 Lisp lisp_make_table(unsigned int capacity, LispContext ctx);
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx);
 // returns the key value pair, or null if not found
@@ -205,8 +241,18 @@ Lisp lisp_table_get(Lisp t, Lisp key, LispContext ctx);
 unsigned int lisp_table_size(Lisp t);
 Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx);
 
-/* This struct is just for making definitions a little less error prone,
-   having separate arrays for names and functions leads to easy mistakes. */
+// -----------------------------------------
+// LANGUAGE
+// -----------------------------------------
+
+// compound procedures
+Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
+Lisp lisp_lambda_env(Lisp l);
+
+// C functions
+Lisp lisp_make_func(LispCFunc func_ptr);
+LispCFunc lisp_func(Lisp l);
+// This struct and function are a convenience for defining many C functions at a time. 
 typedef struct
 {
     const char* name;
@@ -214,16 +260,7 @@ typedef struct
 } LispFuncDef;
 void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx);
 
-// programatically generate compound procedures
-Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
-Lisp lisp_lambda_env(Lisp l);
-
-
-// C functions
-Lisp lisp_make_func(LispCFunc func_ptr);
-LispCFunc lisp_func(Lisp l);
-
-// evaluation environments
+// Evaluation environments
 Lisp lisp_env_global(LispContext ctx);
 void lisp_env_set_global(Lisp env, LispContext ctx);
 
@@ -231,6 +268,9 @@ Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
 Lisp lisp_env_lookup(Lisp l, Lisp key, LispContext ctx);
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);
 void lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
+
+// Macros
+Lisp lisp_macro_table(LispContext ctx);
 
 #ifdef __cplusplus
 }
