@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+
+#define LISP_IMPLEMENTATION
 #include "lisp.h"
 
 #define LINE_MAX 2048
@@ -10,6 +12,7 @@ int main(int argc, const char* argv[])
     const char* file_path = NULL;
     size_t page_size = LISP_DEFAULT_PAGE_SIZE;
     int run_script = 0;
+    int verbose = 0;
     
     for (int i = 1; i < argc; ++i)
     {
@@ -28,13 +31,13 @@ int main(int argc, const char* argv[])
         }
     }
     
-    LispContext ctx = lisp_init_lib_opt(512, LISP_DEFAULT_STACK_DEPTH, page_size);
+    LispContext ctx = lisp_init_opt(512, LISP_DEFAULT_STACK_DEPTH, page_size);
 
     clock_t start_time, end_time;
         
     if (file_path)
     {
-        if (LISP_DEBUG)
+        if (verbose)
         {
             printf("loading: %s\n", file_path);
         }
@@ -60,7 +63,7 @@ int main(int argc, const char* argv[])
         fclose(file);
         end_time = clock();
 
-        if (LISP_DEBUG)
+        if (verbose)
             printf("read (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
         start_time = clock();
@@ -76,7 +79,7 @@ int main(int argc, const char* argv[])
 
         end_time = clock();
 
-        if (LISP_DEBUG)
+        if (verbose)
             printf("expand (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
 
@@ -92,7 +95,7 @@ int main(int argc, const char* argv[])
 
         lisp_collect(lisp_make_null(), ctx);
 
-        if (LISP_DEBUG)
+        if (verbose)
             printf("eval (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
     }
 
@@ -128,7 +131,7 @@ int main(int argc, const char* argv[])
             
             lisp_collect(lisp_make_null(), ctx);
             
-            if (LISP_DEBUG)
+            if (verbose)
                 printf("(us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
        }
     }
