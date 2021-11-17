@@ -648,7 +648,6 @@ Lisp lisp_vector_assq(Lisp v, Lisp key)
             return x;
         }
     }
-
     return lisp_make_null();
 }
 
@@ -3579,24 +3578,6 @@ static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
     }
 }
 
-static Lisp sch_gcd(Lisp args, LispError* e, LispContext ctx)
-{
-    if (lisp_is_null(args))
-    {
-        return lisp_make_int(0);
-    }
-    
-    int a = lisp_int(lisp_car(args));
-    args = lisp_cdr(args);
-    int b = lisp_int(lisp_car(args));
-    
-    int c;
-    while ( a != 0 ) {
-       c = a; a = b % a;  b = c;
-    }
-    return lisp_make_int(abs(b));
-}
-
 static Lisp sch_vector(Lisp args, LispError* e, LispContext ctx)
 {
     int N = lisp_list_length(args);
@@ -4036,7 +4017,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "REMAINDER", sch_remainder },
     { "MODULO", sch_modulo },
     { "ABS", sch_abs },
-    { "GCD", sch_gcd },
     
     { "INEXACT", sch_to_inexact },
     { "EXACT", sch_to_exact },
@@ -4236,6 +4216,13 @@ static const char* lib_code2 = " \
             (if (< x m) \
               x \
               m)) (car ls) (cdr ls))) \
+\
+(define (_gcd-helper a b) \
+  (if (= b 0) a (_gcd-helper b (modulo a b)))) \
+\
+(define (gcd . args) \
+  (if (null? args) 0 \
+      (_gcd-helper (car args) (car (cdr args))))) \
 \
 (define (reverse l) (reverse! (list-copy l))) \
 (define (vector-head v end) (subvector v 0 end)) \

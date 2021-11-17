@@ -25,7 +25,7 @@ extern "C" {
 
 #include <stdio.h>
 
-#define LISP_DEBUG 1
+#define LISP_DEBUG 0
 
 /* how much data the parser reads
    into memory at once from a file */
@@ -145,7 +145,7 @@ void lisp_printf(FILE* file, Lisp l);
 const char* lisp_error_string(LispError error);
 
 // -----------------------------------------
-// DATA STRUCTURES
+// PRIMITIVES
 // -----------------------------------------
 #define lisp_type(x) ((x).type)
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
@@ -154,19 +154,28 @@ Lisp lisp_make_null(void);
 
 #define lisp_is_null(x) ((x).type == LISP_NULL)
 
+// Pairs
+Lisp lisp_car(Lisp p);
+Lisp lisp_cdr(Lisp p);
+void lisp_set_car(Lisp p, Lisp x);
+void lisp_set_cdr(Lisp p, Lisp x);
+Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
+#define lisp_is_pair(p) ((p).type == LISP_PAIR)
+
+
+// Numbers
 Lisp lisp_make_int(int n);
 int lisp_int(Lisp x);
 
+Lisp lisp_make_real(double x);
+double lisp_real(Lisp x);
 
-
+// Bools
 Lisp lisp_make_bool(int t);
 int lisp_bool(Lisp x);
 #define lisp_true() (lisp_make_bool(1))
 #define lisp_false() (lisp_make_bool(0))
 int lisp_is_true(Lisp x);
-
-Lisp lisp_make_real(double x);
-double lisp_real(Lisp x);
 
 // Strings
 Lisp lisp_make_string(const char* c_string, LispContext ctx);
@@ -183,13 +192,9 @@ int lisp_char(Lisp l);
 Lisp lisp_make_symbol(const char* symbol, LispContext ctx);
 const char* lisp_symbol_string(Lisp x);
 
-// Pairs
-Lisp lisp_car(Lisp p);
-Lisp lisp_cdr(Lisp p);
-void lisp_set_car(Lisp p, Lisp x);
-void lisp_set_cdr(Lisp p, Lisp x);
-Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
-#define lisp_is_pair(p) ((p).type == LISP_PAIR)
+// -----------------------------------------
+// DATA STRUCTURES
+// -----------------------------------------
 
 // Lists
 Lisp lisp_list_copy(Lisp x, LispContext ctx);

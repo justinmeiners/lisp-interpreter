@@ -67,17 +67,8 @@
 
 
 
-(define (_and-helper preds)
-  (if (null? preds) #t
-      (cons 'IF
-            (cons (car predicates)
-                  (cons (_and-helper (cdr preds)))
-                  #f)) ))
 
-(define-macro and2
-     (lambda preds
-       (_and-helper preds)))
-
-
-(display (macroexpand '(and 1 2 3)))
-;(display (reverse-append! '(3 2 1) '(0)))
+(define (gcd2 a b)
+  (if (= b 0)
+      a
+      (gcd2 b (modulo a b))))
