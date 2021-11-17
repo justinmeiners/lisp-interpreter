@@ -1,3 +1,5 @@
+; copy examples from MIT scheme documentation and add related ones.
+
 ; Conditionals
 ; https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Conditionals.html
 
@@ -70,6 +72,7 @@
 (assert (compiled-procedure? eval))
 
 (assert (= (gcd 32 -36) 4))
+(assert (= (gcd 4 3) 1))
 (assert (= (gcd) 0))
 
 (assert (= (abs -1) 1))
@@ -79,20 +82,19 @@
 (assert (equal? '(1 2 3) (map abs '(-1 -2 3))))
 (assert (equal? #(1 2 3) (vector-map abs #(-1 -2 3))))
 
-
 ; Numbers
-
 (assert (< 3 4))
 (assert (> 4 3))
 (assert (>= 4 3))
 (assert (<= 3 4))
+(assert (<= 1 1))
+(assert (< -5 5))
 (assert (not (> 3 4)))
 
 (assert (= (modulo -13 4) 3))
 (assert (= (remainder -13 4) -1))
 
 (assert (= (remainder 13 -4) 1))
-
 
 
 
