@@ -3733,24 +3733,20 @@ static Lisp sch_char_is_white(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_bool(isblank(c));
 }
 
+static Lisp sch_is_exact(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_INT);
+}
+
 static Lisp sch_is_int(Lisp args, LispError* e, LispContext ctx)
 {
-    while (lisp_is_pair(args))
-    {
-        if (lisp_type(lisp_car(args)) != LISP_INT) return lisp_false();
-        args = lisp_cdr(args);
-    }
-    return lisp_true();
+    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_INT);
 }
 
 static Lisp sch_is_real(Lisp args, LispError* e, LispContext ctx)
 {
-    while (lisp_is_pair(args))
-    {
-        if (lisp_type(lisp_car(args)) != LISP_REAL) return lisp_false();
-        args = lisp_cdr(args);
-    }
-    return lisp_true();
+    LispType t = lisp_type(lisp_car(args));
+    return lisp_make_bool(t == LISP_INT || t == LISP_REAL);
 }
 
 static Lisp sch_is_even(Lisp args, LispError* e, LispContext ctx)
@@ -3758,16 +3754,6 @@ static Lisp sch_is_even(Lisp args, LispError* e, LispContext ctx)
     while (!lisp_is_null(args))
     {
         if ((lisp_int(lisp_car(args)) & 1) == 1) return lisp_false();
-        args = lisp_cdr(args);
-    }
-    return lisp_true();
-}
-
-static Lisp sch_is_odd(Lisp args, LispError* e, LispContext ctx)
-{
-    while (lisp_is_pair(args))
-    {
-        if ((lisp_int(lisp_car(args)) & 1) == 0) return lisp_false();
         args = lisp_cdr(args);
     }
     return lisp_true();
@@ -4274,7 +4260,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "<", sch_less },
     { "INTEGER?", sch_is_int },
     { "EVEN?", sch_is_even },
-    { "ODD?", sch_is_odd },
     { "REAL?", sch_is_real },
     { "EXP", sch_exp },
     { "LOG", sch_log },
@@ -4287,8 +4272,9 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "MODULO", sch_modulo },
     { "ABS", sch_abs },
     
-    { "INEXACT", sch_to_inexact },
-    { "EXACT", sch_to_exact },
+    { "EXACT?", sch_is_exact },
+    { "EXACT->INEXACT", sch_to_inexact },
+    { "INEXACT->EXACT", sch_to_exact },
     
     // Symbols https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Symbols.html
     { "SYMBOL?", sch_is_symbol },
@@ -4474,6 +4460,11 @@ static const char* lib_code2 = " \
     (if (null? lst) acc \
         (reduce op (op acc (car lst)) (cdr lst)))) \
 \
+(define (number? x) (real? x)) \
+(define (odd? x) (not (even? x))) \
+(define (inexact? x) (not (exact? x))) \
+(define (zero? x) (= x 0)) \
+ \
 (define (>= a b) (not (< a b))) \
 (define (> a b) (< b a)) \
 (define (<= a b) (not (> a b))) \

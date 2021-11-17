@@ -83,6 +83,12 @@
 (assert (equal? #(1 2 3) (vector-map abs #(-1 -2 3))))
 
 ; Numbers
+(assert (integer? 3))
+(assert (real? 3))
+
+(assert (real? 3.5))
+(assert (not (integer? 3.5)))
+
 (assert (< 3 4))
 (assert (> 4 3))
 (assert (>= 4 3))
@@ -95,6 +101,12 @@
 (assert (= (remainder -13 4) -1))
 
 (assert (= (remainder 13 -4) 1))
+
+(assert (even? 2))
+(assert (not (odd? 2)))
+(assert (odd? 3))
+(assert (odd? 7))
+(assert (not (odd? 4)))
 
 
 
