@@ -33,12 +33,17 @@
 (define vec-map #((bob . 1) (john . 2) (dan . 3) (alice . 4)))
 (define list-map '((bob . 1) (john . 2) (dan . 3) (alice . 4)))
 
-(assert (= (cdr (vector-assoc 'john vec-map)) 2))
-(assert (= (cdr (vector-assoc 'alice vec-map)) 4))
-(assert (null? (vector-assoc 'bad-key vec-map)))
+(assert (= (cdr (vector-assq 'john vec-map)) 2))
+(assert (= (cdr (vector-assq 'alice vec-map)) 4))
+(assert (null? (vector-assq 'bad-key vec-map)))
 
 (assert (= (cdr (assoc 'john list-map)) 2))
 (assert (= (cdr (assoc 'alice list-map)) 4))
 (assert (null? (assoc 'bad-key list-map)))
 
+(assert
+  (= (do ((i 1 (+ i 1)) (n 0 n))
+        ((> i 10) n)
+        (set! n  (+ i n)))
+      (* 5 11)))
 

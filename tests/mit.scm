@@ -1,5 +1,5 @@
 ; Conditionals
-https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Conditionals.html
+; https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Conditionals.html
 
 (assert '())
 (assert (and (= 2 2) (> 2 1)))

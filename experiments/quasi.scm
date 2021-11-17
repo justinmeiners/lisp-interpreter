@@ -62,12 +62,22 @@
                            ((> i 0) 'done)
                                     '())))
 
-
-
-(display  (do2 ((i 1 (+ i 1)) (n 0 n))
-   ((> i 10) n)
-    (set! n  (+ i n))))
+(newline)
+(newline)
 
 
 
+(define (_and-helper preds)
+  (if (null? preds) #t
+      (cons 'IF
+            (cons (car predicates)
+                  (cons (_and-helper (cdr preds)))
+                  #f)) ))
+
+(define-macro and2
+     (lambda preds
+       (_and-helper preds)))
+
+
+(display (macroexpand '(and 1 2 3)))
 ;(display (reverse-append! '(3 2 1) '(0)))

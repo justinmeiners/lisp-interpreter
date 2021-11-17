@@ -25,7 +25,7 @@ extern "C" {
 
 #include <stdio.h>
 
-#define LISP_DEBUG 0
+#define LISP_DEBUG 1
 
 /* how much data the parser reads
    into memory at once from a file */
@@ -119,6 +119,7 @@ void lisp_shutdown(LispContext ctx);
 // garbage collection. 
 // this will free all objects which are not reachable from root_to_save or the global env
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
+void lisp_print_collect_stats(LispContext ctx);
 
 // -----------------------------------------
 // REPL
@@ -207,6 +208,9 @@ int lisp_list_length(Lisp l); // O(n)
 // given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))
 // returns the pair with the given key or null of none
 Lisp lisp_list_assoc(Lisp l, Lisp key); // O(n)
+
+Lisp lisp_list_assq(Lisp l, Lisp key); // O(n)
+
 // given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
 Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
  // concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
@@ -220,7 +224,7 @@ Lisp lisp_make_vector(unsigned int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, int i);
 void lisp_vector_set(Lisp v, int i, Lisp x);
-Lisp lisp_vector_assoc(Lisp v, Lisp key); // O(n)
+Lisp lisp_vector_assq(Lisp v, Lisp key); // O(n)
 Lisp lisp_vector_grow(Lisp v, unsigned int n, LispContext ctx);
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx);
 
