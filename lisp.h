@@ -3438,42 +3438,6 @@ static Lisp sch_less(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_bool(result);
 }
 
-static Lisp sch_greater(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp accum = lisp_car(args);
-    args = lisp_cdr(args);
-    int result = 0;
-
-    if (lisp_type(accum) == LISP_INT)
-    {
-        result = lisp_int(accum) > lisp_int(lisp_car(args));
-    }
-    else if (lisp_type(accum) == LISP_REAL)
-    {
-        result = lisp_real(accum) > lisp_real(lisp_car(args));
-    }
-    else
-    {
-        *e = LISP_ERROR_BAD_ARG;
-        return lisp_make_null();
-    }
-    return lisp_make_bool(result);
-}
-
-static Lisp sch_less_equal(Lisp args, LispError* e, LispContext ctx)
-{
-    // a <= b = !(a > b)
-    Lisp l = sch_greater(args, e, ctx);
-    return  lisp_make_bool(!lisp_bool(l));
-}
-
-static Lisp sch_greater_equal(Lisp args, LispError* e, LispContext ctx)
-{
-    // a >= b = !(a < b)
-    Lisp l = sch_less(args, e, ctx);
-    return  lisp_make_bool(!lisp_bool(l));
-}
-
 static Lisp sch_to_exact(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp val = lisp_car(args);
@@ -4308,9 +4272,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "*", sch_mult },
     { "/", sch_divide },
     { "<", sch_less },
-    { ">", sch_greater },
-    { "<=", sch_less_equal },
-    { ">=", sch_greater_equal },
     { "INTEGER?", sch_is_int },
     { "EVEN?", sch_is_even },
     { "ODD?", sch_is_odd },
@@ -4512,6 +4473,10 @@ static const char* lib_code2 = " \
 (define (reduce op acc lst) \
     (if (null? lst) acc \
         (reduce op (op acc (car lst)) (cdr lst)))) \
+\
+(define (>= a b) (not (< a b))) \
+(define (> a b) (< b a)) \
+(define (<= a b) (not (> a b))) \
 \
 (define (max . ls) \
   (reduce (lambda (m x) \
