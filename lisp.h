@@ -2982,72 +2982,6 @@ LispContext lisp_init_empty(void)
 
 // MACROS
 
-static Lisp sch_macro_cond(Lisp args, LispError* e, LispContext ctx)
-{
-    // (COND (<pred0> <expr0>)
-    //       (<pred1> <expr1>)
-    //        ...
-    //        (else <expr-1>)) ->
-    //
-    //  (IF <pred0> <expr0>
-    //      (if <pred1> <expr1>
-    //          ....
-    //      (if <predN> <exprN> <expr-1>)) ... )
-
-    Lisp conds = lisp_list_reverse(args);
-    Lisp outer = lisp_make_null();
-
-    Lisp cond_pair = lisp_car(conds);
-
-    // error checks
-    if (lisp_type(cond_pair) != LISP_PAIR ||
-         lisp_list_length(cond_pair) != 2)
-    {
-        *e = LISP_ERROR_BAD_COND;
-        return lisp_make_null();
-    }
-
-    Lisp cond_pred = lisp_car(cond_pair);
-    Lisp cond_expr = lisp_make_null();
-
-    if ((lisp_type(cond_pred) == LISP_SYMBOL) &&
-            strcmp(lisp_symbol_string(cond_pred), "ELSE") == 0)
-    {
-        cond_expr = lisp_car(lisp_cdr(cond_pair));
-        outer = cond_expr;
-        conds = lisp_cdr(conds);
-    }
-
-    Lisp if_symbol = get_sym(SYM_IF, ctx);
-
-    while (lisp_is_pair(conds))
-    {
-        cond_pair = lisp_car(conds);
-
-        // error checks
-        if (lisp_type(cond_pair) != LISP_PAIR ||
-            lisp_list_length(cond_pair) != 2)
-        {
-            // TODO: different error here
-            *e = LISP_ERROR_BAD_COND;
-            return lisp_make_null();
-        }
-
-        cond_pred = lisp_car(cond_pair);
-        cond_expr = lisp_car(lisp_cdr(cond_pair));
-
-        outer = lisp_make_listv(ctx,
-                if_symbol,
-                cond_pred,
-                cond_expr,
-                outer,
-                lisp_make_terminate());
-
-        conds = lisp_cdr(conds);
-    }
-    return outer;
-}
-
 static Lisp sch_macro_let(Lisp args, LispError* e, LispContext ctx)
 {
     // (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
@@ -4167,7 +4101,6 @@ static Lisp sch_read_path(Lisp args, LispError *e, LispContext ctx)
 #endif
 
 static const LispFuncDef lib_cmacro_defs[] = {
-    { "COND", sch_macro_cond },
     { "LET", sch_macro_let },
     { NULL, NULL }
 };
@@ -4338,6 +4271,16 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
 // MACRO GUIDE
 
+// (COND (<pred0> <expr0>)
+//       (<pred1> <expr1>)
+//        ...
+//        (else <expr-1>)) ->
+//
+//  (IF <pred0> <expr0>
+//      (if <pred1> <expr1>
+//          ....
+//      (if <predN> <exprN> <expr-1>)) ... )
+
 // (DO ((<var0> <init0> <step0>) ...) (<test> <result>) <body>)
 // -> ((lambda (f)
 //        (begin
@@ -4365,9 +4308,9 @@ static const char* lib_code1 = "\
 (define (not x) (if x #f #t)) \
 \
 (define (some? pred l) \
-  (cond ((null? l) #f) \
-        ((pred (car l)) #t) \
-        (else (some? pred (cdr l))))) \
+  (if (null? l) #f \
+    (if (pred (car l)) #t \
+       (some? pred (cdr l))))) \
 \
 (define (map1 proc l result) \
   (if (null? l) \
@@ -4406,12 +4349,30 @@ static const char* lib_code1 = "\
  (lambda (v l) \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
 \
+(define (_cond-helper clauses) \
+ (if (null? clauses) \
+  '() \
+  (if (eq? (car (car clauses)) 'ELSE) \
+   (cons 'BEGIN (cdr (car clauses))) \
+   (list 'IF \
+    (car (car clauses)) \
+    (cons 'BEGIN (cdr (car clauses))) \
+    (_cond-helper (cdr clauses)))))) \
+\
+(define-macro cond \
+ (lambda clauses \
+  (begin \
+   (for-each (lambda (clause) \
+              (if (null? (cdr clause)) \
+               (error \"(cond (pred expression...)...)\")) \
+             ) clauses) \
+   (_cond-helper clauses)))) \
+\
 (define (_and-helper preds) \
  (if (null? preds) #t \
   (cons 'IF \
    (cons (car preds) \
     (cons (_and-helper (cdr preds)) (cons #f '())) )))) \
-\
 \
 (define-macro and \
  (lambda preds (_and-helper preds))) \

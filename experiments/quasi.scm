@@ -65,30 +65,6 @@
 (newline)
 (newline)
 
-(define (cond-helper clauses)
-  (if (null? clauses)
-      '()
-      (if (eq? (car (car clauses)) 'ELSE)
-          (cons 'BEGIN (cdr (car clauses)))
-          (list 'IF
-                (car (car clauses))
-                (cons 'BEGIN (cdr (car clauses)))
-                (cond-helper (cdr clauses))))))
-
-
-(define-macro cond2
-   (lambda clauses
-     (begin
-     (for-each (lambda (clause)
-                 (if (null? (cdr clause))
-                     (error "(cond (pred expression...)...)"))
-                 ) clauses)
-     (cond-helper clauses))))
-
-(display (macroexpand '(cond2 ((= i 0) 'ZERO) ((= i 1) 'ONE) (else 'BIG) )))
-(newline)
-(display (macroexpand '(cond2 ((= i 0) 'ZERO) ((= i 1) 'ONE)  )))
-(newline)
 ;(display (macroexpand '(cond2 ((= i 0)) ((= i 1) 'ONE)  )))
 
 
