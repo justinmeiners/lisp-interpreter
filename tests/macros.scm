@@ -1,6 +1,5 @@
 
 ; QUASIQUOTE
-
 (assert (equal? `(1 2 3) '(1 2 3)))
 
 (let ((x 1))
@@ -11,7 +10,6 @@
 
 
 ; nil! macro
-
 (define-macro nil! (lambda (x)
                      `(set! ,x '())))
 

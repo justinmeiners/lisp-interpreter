@@ -65,7 +65,17 @@
 (newline)
 (newline)
 
-;(display (macroexpand '(cond2 ((= i 0)) ((= i 1) 'ONE)  )))
+
+(define-macro let2 (lambda (def-list . body)
+    (cons `(lambda
+        ,(map1 (lambda (entry) (car entry)) def-list '())
+        ,(cons 'BEGIN body))
+        (map1 (lambda (entry) (car (cdr entry))) def-list '())) ))
+
+(display (macroexpand 
+   '(let2 ((x 1) (y 2)) (set! x (+ x y)) x)))
+
+
 
 
 

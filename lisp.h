@@ -2439,7 +2439,6 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
         Lisp symbol = lisp_list_ref(l, 1);
         Lisp body = lisp_list_ref(l, 2);
 
-
         LispError e;
         Lisp lambda = lisp_eval(body, &e, ctx);
 
@@ -2494,19 +2493,12 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     {
         if (lisp_list_length(l) != 3) {
             lisp_print(l);
-
-           longjmp(error_jmp, LISP_ERROR_BAD_SET);
+            longjmp(error_jmp, LISP_ERROR_BAD_SET);
         }
 
         Lisp var = lisp_list_ref(l, 1);
         if (lisp_type(var) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_SET);
-        Lisp expr = expand_r(lisp_list_ref(l, 2), error_jmp, ctx);
-
-        return lisp_make_listv(ctx,
-                lisp_list_ref(l, 0), // SET!
-                var,
-                expr,
-                lisp_make_terminate());
+        // continue with expansion
     }
     else if (lisp_eq(op, get_sym(SYM_LAMBDA, ctx)) && op_valid)
     {
@@ -2976,64 +2968,12 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
     return ctx;
 }
 
-
 LispContext lisp_init_empty(void)
 {
     return lisp_init_empty_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
 }
 
 #ifndef LISP_NO_LIB
-
-// MACROS
-
-static Lisp sch_macro_let(Lisp args, LispError* e, LispContext ctx)
-{
-    // (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
-    //  -> ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
-    Lisp pairs = lisp_car(args);
-    if (lisp_type(pairs) != LISP_PAIR) {
-        *e = LISP_ERROR_BAD_LET;
-        return lisp_make_null();
-    }
-
-    Lisp body = lisp_cdr(args);
-
-    Lisp vars = lisp_make_null();
-    Lisp exprs = lisp_make_null();
-
-    while (lisp_is_pair(pairs))
-    {
-        if (!lisp_is_pair(lisp_car(pairs))) {
-            *e = LISP_ERROR_BAD_LET;
-            return lisp_make_null();
-        }
-
-        Lisp var = lisp_list_ref(lisp_car(pairs), 0);
-        if (lisp_type(var) != LISP_SYMBOL) {
-            *e = LISP_ERROR_BAD_LET;
-            return lisp_make_null();
-        }
-        vars = lisp_cons(var, vars, ctx);
-
-        exprs = lisp_cons(lisp_list_ref(lisp_car(pairs), 1), exprs, ctx);
-        pairs = lisp_cdr(pairs);
-    }
-    vars = lisp_list_reverse(vars);
-    exprs = lisp_list_reverse(exprs);
-
-    Lisp lambda = lisp_make_listv(ctx, 
-            get_sym(SYM_LAMBDA, ctx),
-            vars, 
-            lisp_cons(
-                get_sym(SYM_BEGIN, ctx),
-                body,
-                ctx),
-            lisp_make_terminate());
-
-    return lisp_cons(lambda, exprs, ctx);
-}
-
-// FUNCTIONS
 
 static Lisp sch_cons(Lisp args, LispError* e, LispContext ctx)
 {
@@ -4104,11 +4044,6 @@ static Lisp sch_read_path(Lisp args, LispError *e, LispContext ctx)
 }
 #endif
 
-static const LispFuncDef lib_cmacro_defs[] = {
-    { "LET", sch_macro_let },
-    { NULL, NULL }
-};
-
 static const LispFuncDef lib_cfunc_defs[] = {
     
     // NON STANDARD ADDITINONS
@@ -4275,6 +4210,9 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
 // MACRO GUIDE
 
+// (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
+//  -> ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
+
 // (COND (<pred0> <expr0>)
 //       (<pred1> <expr1>)
 //        ...
@@ -4307,8 +4245,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
 //      (IF <pred1> t ...
 //          (if <predN> t f))
 
-
-static const char* lib_code1 = "\
+static const char* lib_code0="\
 (define (not x) (if x #f #t)) \
 \
 (define (some? pred l) \
@@ -4323,35 +4260,21 @@ static const char* lib_code1 = "\
           (cdr l) \
           (cons (proc (car l)) result)))) \
 \
-(define (map proc . rest) \
-  (define (helper lists result) \
-    (if (some? null? lists) \
-      (reverse! result) \
-      (helper (map1 cdr lists '()) \
-              (cons (apply proc (map1 car lists '())) result)))) \
-  (helper rest '())) \
+(define (for-each1 proc l) \
+    (if (null? l) '() \
+         (begin (proc (car l)) (for-each1 proc (cdr l ))))) \
 \
-(define (for-each proc . rest) \
-  (define (helper lists) \
-    (if (some? null? lists) \
-      '() \
-      (begin \
-        (apply proc (map1 car lists '())) \
-        (helper (map1 cdr lists '()))))) \
-  (helper rest)) \
- \
 (define (reverse-append! l tail) \
   (if (null? l) tail \
     (let ((next (cdr l))) \
       (set-cdr! l tail) \
       (reverse-append! next l)))) \
 \
-(define-macro assert \
-    (lambda (body) `(ASSERT1 ,body (quote ,body)))) \
- \
-(define-macro push \
- (lambda (v l) \
-   `(begin (set! ,l (cons ,v ,l)) ,l))) \
+(define-macro let (lambda (def-list . body) \
+  (cons `(lambda \
+    ,(map1 (lambda (entry) (car entry)) def-list '())  \
+    ,(cons 'BEGIN body)) \
+    (map1 (lambda (entry) (car (cdr entry))) def-list '())) )) \
 \
 (define (_cond-helper clauses) \
  (if (null? clauses) \
@@ -4366,9 +4289,9 @@ static const char* lib_code1 = "\
 (define-macro cond \
  (lambda clauses \
   (begin \
-   (for-each (lambda (clause) \
+   (for-each1 (lambda (clause) \
               (if (null? (cdr clause)) \
-               (error \"(cond (pred expression...)...)\")) \
+               (display \"(cond (pred expression...)...)\")) \
              ) clauses) \
    (_cond-helper clauses)))) \
 \
@@ -4389,6 +4312,15 @@ static const char* lib_code1 = "\
 \
 (define-macro or \
  (lambda preds (_or-helper preds))) \
+";
+
+static const char* lib_code1 = "\
+(define-macro assert \
+    (lambda (body) `(ASSERT1 ,body (quote ,body)))) \
+ \
+(define-macro push \
+ (lambda (v l) \
+   `(begin (set! ,l (cons ,v ,l)) ,l))) \
 \
 (define-macro do \
  (lambda (vars loop-check loop) \
@@ -4396,7 +4328,7 @@ static const char* lib_code1 = "\
         (inits '()) \
         (steps '()) \
         (f (gensym))) \
-   (for-each (lambda (var)  \
+   (for-each1 (lambda (var)  \
               (push (car var) names) \
               (set! var (cdr var)) \
               (push (car var) inits) \
@@ -4410,9 +4342,35 @@ static const char* lib_code1 = "\
                    ,(cons 'BEGIN (list loop (cons f steps))) )))    \
         ,(cons f inits) \
        )) '()) ))) \
+\
+(define (number? x) (real? x)) \
+(define (odd? x) (not (even? x))) \
+(define (inexact? x) (not (exact? x))) \
+(define (zero? x) (= x 0)) \
+ \
+(define (>= a b) (not (< a b))) \
+(define (> a b) (< b a)) \
+(define (<= a b) (not (> a b))) \
 ";
 
 static const char* lib_code2 = " \
+\
+(define (map proc . rest) \
+  (define (helper lists result) \
+    (if (some? null? lists) \
+      (reverse! result) \
+      (helper (map1 cdr lists '()) \
+              (cons (apply proc (map1 car lists '())) result)))) \
+  (helper rest '())) \
+\
+(define (for-each proc . rest) \
+  (define (helper lists) \
+    (if (some? null? lists) \
+      '() \
+      (begin \
+        (apply proc (map1 car lists '())) \
+        (helper (map1 cdr lists '()))))) \
+  (helper rest)) \
 \
 (define (memq x list) \
     (cond ((null? list) #f) \
@@ -4446,7 +4404,7 @@ static const char* lib_code2 = " \
 \
 (define (alist->hash-table alist) \
   (define h (make-hash-table)) \
-  (for-each (lambda (pair) \
+  (for-each1 (lambda (pair) \
               (hash-table-set! h (car pair) (cdr pair))) \
             alist) \
   h) \
@@ -4454,15 +4412,6 @@ static const char* lib_code2 = " \
 (define (reduce op acc lst) \
     (if (null? lst) acc \
         (reduce op (op acc (car lst)) (cdr lst)))) \
-\
-(define (number? x) (real? x)) \
-(define (odd? x) (not (even? x))) \
-(define (inexact? x) (not (exact? x))) \
-(define (zero? x) (= x 0)) \
- \
-(define (>= a b) (not (< a b))) \
-(define (> a b) (< b a)) \
-(define (<= a b) (not (> a b))) \
 \
 (define (max . ls) \
   (reduce (lambda (m x) \
@@ -4530,8 +4479,6 @@ LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page
 {
     LispContext ctx = lisp_init_empty_opt(symbol_table_size, stack_depth, page_size);
 
-    lisp_table_define_funcs(ctx.impl->macros, lib_cmacro_defs, ctx);
-
     Lisp table = lisp_make_table(300, ctx);
     //lisp_table_set(table, lisp_make_symbol("NULL", ctx), lisp_make_null(), ctx);
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
@@ -4539,27 +4486,28 @@ LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page
     ctx.impl->global_env = lisp_env_extend(system_env, lisp_make_table(20, ctx), ctx);
 
     LispError error;
-    lisp_eval_opt(lisp_read(lib_code1, NULL, ctx), system_env, &error, ctx);
 
-    if (error != LISP_ERROR_NONE)
+    const char* to_load[] = { lib_code0, lib_code1, lib_code2 };
+    for (int i = 0; i < 3; ++i)
     {
-        fprintf(stderr, "failed to init system library 1: %s\n", lisp_error_string(error));
-        lisp_shutdown(ctx);
+        lisp_eval_opt(lisp_read(to_load[i], NULL, ctx), system_env, &error, ctx);
+
+        if (error != LISP_ERROR_NONE)
+        {
+            fprintf(stderr, "failed to init system library %d: %s\n", i, lisp_error_string(error));
+            lisp_shutdown(ctx);
+            break;
+        }
     }
 
-    lisp_eval_opt(lisp_read(lib_code2, NULL, ctx), system_env, &error, ctx);
-
-    if (error != LISP_ERROR_NONE)
+    if (error == LISP_ERROR_NONE)
     {
-        fprintf(stderr, "failed to init system library 2: %s\n", lisp_error_string(error));
-        lisp_shutdown(ctx);
-    }
-
-    lisp_collect(lisp_make_null(), ctx);
+        lisp_collect(lisp_make_null(), ctx);
 
 #ifdef LISP_DEBUG
-    lisp_print_collect_stats(ctx);
+        lisp_print_collect_stats(ctx);
 #endif
+    }
 
     return ctx;
 }
