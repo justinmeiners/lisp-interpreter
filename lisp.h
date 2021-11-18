@@ -3757,6 +3757,12 @@ static Lisp sch_is_real(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_bool(t == LISP_INT || t == LISP_REAL);
 }
 
+static Lisp sch_is_boolean(Lisp args, LispError* e, LispContext ctx)
+{
+    LispType t = lisp_type(lisp_car(args));
+    return lisp_make_bool(t == LISP_BOOL);
+}
+
 static Lisp sch_is_even(Lisp args, LispError* e, LispContext ctx)
 {
     while (!lisp_is_null(args))
@@ -4258,6 +4264,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
     // TODO: Non Standard
     { "VECTOR-ASSQ", sch_vector_assq },
+    { "BOOLEAN?", sch_is_boolean },
 
     // Numerical operations https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Numerical-operations.html
     { "=", sch_equals },
@@ -4442,11 +4449,26 @@ static const char* lib_code1 = "\
 
 static const char* lib_code2 = " \
 \
+(define (memq x list) \
+    (cond ((null? list) #f) \
+          ((equal? (car list) x) list) \
+          (else (memq x (cdr list))))) \
+\
+(define (member x list) \
+    (cond ((null? list) #f) \
+          ((equal? (car list) x) list) \
+          (else (memq x (cdr list))))) \
+\
 (define (make-list k elem) \
    (define (helper k l) \
        (if (= k 0) l \
 	   (helper (- k 1) (cons elem l)))) \
    (reverse! (helper k '()))) \
+\
+(define list-tail \
+  (lambda (x k) \
+    (if (zero? k) x \
+        (list-tail (cdr x) (- k 1))))) \
 \
 (define (filter pred l) \
   (define (helper l result) \

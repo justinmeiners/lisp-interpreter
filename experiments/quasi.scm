@@ -69,7 +69,7 @@
   (if (null? clauses)
       '()
       (if (eq? (car (car clauses)) 'ELSE)
-          (list 'BEGIN (cdr (car clauses)))
+          (cons 'BEGIN (cdr (car clauses)))
           (list 'IF
                 (car (car clauses))
                 (cons 'BEGIN (cdr (car clauses)))
@@ -89,7 +89,7 @@
 (newline)
 (display (macroexpand '(cond2 ((= i 0) 'ZERO) ((= i 1) 'ONE)  )))
 (newline)
-(display (macroexpand '(cond2 ((= i 0)) ((= i 1) 'ONE)  )))
+;(display (macroexpand '(cond2 ((= i 0)) ((= i 1) 'ONE)  )))
 
 
 
