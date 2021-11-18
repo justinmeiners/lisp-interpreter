@@ -31,6 +31,8 @@
  OPTIONS
  ----------------------
 
+ These macros can be defined before inclusion to change options.
+
      #define LISP_DEBUG
 
  Build in debug mode with logging.
@@ -49,6 +51,8 @@
     #define LISP_FILE_CHUNK_SIZE 4096
 
  Change how much data is read from a file at a time.
+
+
  
  */
 
