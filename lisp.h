@@ -16,7 +16,15 @@
     Lisp program = lisp_read("(+ 1 2)", &error, ctx);
     Lisp result = lisp_eval(program, &error, ctx);
 
-    lisp_print(result);
+    if (error != LISP_ERROR_NONE)
+    {
+        lisp_print(result);
+    }
+    else
+    {
+        // ...
+    }
+
     lisp_shutdown(ctx);
 
  ----------------------
