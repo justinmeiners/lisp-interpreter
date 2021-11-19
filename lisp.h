@@ -233,9 +233,11 @@ Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
 Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);
 Lisp lisp_make_terminate();
 
+// This operation modifiess the list
+Lisp lisp_list_reverse(Lisp l, Lisp tail); // O(n)
+Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
 // another helpful list building technique O(1)
 void lisp_fast_append(Lisp* front, Lisp* back, Lisp x, LispContext ctx);
-Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
 Lisp lisp_list_advance(Lisp l, int i); // O(n)
 Lisp lisp_list_ref(Lisp l, int i); // O(n)
 int lisp_list_index_of(Lisp l, Lisp x); // O(n)
@@ -250,8 +252,6 @@ Lisp lisp_list_assq(Lisp l, Lisp key); // O(n)
 Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
  // concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
 Lisp lisp_list_accessor_mnemonic(Lisp p, const char* path);
-// This operation modifys the list
-Lisp lisp_list_reverse(Lisp l); // O(n)
 
 
 // Vectors
@@ -761,17 +761,8 @@ Lisp lisp_make_listv(LispContext ctx, Lisp first, ...)
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx)
 {
     // (a b) (c) -> (a b c)
-
-    l = lisp_list_reverse(lisp_list_copy(l, ctx));
-
-    while (lisp_is_pair(l))
-    {
-        Lisp head = l;
-        l = lisp_cdr(l);
-        lisp_set_cdr(head, tail);
-        tail = head;
-    }
-    return tail;
+    l = lisp_list_reverse(lisp_list_copy(l, ctx), lisp_make_null());
+    return lisp_list_reverse(l, tail);
 }
 
 Lisp lisp_list_advance(Lisp l, int i)
@@ -896,19 +887,16 @@ Lisp lisp_list_accessor_mnemonic(Lisp p, const char* c)
     return p;
 }
 
-Lisp lisp_list_reverse(Lisp l)
+Lisp lisp_list_reverse(Lisp l, Lisp tail)
 {
-    Lisp p = lisp_make_null();
-
     while (lisp_is_pair(l))
     {
         Lisp next = lisp_cdr(l);
-        lisp_set_cdr(l, p);
-        p = l;
+        lisp_set_cdr(l, tail);
+        tail = l;
         l = next;        
     }
-
-    return p;
+    return tail;
 }
 
 typedef struct
@@ -1216,8 +1204,6 @@ typedef enum
     TOKEN_NONE = 0,
     TOKEN_L_PAREN,
     TOKEN_R_PAREN,
-    TOKEN_HASH,
-    TOKEN_BSLASH,
     TOKEN_DOT,
     TOKEN_QUOTE,
     TOKEN_BQUOTE,
@@ -1227,6 +1213,9 @@ typedef enum
     TOKEN_STRING,
     TOKEN_INT,
     TOKEN_FLOAT,
+    TOKEN_CHAR,
+    TOKEN_BOOL,
+    TOKEN_HASH_L_PAREN,
 } TokenType;
 
 /* for debug
@@ -1379,6 +1368,46 @@ static void lexer_skip_empty(Lexer* lex)
     }
 }
 
+static int lexer_match_char(Lexer* lex)
+{
+    lexer_restart_scan(lex);
+    if (*lex->c != '#') return 0;
+    lexer_step(lex);
+    if (*lex->c != '\\') return 0;
+    lexer_step(lex);
+
+    if (isalnum(*lex->c))
+    {
+        lexer_step(lex);
+        while (isalnum(*lex->c)) lexer_step(lex);
+    }
+    else if (isprint(*lex->c))
+    {
+        lexer_step(lex);
+    }
+    return 1;
+}
+
+static int lexer_match_bool(Lexer* lex)
+{
+    lexer_restart_scan(lex);
+    if (*lex->c != '#') return 0;
+    lexer_step(lex);
+    if (*lex->c != 't' && *lex->c != 'f') return 0;
+    lexer_step(lex);
+    return 1;
+}
+
+static int lexer_match_hash_paren(Lexer* lex)
+{
+    lexer_restart_scan(lex);
+    if (*lex->c != '#') return 0;
+    lexer_step(lex);
+    if (*lex->c != '(') return 0;
+    lexer_step(lex);
+    return 1;
+}
+
 static int lexer_match_int(Lexer* lex)
 {
     lexer_restart_scan(lex);
@@ -1518,8 +1547,6 @@ static TokenType token_from_char(char c)
             return TOKEN_L_PAREN;
         case ')':
             return TOKEN_R_PAREN;
-        case '#':
-            return TOKEN_HASH;
         case '.':
             return TOKEN_DOT;
         case '\'':
@@ -1530,8 +1557,6 @@ static TokenType token_from_char(char c)
             return TOKEN_COMMA;
         case '@':
             return TOKEN_AT;
-        case '\\':
-            return TOKEN_BSLASH;
         default:
             return TOKEN_NONE;
     }
@@ -1565,9 +1590,17 @@ static void lexer_next_token(Lexer* lex)
         {
             lex->token = TOKEN_SYMBOL;
         }
-        else
+        else if (lexer_match_char(lex))
         {
-            lex->token = TOKEN_NONE;
+            lex->token = TOKEN_CHAR;
+        }
+        else if (lexer_match_bool(lex))
+        {
+            lex->token = TOKEN_BOOL;
+        }
+        else if (lexer_match_hash_paren(lex))
+        {
+            lex->token = TOKEN_HASH_L_PAREN;
         }
     }
 }
@@ -1625,7 +1658,7 @@ static const char* ascii_char_name_table[] =
 {
     "NUL", "SOH", "STX", "ETX", "EOT",
     "ENQ", "ACK", "BEL", "backspace", "tab",
-    "linefeed", "VT", "page", "return", "SO",
+    "newline", "VT", "page", "return", "SO",
     "SI", "DLE", "DC1", "DC2", "DC3",
     "DC4", "NAK", "SYN", "ETB", "CAN",
     "EM", "SUB", "altmode", "FS", "GS", "RS",
@@ -1635,12 +1668,11 @@ static const char* ascii_char_name_table[] =
 static int parse_char_token(Lexer* lex)
 {
     char scratch[SCRATCH_MAX];
-    size_t length = lex->scan_length;
-    lexer_copy_token(lex, 0, length, scratch);
+    size_t length = lex->scan_length - 2;
+    lexer_copy_token(lex, 2, length, scratch);
     
     if (length == 1)
     {
-        // TODO: multi chars
         return (int)scratch[0];
     }
     else
@@ -1706,44 +1738,26 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
         }
         case TOKEN_R_PAREN:
             longjmp(error_jmp, LISP_ERROR_PAREN_UNEXPECTED);
-        case TOKEN_HASH:
+        case TOKEN_CHAR:
         {
-            // #
+            int c = parse_char_token(lex);
             lexer_next_token(lex);
-            if (lex->token == TOKEN_BSLASH)
-            {
-                // letters
-                lexer_next_token(lex);
-                if (lex->token != TOKEN_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_TOKEN);
-                int c = parse_char_token(lex);
-                lexer_next_token(lex);
-                return lisp_make_char(c);
-            }
-            else if (lex->token == TOKEN_SYMBOL && lex->scan_length == 1)
-            {
-                char c;
-                lexer_copy_token(lex, 0, 1, &c);
-                lexer_next_token(lex);
-
-                switch (c)
-                {
-                  case 't':
-                    return lisp_make_bool(1);
-                  case 'f':
-                    return lisp_make_bool(0);
-                  default:
-                      longjmp(error_jmp, LISP_ERROR_HASH_UNEXPECTED);
-                      break;
-                }
-            }
-            
-            if (lex->token != TOKEN_L_PAREN) longjmp(error_jmp, LISP_ERROR_HASH_UNEXPECTED);
+            return lisp_make_char(c);
+        }
+        case TOKEN_BOOL:
+        {
+            char c;
+            lexer_copy_token(lex, 1, 1, &c);
             lexer_next_token(lex);
-            // (
+            return lisp_make_bool(c == 't' ? 1 : 0);
+        }
+        case TOKEN_HASH_L_PAREN:
+        {
+            // #(
+            lexer_next_token(lex);
 
             Lisp v = lisp_make_null();
             int count = 0;
-
             while (lex->token != TOKEN_R_PAREN)
             {
                 Lisp x = parse_list_r(lex, error_jmp, ctx);
@@ -3070,9 +3084,10 @@ static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
-static Lisp sch_newline(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
 {
-    fputs("\n", ctx.impl->out_file); return lisp_make_null();
+    fputc(lisp_char(lisp_car(args)), ctx.impl->out_file);
+    return lisp_make_null();
 }
 
 static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
@@ -3133,61 +3148,8 @@ static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
         l = lisp_list_append(l, lisp_car(args), ctx);
         args = lisp_cdr(args);
     }
-
     return l;
 }
-
-/*
-static Lisp sch_map(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp op = lisp_car(args);
-
-    if (lisp_type(op) != LISP_FUNC && lisp_type(op) != LISP_LAMBDA)
-    {
-        *e = LISP_ERROR_BAD_ARG;
-        return lisp_make_null();
-    }
-
-    // multiple lists can be passed in
-    Lisp lists = lisp_cdr(args);
-    int n = lisp_list_length(lists);
-    if (n == 0) return lisp_make_null();
-
-    Lisp result_lists = lisp_make_list(lisp_make_null(), n, ctx);
-    Lisp result_it = result_lists;
-
-    while (lisp_is_pair(lists))
-    {
-        // advance all the lists
-        Lisp it = lisp_car(lists);
-
-        Lisp front = lisp_make_null();
-        Lisp back = front;
-
-        while (lisp_is_pair(it))
-        {
-            // TODO: garbage collection might fail
-            // TODO: wrong environment
-            Lisp expr = lisp_cons(op, lisp_cons(lisp_car(it), lisp_make_null(), ctx), ctx);
-            Lisp result = lisp_eval(expr, NULL, ctx);
-            lisp_fast_append(&front, &back, result, ctx);
-            it = lisp_cdr(it);
-        }
-
-        lisp_set_car(result_it, front);
-        lists = lisp_cdr(lists);
-        result_it = lisp_cdr(result_it);
-    }
-
-    if (n == 1)
-    {
-        return lisp_car(result_lists);
-    }
-    else
-    {
-        return result_lists;
-    }
-} */
 
 static Lisp sch_list_ref(Lisp args, LispError* e, LispContext ctx)
 {
@@ -3203,8 +3165,7 @@ static Lisp sch_length(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
 {
-
-    return lisp_list_reverse(lisp_car(args));
+    return lisp_list_reverse(lisp_car(args), lisp_make_null());
 }
 
 static Lisp sch_assoc(Lisp args, LispError* e, LispContext ctx)
@@ -4069,7 +4030,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
     // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
     { "DISPLAY", sch_display },
-    { "NEWLINE", sch_newline },
+    { "WRITE-CHAR", sch_write_char },
     { "FLUSH-OUTPUT-PORT", sch_flush },
     
    
@@ -4337,6 +4298,8 @@ static const char* lib_code0 = "\
 ";
 
 static const char* lib_code1 = " \
+(define (newline) (write-char #\\newline)) \
+\
 (define-macro assert \
  (lambda (body) \
   `(if ,body '() \
