@@ -68,7 +68,7 @@ int main(int argc, const char* argv[])
 
         start_time = clock();
 
-        Lisp code = lisp_expand(l, &error, ctx);
+        Lisp code = lisp_macroexpand(l, &error, ctx);
 
         if (error != LISP_ERROR_NONE)
         {

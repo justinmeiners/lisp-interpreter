@@ -4,7 +4,7 @@
 
  Single header style. Do this:
      #define LISP_IMPLEMENTATION
- before you include this file in *one* C or C++ file to create the implementation.
+ before you include this file in *one* C or C++ file to create the pementation.
 
  ----------------------
  QUICKSTART
@@ -123,7 +123,7 @@ typedef struct
 
 typedef struct
 {
-    struct LispImpl* impl;
+    struct LispImpl* p;
 } LispContext;
 
 typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
@@ -160,9 +160,9 @@ Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
 Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
-// Expands special Lisp forms (for code).
+// Expands special Lisp forms and checks syntax.
 // The default eval will do this for you, but this can prepare statements that are run multiple times.
-Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx);
+Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
 
 // evaluate a lisp expression
 Lisp lisp_eval_opt(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
@@ -428,7 +428,7 @@ struct LispImpl
     size_t gc_stat_time;
 };
 
-#define get_sym(_sym, _ctx) ((_ctx).impl->symbol_cache[(_sym)])
+#define get_sym(_sym, _ctx) ((_ctx).p->symbol_cache[(_sym)])
 
 static void heap_init(Heap* heap, size_t page_size)
 {
@@ -496,7 +496,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 
 static void* gc_alloc(size_t size, LispType type, LispContext ctx)
 {
-    return heap_alloc(size, type, &ctx.impl->heap);
+    return heap_alloc(size, type, &ctx.p->heap);
 }
 
 typedef struct
@@ -1113,12 +1113,12 @@ Lisp lisp_make_symbol(const char* string, LispContext ctx)
     char scratch[SCRATCH_MAX];
     if (!string)
     {
-        snprintf(scratch, SCRATCH_MAX, ":G%d", ctx.impl->symbol_counter++);
+        snprintf(scratch, SCRATCH_MAX, ":G%d", ctx.p->symbol_counter++);
         string = scratch;
     }
 
     uint32_t hash = hash_string(string);
-    Lisp pair = table_get_string(ctx.impl->symbol_table, string, (unsigned int)hash);
+    Lisp pair = table_get_string(ctx.p->symbol_table, string, (unsigned int)hash);
     
     if (lisp_is_null(pair))
     {
@@ -1141,7 +1141,7 @@ Lisp lisp_make_symbol(const char* string, LispContext ctx)
         Lisp l;
         l.type = symbol->block.type;
         l.val.ptr_val = symbol;
-        lisp_table_set(ctx.impl->symbol_table, l, lisp_make_null(), ctx);
+        lisp_table_set(ctx.p->symbol_table, l, lisp_make_null(), ctx);
         return l;
     }
     else
@@ -1176,7 +1176,7 @@ typedef struct
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
 {
     Lambda* lambda = gc_alloc(sizeof(Lambda), LISP_LAMBDA, ctx);
-    lambda->identifier = ctx.impl->lambda_counter++;
+    lambda->identifier = ctx.p->lambda_counter++;
     lambda->args = args;
     lambda->body = body;
     lambda->env = env;
@@ -2106,32 +2106,32 @@ void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 static void lisp_stack_push(Lisp x, LispContext ctx)
 {
 #ifdef LISP_DEBUG
-    if (ctx.impl->stack_ptr + 1 >= ctx.impl->stack_depth)
+    if (ctx.p->stack_ptr + 1 >= ctx.p->stack_depth)
     {
         fprintf(stderr, "stack overflow\n");
     }
 #endif 
 
-    ctx.impl->stack[ctx.impl->stack_ptr] = x;
-    ++ctx.impl->stack_ptr;
+    ctx.p->stack[ctx.p->stack_ptr] = x;
+    ++ctx.p->stack_ptr;
 }
 
 static Lisp lisp_stack_pop(LispContext ctx)
 {
-    ctx.impl->stack_ptr--;
+    ctx.p->stack_ptr--;
     
 #ifdef LISP_DEBUG
-    if (ctx.impl->stack_ptr < 0)
+    if (ctx.p->stack_ptr < 0)
     {
         fprintf(stderr, "stack underflow\n");
     }
 #endif
-    return ctx.impl->stack[ctx.impl->stack_ptr];
+    return ctx.p->stack[ctx.p->stack_ptr];
 }
 
 static Lisp* lisp_stack_peek(size_t i, LispContext ctx)
 {
-    return ctx.impl->stack + (ctx.impl->stack_ptr - i);
+    return ctx.p->stack + (ctx.p->stack_ptr - i);
 }
 
 // returns whether the result is final, or needs to be eval'd.
@@ -2469,7 +2469,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
         } 
 
-        lisp_table_set(ctx.impl->macros, symbol, lambda, ctx);
+        lisp_table_set(ctx.p->macros, symbol, lambda, ctx);
         return lisp_make_null();
     }
     else if (lisp_eq(op, get_sym(SYM_DEFINE, ctx)) && op_valid)
@@ -2554,7 +2554,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     }
     else if (op_valid)
     {
-        Lisp entry = lisp_table_get(ctx.impl->macros, op, ctx);
+        Lisp entry = lisp_table_get(ctx.p->macros, op, ctx);
 
         if (!lisp_is_null(entry))
         {
@@ -2588,7 +2588,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
 }
 
-Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx)
+Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx)
 {
     jmp_buf error_jmp;
     LispError error = setjmp(error_jmp);
@@ -2609,7 +2609,7 @@ Lisp lisp_expand(Lisp lisp, LispError* out_error, LispContext ctx)
 Lisp lisp_eval_opt(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 {
     LispError error;
-    Lisp expanded = lisp_expand(l, &error, ctx);
+    Lisp expanded = lisp_macroexpand(l, &error, ctx);
     
     if (error != LISP_ERROR_NONE)
     {
@@ -2617,7 +2617,7 @@ Lisp lisp_eval_opt(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
         return lisp_make_null();
     }
     
-    size_t save_stack = ctx.impl->stack_ptr;
+    size_t save_stack = ctx.p->stack_ptr;
     
     jmp_buf error_jmp;
     error = setjmp(error_jmp);
@@ -2643,7 +2643,7 @@ Lisp lisp_eval_opt(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
     {
         if (out_error)
         {
-            ctx.impl->stack_ptr = save_stack;
+            ctx.p->stack_ptr = save_stack;
             *out_error = error;
         }
 
@@ -2774,16 +2774,16 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
     time_t start_time = clock();
 
-    Heap* to = &ctx.impl->to_heap;
-    heap_init(to, ctx.impl->heap.page_size);
+    Heap* to = &ctx.p->to_heap;
+    heap_init(to, ctx.p->heap.page_size);
 
     // move root object
-    ctx.impl->symbol_table = gc_move(ctx.impl->symbol_table, to);
-    ctx.impl->global_env = gc_move(ctx.impl->global_env, to);
-    ctx.impl->macros = gc_move(ctx.impl->macros, to);
+    ctx.p->symbol_table = gc_move(ctx.p->symbol_table, to);
+    ctx.p->global_env = gc_move(ctx.p->global_env, to);
+    ctx.p->macros = gc_move(ctx.p->macros, to);
 
-    gc_move_v(ctx.impl->symbol_cache, SYM_COUNT, to);
-    gc_move_v(ctx.impl->stack, ctx.impl->stack_ptr, to);
+    gc_move_v(ctx.p->symbol_cache, SYM_COUNT, to);
+    gc_move_v(ctx.p->stack, ctx.p->stack_ptr, to);
 
     Lisp result = gc_move(root_to_save, to);
 
@@ -2853,52 +2853,52 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
       }
 #endif
     
-    size_t diff = ctx.impl->heap.size - ctx.impl->to_heap.size;
+    size_t diff = ctx.p->heap.size - ctx.p->to_heap.size;
 
     // swap the heaps
-    Heap temp = ctx.impl->heap;
-    ctx.impl->heap = ctx.impl->to_heap;
-    ctx.impl->to_heap = temp;
+    Heap temp = ctx.p->heap;
+    ctx.p->heap = ctx.p->to_heap;
+    ctx.p->to_heap = temp;
     
     // reset the heap
-    heap_shutdown(&ctx.impl->to_heap);
+    heap_shutdown(&ctx.p->to_heap);
     
     time_t end_time = clock();
-    ctx.impl->gc_stat_freed = diff;
-    ctx.impl->gc_stat_time = 1000000 * (end_time - start_time) / CLOCKS_PER_SEC;
+    ctx.p->gc_stat_freed = diff;
+    ctx.p->gc_stat_time = 1000000 * (end_time - start_time) / CLOCKS_PER_SEC;
     return result;
 }
 
 void lisp_print_collect_stats(LispContext ctx)
 {
-    Page* page = ctx.impl->heap.bottom;
+    Page* page = ctx.p->heap.bottom;
     while (page)
     {
         printf("%lu/%lu ", page->size, page->capacity);
         page = page->next;
     }
-    fprintf(ctx.impl->out_file, "\ngc collected: %lu\t time: %lu us\n", ctx.impl->gc_stat_freed, ctx.impl->gc_stat_time);
-    fprintf(ctx.impl->out_file, "heap size: %lu\t pages: %lu\n", ctx.impl->heap.size, ctx.impl->heap.page_count);
-    fprintf(ctx.impl->out_file, "symbols: %lu \n", (size_t)lisp_table_size(ctx.impl->symbol_table));
+    fprintf(ctx.p->out_file, "\ngc collected: %lu\t time: %lu us\n", ctx.p->gc_stat_freed, ctx.p->gc_stat_time);
+    fprintf(ctx.p->out_file, "heap size: %lu\t pages: %lu\n", ctx.p->heap.size, ctx.p->heap.page_count);
+    fprintf(ctx.p->out_file, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbol_table));
 }
 
 
 Lisp lisp_env_global(LispContext ctx)
 {
-    return ctx.impl->global_env;
+    return ctx.p->global_env;
 }
 
 void lisp_env_set_global(Lisp env, LispContext ctx)
 {
-    ctx.impl->global_env = env;
+    ctx.p->global_env = env;
 }
 
 void lisp_shutdown(LispContext ctx)
 {
-    heap_shutdown(&ctx.impl->heap);
-    heap_shutdown(&ctx.impl->to_heap);
-    free(ctx.impl->stack);
-    free(ctx.impl);
+    heap_shutdown(&ctx.p->heap);
+    heap_shutdown(&ctx.p->to_heap);
+    free(ctx.p->stack);
+    free(ctx.p);
 }
 
 const char* lisp_error_string(LispError error)
@@ -2948,26 +2948,26 @@ const char* lisp_error_string(LispError error)
 LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_t page_size, FILE* out_file)
 {
     LispContext ctx;
-    ctx.impl = malloc(sizeof(struct LispImpl));
-    if (!ctx.impl) return ctx;
+    ctx.p = malloc(sizeof(struct LispImpl));
+    if (!ctx.p) return ctx;
 
-    ctx.impl->out_file = out_file;
-    ctx.impl->lambda_counter = 0;
-    ctx.impl->symbol_counter = 0;
-    ctx.impl->stack_ptr = 0;
-    ctx.impl->stack_depth = stack_depth;
-    ctx.impl->stack = malloc(sizeof(Lisp) * stack_depth);
-    ctx.impl->gc_stat_freed = 0;
-    ctx.impl->gc_stat_time = 0;
+    ctx.p->out_file = out_file;
+    ctx.p->lambda_counter = 0;
+    ctx.p->symbol_counter = 0;
+    ctx.p->stack_ptr = 0;
+    ctx.p->stack_depth = stack_depth;
+    ctx.p->stack = malloc(sizeof(Lisp) * stack_depth);
+    ctx.p->gc_stat_freed = 0;
+    ctx.p->gc_stat_time = 0;
     
-    heap_init(&ctx.impl->heap, page_size);
-    heap_init(&ctx.impl->to_heap, page_size);
+    heap_init(&ctx.p->heap, page_size);
+    heap_init(&ctx.p->to_heap, page_size);
 
-    ctx.impl->symbol_table = lisp_make_table(symbol_table_size, ctx);
-    ctx.impl->global_env = lisp_make_null();
-    ctx.impl->macros = lisp_make_table(20, ctx);
+    ctx.p->symbol_table = lisp_make_table(symbol_table_size, ctx);
+    ctx.p->global_env = lisp_make_null();
+    ctx.p->macros = lisp_make_table(20, ctx);
 
-    Lisp* c = ctx.impl->symbol_cache;
+    Lisp* c = ctx.p->symbol_cache;
     c[SYM_IF] = lisp_make_symbol("IF", ctx);
     c[SYM_BEGIN] = lisp_make_symbol("BEGIN", ctx);
     c[SYM_QUOTE] = lisp_make_symbol("QUOTE", ctx);
@@ -3075,30 +3075,30 @@ static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
     Lisp l = lisp_car(args);
     if (lisp_type(l) == LISP_STRING)
     {
-        fputs(lisp_string(l), ctx.impl->out_file);
+        fputs(lisp_string(l), ctx.p->out_file);
     }
     else
     {
-        lisp_printf(ctx.impl->out_file, l);
+        lisp_printf(ctx.p->out_file, l);
     }
     return lisp_make_null();
 }
 
 static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
 {
-    fputc(lisp_char(lisp_car(args)), ctx.impl->out_file);
+    fputc(lisp_char(lisp_car(args)), ctx.p->out_file);
     return lisp_make_null();
 }
 
 static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
 {
-    fflush(ctx.impl->out_file); return lisp_make_null();
+    fflush(ctx.p->out_file); return lisp_make_null();
 }
 
 static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
 {
    Lisp l = lisp_car(args);
-   fputs(lisp_string(l), ctx.impl->out_file);
+   fputs(lisp_string(l), ctx.p->out_file);
 
    *e = LISP_ERROR_RUNTIME;
    return lisp_make_null();
@@ -3311,7 +3311,7 @@ static Lisp sch_to_exact(Lisp args, LispError* e, LispContext ctx)
         case LISP_REAL:
             return lisp_make_int((int)lisp_real(val));
             
-        // TODO: string implementations probably nonstandard
+        // TODO: string pementations probably nonstandard
         case LISP_STRING:
             return lisp_make_int(atoi(lisp_string(val)));
         default:
@@ -3980,7 +3980,7 @@ static Lisp sch_lambda_body(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_macroexpand(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp expr = lisp_car(args);
-    Lisp result = lisp_expand(expr, e, ctx);
+    Lisp result = lisp_macroexpand(expr, e, ctx);
     return result;
 }
 
@@ -4474,7 +4474,7 @@ LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page
     Lisp table = lisp_make_table(300, ctx);
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
     Lisp system_env = lisp_env_extend(lisp_make_null(), table, ctx);
-    ctx.impl->global_env = lisp_env_extend(system_env, lisp_make_table(20, ctx), ctx);
+    ctx.p->global_env = lisp_env_extend(system_env, lisp_make_table(20, ctx), ctx);
 
     LispError error;
 
@@ -4505,7 +4505,7 @@ LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page
 
 Lisp lisp_macro_table(LispContext ctx)
 {
-    return ctx.impl->macros;
+    return ctx.p->macros;
 }
 
 #endif
