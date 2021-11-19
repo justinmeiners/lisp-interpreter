@@ -105,8 +105,8 @@ typedef enum
     LISP_ERROR_OUT_OF_BOUNDS,
 
     LISP_ERROR_SPLICE,
-    LISP_EVAL_ERROR,
     LISP_ERROR_BAD_ARG,
+    LISP_ERROR_RUNTIME,
 } LispError;
 
 typedef struct
@@ -139,11 +139,11 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 #ifndef LISP_NO_LIB
 LispContext lisp_init(void);
-LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
+LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page_size, FILE* out_file);
 #endif
 
 LispContext lisp_init_empty(void);
-LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_t page_size);
+LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_t page_size, FILE* out_file);
 void lisp_shutdown(LispContext ctx);
 
 // garbage collection. 
@@ -407,6 +407,7 @@ enum {
 
 struct LispImpl
 {
+    FILE* out_file;
     Heap heap;
     Heap to_heap;
 
@@ -2862,9 +2863,9 @@ void lisp_print_collect_stats(LispContext ctx)
         printf("%lu/%lu ", page->size, page->capacity);
         page = page->next;
     }
-    printf("\ngc collected: %lu\t time: %lu us\n", ctx.impl->gc_stat_freed, ctx.impl->gc_stat_time);
-    printf("heap size: %lu\t pages: %lu\n", ctx.impl->heap.size, ctx.impl->heap.page_count);
-    printf("symbols: %lu \n", (size_t)lisp_table_size(ctx.impl->symbol_table));
+    fprintf(ctx.impl->out_file, "\ngc collected: %lu\t time: %lu us\n", ctx.impl->gc_stat_freed, ctx.impl->gc_stat_time);
+    fprintf(ctx.impl->out_file, "heap size: %lu\t pages: %lu\n", ctx.impl->heap.size, ctx.impl->heap.page_count);
+    fprintf(ctx.impl->out_file, "symbols: %lu \n", (size_t)lisp_table_size(ctx.impl->symbol_table));
 }
 
 
@@ -2922,7 +2923,7 @@ const char* lisp_error_string(LispError error)
             return "eval error: index out of bounds";
         case LISP_ERROR_SPLICE:
             return "expand error: slicing ,@ must be in a backquoted list.";
-        case LISP_EVAL_ERROR:
+        case LISP_ERROR_RUNTIME:
             return "evaluation called (error) and it was not handled";
         default:
             return "unknown error code";
@@ -2930,12 +2931,13 @@ const char* lisp_error_string(LispError error)
 }
 
 
-LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_t page_size)
+LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_t page_size, FILE* out_file)
 {
     LispContext ctx;
     ctx.impl = malloc(sizeof(struct LispImpl));
     if (!ctx.impl) return ctx;
 
+    ctx.impl->out_file = out_file;
     ctx.impl->lambda_counter = 0;
     ctx.impl->symbol_counter = 0;
     ctx.impl->stack_ptr = 0;
@@ -2967,7 +2969,7 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
 
 LispContext lisp_init_empty(void)
 {
-    return lisp_init_empty_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
+    return lisp_init_empty_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE, stdout);
 }
 
 #ifndef LISP_NO_LIB
@@ -3059,30 +3061,31 @@ static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
     Lisp l = lisp_car(args);
     if (lisp_type(l) == LISP_STRING)
     {
-        printf("%s", lisp_string(l));
+        fputs(lisp_string(l), ctx.impl->out_file);
     }
     else
     {
-        lisp_print(l);
+        lisp_printf(ctx.impl->out_file, l);
     }
     return lisp_make_null();
 }
 
 static Lisp sch_newline(Lisp args, LispError* e, LispContext ctx)
 {
-    printf("\n"); return lisp_make_null();
+    fputs("\n", ctx.impl->out_file); return lisp_make_null();
 }
 
-static Lisp sch_assert(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
 {
-   if (!lisp_is_true(lisp_car(args)))
-   {
-       fprintf(stderr, "assertion: ");
-       lisp_printf(stderr, lisp_car(lisp_cdr(args)));
-       fprintf(stderr, "\n");
-       exit(1);
-   }
+    fflush(ctx.impl->out_file); return lisp_make_null();
+}
 
+static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
+{
+   Lisp l = lisp_car(args);
+   fputs(lisp_string(l), ctx.impl->out_file);
+
+   *e = LISP_ERROR_RUNTIME;
    return lisp_make_null();
 }
 
@@ -4058,7 +4061,7 @@ static Lisp sch_read_path(Lisp args, LispError *e, LispContext ctx)
 static const LispFuncDef lib_cfunc_defs[] = {
     
     // NON STANDARD ADDITINONS
-    { "ASSERT1", sch_assert },
+    { "ERROR", sch_error },
     { "SYNTAX-ERROR", sch_syntax_error },
     
 #ifndef LISP_NO_SYSTEM_LIB
@@ -4067,7 +4070,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
     { "DISPLAY", sch_display },
     { "NEWLINE", sch_newline },
-    // TODO: { "FLUSH-OUTPUT_PORT", sch_flush },
+    { "FLUSH-OUTPUT-PORT", sch_flush },
     
    
     // Universal Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
@@ -4335,8 +4338,12 @@ static const char* lib_code0 = "\
 
 static const char* lib_code1 = " \
 (define-macro assert \
-    (lambda (body) `(ASSERT1 ,body (quote ,body)))) \
- \
+ (lambda (body) \
+  `(if ,body '() \
+      (begin \
+       (display (quote ,body)) \
+       (error \" assert failed\"))))) \
+\
 (define-macro push \
  (lambda (v l) \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
@@ -4494,12 +4501,12 @@ static const char* lib_code2 = " \
 
 LispContext lisp_init(void)
 {
-    return lisp_init_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE);
+    return lisp_init_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE, stdout);
 }
 
-LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page_size)
+LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page_size, FILE* out_file)
 {
-    LispContext ctx = lisp_init_empty_opt(symbol_table_size, stack_depth, page_size);
+    LispContext ctx = lisp_init_empty_opt(symbol_table_size, stack_depth, page_size, out_file);
 
     Lisp table = lisp_make_table(300, ctx);
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
