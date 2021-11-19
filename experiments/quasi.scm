@@ -66,9 +66,16 @@
 (newline)
 
 
+(define-macro let2 (lambda (def-list . body)
+    (cons `(lambda
+        ,(map1 (lambda (entry) (car entry)) def-list '())
+        ,(cons 'BEGIN body))
+        (map1 (lambda (entry) (car (cdr entry))) def-list '())) ))
+
+(display (macroexpand 
+   '(let2 ((x 1) (y 2)) (set! x (+ x y)) x)))
 
 
-(define (gcd2 a b)
-  (if (= b 0)
-      a
-      (gcd2 b (modulo a b))))
+
+
+

@@ -1,5 +1,10 @@
 ; copy examples from MIT scheme documentation and add related ones.
 
+(define-macro => 
+   (lambda (test expected)
+      `(assert (equal? ,test (quote ,expected))) ))
+     
+
 ; Conditionals
 ; https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Conditionals.html
 
@@ -7,7 +12,8 @@
 (assert (and (= 2 2) (> 2 1)))
 (assert (and))
  
-(assert (equal? (reverse '(a b c)) '(c b a)))
+
+(=> (reverse '(a b c)) (c b a))
 
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
 (assert (pair? '(a . b)))
@@ -24,11 +30,9 @@
 
 (assert (eq? (list-ref '(a b c d) 2) 'c))
 
-(assert (equal? '(a b c d) (append '(a) '(b c d))))   
-
-(assert (equal? '(1 2 3 4 6) (sort '(1 4 2 6 3) <)))
-
-(assert (equal? '(1 1 1 1) (make-list 4 1)))
+(=> (append '(a) '(b c d))  (a b c d))   
+(=> (sort '(1 4 2 6 3) <) (1 2 3 4 6))
+(=> (make-list 4 1) (1 1 1 1))
 
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html
 
@@ -108,12 +112,14 @@
 (assert (odd? 7))
 (assert (not (odd? 4)))
 
+(=> (memq 'a '(a b c)) (a b c))
+(=> (memq 'b '(a b c)) (b c))
+(=> (memq 'a '(b c d)) #f)
 
 
 ;https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Construction-of-Vectors.html
-
-(assert (equal? (vector 'a 'b 'c) #(A B C)))
-(assert (equal? (list->vector '(dididit dah)) #(dididit dah)))
+(=> (vector 'a 'b 'c) #(A B C))
+(=> (list->vector '(dididit dah)) #(dididit dah))
 
 
 (assert (= (vector-binary-search #(1 2 3 4 5) < (lambda (x) x) 3) 3))
@@ -121,6 +127,5 @@
 
 
 (assert (equal? (make-initialized-vector 5 (lambda (x) (* x x))) #(0 1 4 9 16)))
-
 
 
