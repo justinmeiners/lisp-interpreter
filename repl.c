@@ -2,6 +2,7 @@
 #include <time.h>
 #include <string.h>
 
+#define LISP_DEBUG
 #define LISP_IMPLEMENTATION
 #include "lisp.h"
 
