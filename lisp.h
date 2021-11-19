@@ -2,9 +2,11 @@
  Copyright 2021 Justin Meiners (https://justinmeiners.github.io)
  License: MIT
 
- Single header style. Do this:
+ Do this:
      #define LISP_IMPLEMENTATION
- before you include this file in *one* C or C++ file to create the pementation.
+     #include "lisp.h"
+     
+ in at least one C or C++ file in order to generate the implementation.
 
  ----------------------
  QUICKSTART
