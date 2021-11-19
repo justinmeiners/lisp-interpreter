@@ -94,9 +94,7 @@ typedef enum
     LISP_ERROR_BAD_TOKEN,
     
     LISP_ERROR_FORM_SYNTAX,
-    LISP_ERROR_BAD_QUOTE,
     LISP_ERROR_BAD_DEFINE,
-    LISP_ERROR_BAD_SET,
     LISP_ERROR_BAD_MACRO,
     LISP_ERROR_BAD_LAMBDA,
     LISP_ERROR_MACRO_NO_EVAL,
@@ -2421,7 +2419,11 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     if (lisp_eq(op, get_sym(SYM_QUOTE, ctx)) && op_valid)
     {
         // don't expand quotes
-        if (lisp_list_length(l) != 2) longjmp(error_jmp, LISP_ERROR_BAD_QUOTE);
+        if (lisp_list_length(l) != 2)
+        {
+            fprintf(stderr, "(quote x)\n");
+            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+        }
         return l;
     }
     else if (lisp_eq(op, get_sym(SYM_QUASI_QUOTE, ctx)) && op_valid)
@@ -2430,7 +2432,11 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     }
     else if (lisp_eq(op, get_sym(SYM_DEFINE_MACRO, ctx)) && op_valid)
     {
-        if (lisp_list_length(l) != 3) longjmp(error_jmp, LISP_ERROR_BAD_MACRO);
+        if (lisp_list_length(l) != 3)
+        {
+            fprintf(stderr, "(define-macro name proc)\n");
+            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+        } 
 
         Lisp symbol = lisp_list_ref(l, 1);
         Lisp body = lisp_list_ref(l, 2);
@@ -2438,8 +2444,15 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
         LispError e;
         Lisp lambda = lisp_eval(body, &e, ctx);
 
-        if (e != LISP_ERROR_NONE) longjmp(error_jmp, e);
-        if (lisp_type(lambda) != LISP_LAMBDA) longjmp(error_jmp, LISP_ERROR_MACRO_NO_EVAL);
+        if (e != LISP_ERROR_NONE)
+        {
+            longjmp(error_jmp, e);
+        }
+        if (lisp_type(lambda) != LISP_LAMBDA)
+        {
+            fprintf(stderr, "(define-macro name proc) not a procedure\n");
+            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+        } 
 
         lisp_table_set(ctx.impl->macros, symbol, lambda, ctx);
         return lisp_make_null();
@@ -2488,21 +2501,23 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     else if (lisp_eq(op, get_sym(SYM_SET, ctx)) && op_valid)
     {
         if (lisp_list_length(l) != 3) {
-            lisp_print(l);
-            longjmp(error_jmp, LISP_ERROR_BAD_SET);
+            fprintf(stderr, "(set! symbol x)\n");
+            lisp_printf(stderr, l);
+            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
         }
 
         Lisp var = lisp_list_ref(l, 1);
-        if (lisp_type(var) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_SET);
+        if (lisp_type(var) != LISP_SYMBOL) {
+            fprintf(stderr, "(set! symbol x) not a symbol\n");
+            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+        }
         // continue with expansion
     }
     else if (lisp_eq(op, get_sym(SYM_LAMBDA, ctx)) && op_valid)
     {
         // (LAMBDA (<var0> ... <varN>) <expr0> ... <exprN>)
         // (LAMBDA (<var0> ... <varN>) (BEGIN <expr0> ... <expr1>)) 
-        int length = lisp_list_length(l);
-
-        if (length > 3)
+        if (lisp_list_length(l) > 3)
         {
             Lisp body_exprs = expand_r(lisp_list_advance(l, 2), error_jmp, ctx); 
             Lisp begin = lisp_cons(get_sym(SYM_BEGIN, ctx), body_exprs, ctx);
@@ -2891,14 +2906,8 @@ const char* lisp_error_string(LispError error)
             return "syntax error: bad token";
         case LISP_ERROR_BAD_DEFINE:
             return "expand error: bad define (define var x)";
-        case LISP_ERROR_BAD_SET:
-            return "expand error: bad set (set! var x)";
         case LISP_ERROR_FORM_SYNTAX:
-            return "syntax error: bad special form";
-        case LISP_ERROR_BAD_MACRO:
-            return "expand error: bad macro: (define-macro name args)";
-        case LISP_ERROR_MACRO_NO_EVAL:
-            return "expand error: macro body was not a lambda (define-macro name args)";
+            return "expand error: bad special form";
         case LISP_ERROR_BAD_LAMBDA:
             return "expand error: bad lambda";
         case LISP_ERROR_UNKNOWN_VAR:
