@@ -184,6 +184,7 @@ const char* lisp_error_string(LispError error);
 // -----------------------------------------
 #define lisp_type(x) ((x).type)
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
+int lisp_equal(Lisp a, Lisp b);
 int lisp_equal_r(Lisp a, Lisp b);
 Lisp lisp_make_null(void);
 
@@ -580,7 +581,7 @@ Lisp lisp_make_null()
     return l;
 }
 
-int lisp_equal_r(Lisp a, Lisp b)
+int lisp_equal(Lisp a, Lisp b)
 {
     if (a.type != b.type)
     {
@@ -591,19 +592,35 @@ int lisp_equal_r(Lisp a, Lisp b)
     {
         case LISP_NULL:
             return 1;
+        case LISP_BOOL:
+            return lisp_bool(a) == lisp_bool(b);
         case LISP_CHAR:
             return lisp_char(a) == lisp_char(b);
         case LISP_INT:
             return lisp_int(a) == lisp_int(b);
         case LISP_REAL:
             return lisp_real(a) == lisp_real(b);
+        default:
+            return a.val.ptr_val == b.val.ptr_val;
+    }
+}
+
+int lisp_equal_r(Lisp a, Lisp b)
+{
+    if (a.type != b.type)
+    {
+        return 0;
+    }
+
+    switch (a.type)
+    {
         case LISP_VECTOR:
         {
-            int N = lisp_vector_length(a);
-            if (lisp_vector_length(b) != N) return 0;
+            int n = lisp_vector_length(a);
+            int m = lisp_vector_length(b);
+            if (n != m) return 0;
             
-            int i;
-            for (i = 0; i < N; ++i)
+            for (int i = 0; i < n; ++i)
             {
                 if (!lisp_equal_r(lisp_vector_ref(a, i), lisp_vector_ref(b, i)))
                     return 0;
@@ -616,9 +633,7 @@ int lisp_equal_r(Lisp a, Lisp b)
             while (lisp_is_pair(a) && lisp_is_pair(b))
             {
                 if (!lisp_equal_r(lisp_car(a), lisp_car(b)))
-                {
                     return 0;
-                }
                 
                 a = lisp_cdr(a);
                 b = lisp_cdr(b);
@@ -627,7 +642,7 @@ int lisp_equal_r(Lisp a, Lisp b)
             return lisp_equal_r(a, b);
         }
         default:
-            return a.val.ptr_val == b.val.ptr_val;
+            return lisp_equal(a, b);
     }
 }
 
@@ -3094,15 +3109,19 @@ static Lisp sch_exact_eq(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
     args = lisp_cdr(args);
-    if (lisp_is_null(args)) {
-      *e = LISP_ERROR_BAD_ARG;
-      return lisp_false();
-    }
     Lisp b = lisp_car(args);
     return lisp_make_bool(lisp_eq(a, b));
 }
 
-static Lisp sch_recursive_equal(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_equal(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    return lisp_make_bool(lisp_equal(a, b));
+}
+
+static Lisp sch_equal_r(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
     args = lisp_cdr(args);
@@ -3248,6 +3267,7 @@ static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
     Lisp accum = lisp_car(args);
     args = lisp_cdr(args);
 
+    // TODO: types
     while (lisp_is_pair(args))
     {
         if (lisp_type(accum) == LISP_INT)
@@ -4114,8 +4134,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_exact_eq },
-    { "EQV?", sch_exact_eq },
-    { "EQUAL?", sch_recursive_equal },
+    { "EQV?", sch_equal },
+    { "EQUAL?", sch_equal_r },
     
     // Booleans https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Booleans.html
     
