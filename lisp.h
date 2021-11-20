@@ -83,6 +83,23 @@ typedef enum
     LISP_INTERNAL
 } LispType;
 
+typedef double LispReal;
+typedef long long LispInt;
+
+typedef union
+{
+    int char_val;
+    LispReal real_val;
+    LispInt int_val;  
+    void* ptr_val;
+} LispVal;
+
+typedef struct
+{
+    LispVal val;
+    LispType type;
+} Lisp; 
+
 typedef enum
 {
     LISP_ERROR_NONE = 0,
@@ -108,19 +125,6 @@ typedef enum
     LISP_ERROR_BAD_ARG,
     LISP_ERROR_RUNTIME,
 } LispError;
-
-typedef union
-{
-    double real_val;
-    int int_val;  
-    void* ptr_val;
-} LispVal;
-
-typedef struct
-{
-    LispVal val;
-    LispType type;
-} Lisp; 
 
 typedef struct
 {
@@ -195,11 +199,11 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 
 
 // Numbers
-Lisp lisp_make_int(int n);
-int lisp_int(Lisp x);
+Lisp lisp_make_int(LispInt n);
+LispInt lisp_int(Lisp x);
 
-Lisp lisp_make_real(double x);
-double lisp_real(Lisp x);
+Lisp lisp_make_real(LispReal x);
+LispReal lisp_real(Lisp x);
 
 // Bools
 Lisp lisp_make_bool(int t);
@@ -356,9 +360,9 @@ enum
 
 typedef struct Page
 {
+    struct Page* next;
     size_t size;
     size_t capacity;
-    struct Page* next;
     char buffer[];
 } Page;
 
@@ -528,7 +532,6 @@ static void* gc_alloc(size_t size, LispType type, LispContext ctx)
 typedef struct
 {
     Block block;
-    // store vals only for better packing
     LispVal car;
     LispVal cdr;
 } Pair;
@@ -634,7 +637,7 @@ static Table* lisp_table(Lisp t)
     return t.val.ptr_val;
 }
 
-Lisp lisp_make_int(int n)
+Lisp lisp_make_int(LispInt n)
 {
     Lisp l;
     l.type = LISP_INT;
@@ -642,10 +645,10 @@ Lisp lisp_make_int(int n)
     return l;
 }
 
-int lisp_int(Lisp x)
+LispInt lisp_int(Lisp x)
 {
     if (x.type == LISP_REAL)
-        return (int)x.val.real_val;
+        return (LispInt)x.val.real_val;
     return x.val.int_val;
 }
 
@@ -653,13 +656,13 @@ Lisp lisp_make_bool(int t)
 {
     Lisp l;
     l.type = LISP_BOOL;
-    l.val.int_val = t;
+    l.val.char_val = t;
     return l;
 }
 
 int lisp_bool(Lisp x)
 {
-    return x.val.int_val;
+    return x.val.char_val;
 }
 
 int lisp_is_true(Lisp x)
@@ -668,7 +671,7 @@ int lisp_is_true(Lisp x)
      return (lisp_type(x) == LISP_BOOL && !lisp_bool(x)) ? 0 : 1;
 }
 
-Lisp lisp_make_real(double x)
+Lisp lisp_make_real(LispReal x)
 {
     Lisp l = lisp_make_null();
     l.type = LISP_REAL;
@@ -676,10 +679,10 @@ Lisp lisp_make_real(double x)
     return l;
 }
 
-double lisp_real(Lisp x)
+LispReal lisp_real(Lisp x)
 {
     if (x.type == LISP_INT)
-        return(double)x.val.int_val;
+        return(LispReal)x.val.int_val;
     return x.val.real_val;
 }
 
@@ -1316,7 +1319,7 @@ static void lexer_init_file(Lexer* lex, FILE* file)
 
     lex->buff_size = LISP_FILE_CHUNK_SIZE;
 
-     // double input buffering
+     // LispReal input buffering
     lex->sc_buff_index = 0;
     lex->c_buff_index = 0;
 
@@ -2046,7 +2049,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
     switch (lisp_type(l))
     {
         case LISP_INT:
-            fprintf(file, "%i", lisp_int(l));
+            fprintf(file, "%lli", lisp_int(l));
             break;
         case LISP_BOOL:
             fprintf(file, "#%c", lisp_bool(l) == 0 ? 'f' : 't');
@@ -3405,7 +3408,7 @@ static Lisp sch_to_string(Lisp args, LispError* e, LispContext ctx)
             snprintf(scratch, SCRATCH_MAX, "%f", lisp_real(val));
             return lisp_make_string(scratch, ctx);
         case LISP_INT:
-            snprintf(scratch, SCRATCH_MAX, "%i", lisp_int(val));
+            snprintf(scratch, SCRATCH_MAX, "%lli", lisp_int(val));
             return lisp_make_string(scratch, ctx);
         case LISP_SYMBOL:
             return lisp_make_string(lisp_symbol_string(val), ctx);
@@ -3521,7 +3524,7 @@ static Lisp sch_string_length(Lisp args, LispError* e, LispContext ctx)
         return lisp_make_null();
     }
 
-    return lisp_make_int((int)strlen(lisp_string(x)));
+    return lisp_make_int((LispInt)strlen(lisp_string(x)));
 }
 
 static Lisp sch_string_ref(Lisp args, LispError* e, LispContext ctx)
@@ -3534,7 +3537,7 @@ static Lisp sch_string_ref(Lisp args, LispError* e, LispContext ctx)
         return lisp_make_null();
     }
 
-    return lisp_make_int((int)lisp_string_ref(str, lisp_int(index)));
+    return lisp_make_char((int)lisp_string_ref(str, lisp_int(index)));
 }
 
 static Lisp sch_string_set(Lisp args, LispError* e, LispContext ctx)
@@ -3686,37 +3689,37 @@ static Lisp sch_is_even(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_exp(Lisp args, LispError* e, LispContext ctx)
 {
-    double x = exp(lisp_real(lisp_car(args)));
+    LispReal x = exp(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_log(Lisp args, LispError* e, LispContext ctx)
 {
-    double x = log(lisp_real(lisp_car(args)));
+    LispReal x = log(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_sin(Lisp args, LispError* e, LispContext ctx)
 {
-    double x = sin(lisp_real(lisp_car(args)));
+    LispReal x = sin(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_cos(Lisp args, LispError* e, LispContext ctx)
 {
-    double x = cos(lisp_real(lisp_car(args)));
+    LispReal x = cos(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_tan(Lisp args, LispError* e, LispContext ctx)
 {
-    double x = tan(lisp_real(lisp_car(args)));
+    LispReal x = tan(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
 static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
 {
-    double x = sqrt(lisp_real(lisp_car(args)));
+    LispReal x = sqrt(lisp_real(lisp_car(args)));
     return lisp_make_real(x);
 }
 
@@ -3752,7 +3755,7 @@ static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
     switch (lisp_type(lisp_car(args)))
     {
         case LISP_INT:
-            return lisp_make_int(abs(lisp_int(lisp_car(args))));
+            return lisp_make_int(llabs(lisp_int(lisp_car(args))));
         case LISP_REAL:
             return lisp_make_real(fabs(lisp_real(lisp_car(args))));
         default:
