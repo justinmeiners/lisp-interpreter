@@ -2,6 +2,9 @@
 ; check that we can load an interact with this file
 
 (let ((data (read-path "big_data_gen.sexpr")))
+    (gc-flip)
+    (print-gc-statistics)
+    (newline)
     (display "records: ")
     (display (length data))
     (newline)
@@ -14,6 +17,13 @@
 (newline)
 
 (let ((data (read-path "big_data_canada.sexpr")))
+    (gc-flip)
+    (print-gc-statistics)
+    (newline)
     (display "records: ")
     (display (vector-length data)))
+
+(gc-flip)
+(print-gc-statistics)
+
 

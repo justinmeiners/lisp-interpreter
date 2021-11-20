@@ -81,10 +81,9 @@
 
 (assert (= (abs -1) 1))
 
-(assert (equal? '(3 3 3) (map + '(1 1 1) '(2 2 2))))
-
-(assert (equal? '(1 2 3) (map abs '(-1 -2 3))))
-(assert (equal? #(1 2 3) (vector-map abs #(-1 -2 3))))
+(=> (map + '(1 1 1) '(2 2 2)) (3 3 3))
+(=> (map abs '(-1 -2 3)) (1 2 3))
+(=> (vector-map abs #(-1 -2 3)) #(1 2 3))
 
 ; Numbers
 (assert (integer? 3))
@@ -122,10 +121,15 @@
 (=> (list->vector '(dididit dah)) #(dididit dah))
 
 
+
 (assert (= (vector-binary-search #(1 2 3 4 5) < (lambda (x) x) 3) 3))
 (assert (null? (vector-binary-search #(1 2 2 4 5) < (lambda (x) x) 3)))
 
 
-(assert (equal? (make-initialized-vector 5 (lambda (x) (* x x))) #(0 1 4 9 16)))
+(define v (vector 1 1 2))
+(vector-fill! v 3)
+(=> v #(3 3 3))
+
+(=> (make-initialized-vector 5 (lambda (x) (* x x))) #(0 1 4 9 16))
 
 
