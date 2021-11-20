@@ -534,6 +534,13 @@ typedef struct
     LispVal entries[];
 } Table;
 
+static Lisp _table_ref(const Table* table, int i)
+{
+    LispVal val = table->entries[i];
+    Lisp existing = { val, val.ptr_val == NULL ? LISP_NULL : LISP_PAIR };
+    return existing;
+}
+
 Lisp lisp_make_null()
 {
     Lisp l;
@@ -601,7 +608,7 @@ static Table* lisp_table(Lisp t)
 
 Lisp lisp_make_int(int n)
 {
-    Lisp l = lisp_make_null();
+    Lisp l;
     l.type = LISP_INT;
     l.val.int_val = n;
     return l;
@@ -616,7 +623,7 @@ int lisp_int(Lisp x)
 
 Lisp lisp_make_bool(int t)
 {
-    Lisp l = lisp_make_null();
+    Lisp l;
     l.type = LISP_BOOL;
     l.val.int_val = t;
     return l;
@@ -1063,7 +1070,7 @@ const char* lisp_symbol_string(Lisp l)
 
 Lisp lisp_make_char(int c)
 {
-    Lisp l = lisp_make_null();
+    Lisp l;
     l.type = LISP_CHAR;
     l.val.int_val = c;
     return l;
@@ -1089,23 +1096,22 @@ static unsigned int symbol_hash(Lisp l)
 static Lisp table_get_string(Lisp l, const char* string, unsigned int hash)
 {
     Table* table = lisp_table(l);
-    unsigned int index = hash % table->capacity;
+    unsigned int i = hash % table->capacity;
 
-    Lisp it = table->entries[index];
+    Lisp it = _table_ref(table, i);
 
     while (!lisp_is_null(it))
     {
         Lisp pair = lisp_car(it);
         Lisp symbol = lisp_car(pair);
 
+        // TODO: max?
         if (strncasecmp(lisp_symbol_string(symbol), string, 2048) == 0)
         {
             return pair;
         }
-
         it = lisp_cdr(it);
     }
-
     return lisp_make_null();
 }
 
@@ -1922,25 +1928,20 @@ void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
     Table* table = lisp_table(t);
     unsigned int i = symbol_hash(key) % table->capacity;
 
-    Lisp existing = { table->entries[i], LISP_PAIR };
-    if (existing.ptr_val == NULL)
-    {
-        existing.type = LISP_NULL;
-    }
-
+    Lisp existing = _table_ref(table, i);
     Lisp pair = lisp_list_assq(existing, key);
 
     if (lisp_is_null(pair))
     {
         // new value. prepend to front of chain
-        pair = lisp_cons(key, value, ctx);
-        table->entries[i] = lisp_cons(pair, table->entries[i], ctx);
+        pair = lisp_cons(key, x, ctx);
+        table->entries[i] = lisp_cons(pair, existing, ctx).val;
         ++table->size;
     }
     else
     {
         // reassign cdr value (key, val)
-        lisp_set_cdr(pair, value);
+        lisp_set_cdr(pair, x);
     }
 }
 
@@ -1948,15 +1949,7 @@ Lisp lisp_table_get(Lisp t, Lisp symbol, LispContext ctx)
 {
     const Table* table = lisp_table(t);
     unsigned int i = symbol_hash(symbol) % table->capacity;
-    Lisp existing = { table->entries[i], LISP_PAIR };
-    if (existing.ptr_val == NULL)
-    {
-        return lisp_make_null();
-    }
-    else
-    {
-        return lisp_list_assq(existing, symbol);
-    }
+    return lisp_list_assq(_table_ref(table, i), symbol);
 }
 
 Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx)
@@ -1964,10 +1957,9 @@ Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx)
     const Table* table = lisp_table(t);
     Lisp result = lisp_make_null();
     
-    int i;
-    for (i = 0; i < table->capacity; ++i)
+    for (int i = 0; i < table->capacity; ++i)
     {
-        Lisp it = table->entries[i];
+        Lisp it = _table_ref(table, i);
         while (!lisp_is_null(it))
         {
             result = lisp_cons(lisp_car(it), result, ctx);
@@ -2076,8 +2068,9 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             fprintf(file, "{");
             for (int i = 0; i < table->capacity; ++i)
             {
-                if (lisp_is_null(table->entries[i])) continue;
-                lisp_print_r(file, table->entries[i], 0);
+                Lisp entry = _table_ref(table, i);
+                if (lisp_is_null(entry)) continue;
+                lisp_print_r(file, entry, 0);
                 fprintf(file, " ");
             }
             fprintf(file, "}");
@@ -2754,9 +2747,9 @@ static LispVal gc_move_val(LispVal val, LispType type, Heap* to)
                 
                 for (unsigned int i = 0; i < table->capacity; ++i)
                 {
-                    Lisp it = { table->entries[i], LISP_PAIR };
+                    Lisp it = _table_ref(table, i);
                     
-                    while (it.val.ptr_val != NULL)
+                    while (!lisp_is_null(it))
                     {
                         unsigned int new_index = i;
                         
@@ -2766,14 +2759,13 @@ static LispVal gc_move_val(LispVal val, LispType type, Heap* to)
                         // allocate a new pair in the to space
                         Pair* cons_block = heap_alloc(sizeof(Pair), LISP_PAIR, to);
                         cons_block->block.gc_flags = GC_VISITED;
-                        cons_block->car = gc_move_val(lisp_car(it).val, LISP_PAIR, to)
+                        cons_block->car = gc_move_val(lisp_car(it).val, LISP_PAIR, to);
                         cons_block->car_type = LISP_PAIR;
-                        cons_block->cdr = dest->table->entries[new_index];
-                        cons_block->cdr_type = LISP_PAIR;
-                        
-                        LispVal new_pair;
-                        new_pair.ptr_val = cons_block;
-                        dest_table->entries[new_index] = new_pair.val;
+                
+                        Lisp existing = _table_ref(dest_table, new_index);
+                        cons_block->cdr = existing.val; 
+                        cons_block->cdr_type = existing.type;
+                        dest_table->entries[new_index].ptr_val = cons_block;
                         it = lisp_cdr(it);
                     }
                 }
