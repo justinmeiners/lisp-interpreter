@@ -719,8 +719,23 @@ Lisp lisp_car(Lisp p)
     return x;
 }
 
+#include <execinfo.h>
+void print_trace(void) {
+    char **strings;
+    size_t i, size;
+    enum Constexpr { MAX_SIZE = 1024 };
+    void *array[MAX_SIZE];
+    size = backtrace(array, MAX_SIZE);
+    strings = backtrace_symbols(array, size);
+    for (i = 0; i < size; i++)
+        printf("%s\n", strings[i]);
+    puts("");
+    free(strings);
+}
+
 Lisp lisp_cdr(Lisp p)
 {
+    if (p.type != LISP_PAIR) print_trace();
     assert(p.type == LISP_PAIR);
     const Pair* pair = p.val.ptr_val;
     Lisp x = { pair->cdr, (LispType)pair->block.d.pair.cdr_type };
@@ -2905,7 +2920,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         int n = _vector_len(vector);
                         char* entry_types = _vector_types(vector);
                         for (int i = 0; i < n; ++i)
-                            gc_move_val(vector->entries[i], entry_types[i], to);
+                            vector->entries[i] = gc_move_val(vector->entries[i], entry_types[i], to);
                         break;
                     }
                     case LISP_LAMBDA:
