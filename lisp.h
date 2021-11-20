@@ -444,11 +444,22 @@ static void heap_shutdown(Heap* heap)
     heap->bottom = NULL;
 }
 
+static size_t align_to_bytes(size_t n, size_t k)
+{
+    // https://stackoverflow.com/questions/29925524/how-do-i-round-to-the-next-32-bit-alignment
+    return ((n + k - 1) / k) * k;
+}
+
 static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
-    Page* to_use;
-    
     assert(alloc_size > 0);
+
+    // allocations should be aligned so that pointers to blocks are aligned. 
+    // This will add a little bit of extra padding to strings and symbols.
+    alloc_size = align_to_bytes(alloc_size, sizeof(LispVal));
+    assert(alloc_size % sizeof(LispVal) == 0);
+
+    Page* to_use;
     if (alloc_size >= heap->page_size)
     {
         /* add to bottom of stack.
@@ -2921,6 +2932,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
               while (offset < page->size)
               {
                   Block* block = (Block*)(page->buffer + offset);
+                  assert(block->info.size % sizeof(LispVal) == 0);
                   offset += block->info.size;
               }
               assert(offset == page->size);
