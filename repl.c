@@ -137,6 +137,8 @@ int main(int argc, const char* argv[])
        }
     }
 
+    lisp_shutdown(ctx);
+
     return 0;
 }
 

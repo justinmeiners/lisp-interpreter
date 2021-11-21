@@ -429,6 +429,7 @@ static void heap_shutdown(Heap* heap)
         page = next;
     }
     heap->bottom = NULL;
+    heap->top = NULL;
 }
 
 static size_t align_to_bytes(size_t n, size_t k)
@@ -464,7 +465,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
          need a new page because ours is full */
         to_use = page_create(heap->page_size);
         heap->top->next = to_use;
-        heap->top = heap->top->next;
+        heap->top = to_use; 
         ++heap->page_count;
     }
     else
@@ -502,7 +503,6 @@ struct LispImpl
 {
     FILE* out_file;
     Heap heap;
-    Heap to_heap;
 
     Lisp* stack;
     size_t stack_ptr;
@@ -2832,21 +2832,21 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
     time_t start_time = clock();
 
-    Heap* to = &ctx.p->to_heap;
-    heap_init(to, ctx.p->heap.page_size);
+    Heap to;
+    heap_init(&to, ctx.p->heap.page_size);
 
     // move root object
-    ctx.p->symbol_table = gc_move(ctx.p->symbol_table, to);
-    ctx.p->global_env = gc_move(ctx.p->global_env, to);
-    ctx.p->macros = gc_move(ctx.p->macros, to);
+    ctx.p->symbol_table = gc_move(ctx.p->symbol_table, &to);
+    ctx.p->global_env = gc_move(ctx.p->global_env, &to);
+    ctx.p->macros = gc_move(ctx.p->macros, &to);
 
-    gc_move_v(ctx.p->symbol_cache, SYM_COUNT, to);
-    gc_move_v(ctx.p->stack, ctx.p->stack_ptr, to);
+    gc_move_v(ctx.p->symbol_cache, SYM_COUNT, &to);
+    gc_move_v(ctx.p->stack, ctx.p->stack_ptr, &to);
 
-    Lisp result = gc_move(root_to_save, to);
+    Lisp result = gc_move(root_to_save, &to);
 
     // move references
-    const Page* page = to->bottom;
+    const Page* page = to.bottom;
     int page_counter = 0;
     while (page)
     {
@@ -2858,14 +2858,14 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
             {
                 switch (block->type)
                 {
-                    // these add to the buffer!
+                    // these add &to the buffer!
                     // so lists are handled in a single pass
                     case LISP_PAIR:
                     {
                         // move the CAR and CDR
                         Pair* pair = (Pair*)block;
-                        pair->car = gc_move_val(pair->car, pair->block.d.pair.car_type, to);
-                        pair->cdr = gc_move_val(pair->cdr, pair->block.d.pair.cdr_type, to);
+                        pair->car = gc_move_val(pair->car, pair->block.d.pair.car_type, &to);
+                        pair->cdr = gc_move_val(pair->cdr, pair->block.d.pair.cdr_type, &to);
                         break;
                     }
                     case LISP_VECTOR:
@@ -2874,16 +2874,16 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         int n = _vector_len(vector);
                         char* entry_types = _vector_types(vector);
                         for (int i = 0; i < n; ++i)
-                            vector->entries[i] = gc_move_val(vector->entries[i], entry_types[i], to);
+                            vector->entries[i] = gc_move_val(vector->entries[i], entry_types[i], &to);
                         break;
                     }
                     case LISP_LAMBDA:
                     {
                         // move the body and args
                         Lambda* lambda = (Lambda*)block;
-                        lambda->args = gc_move(lambda->args, to);
-                        lambda->body = gc_move(lambda->body, to);
-                        lambda->env = gc_move(lambda->env, to);
+                        lambda->args = gc_move(lambda->args, &to);
+                        lambda->body = gc_move(lambda->body, &to);
+                        lambda->env = gc_move(lambda->env, &to);
                         break;
                     }
                     default: break;
@@ -2896,12 +2896,12 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
         ++page_counter;
     }
     // check that we visited all the pages
-    assert(page_counter == to->page_count);
+    assert(page_counter == &to->page_count);
     
 #ifdef LISP_DEBUG
      {
           // DEBUG, check offsets
-          const Page* page = to->bottom;
+          const Page* page = &to->bot&tom;
           while (page)
           {
               size_t offset = 0;
@@ -2917,15 +2917,11 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     }
 #endif
     
-    size_t diff = ctx.p->heap.size - ctx.p->to_heap.size;
+    size_t diff = ctx.p->heap.size - to.size;
 
     // swap the heaps
-    Heap temp = ctx.p->heap;
-    ctx.p->heap = ctx.p->to_heap;
-    ctx.p->to_heap = temp;
-    
-    // reset the heap
-    heap_shutdown(&ctx.p->to_heap);
+    heap_shutdown(&ctx.p->heap);
+    ctx.p->heap = to;
     
     time_t end_time = clock();
     ctx.p->gc_stat_freed = diff;
@@ -2960,7 +2956,6 @@ void lisp_env_set_global(Lisp env, LispContext ctx)
 void lisp_shutdown(LispContext ctx)
 {
     heap_shutdown(&ctx.p->heap);
-    heap_shutdown(&ctx.p->to_heap);
     free(ctx.p->stack);
     free(ctx.p);
 }
@@ -3025,7 +3020,6 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
     ctx.p->gc_stat_time = 0;
     
     heap_init(&ctx.p->heap, page_size);
-    heap_init(&ctx.p->to_heap, page_size);
 
     ctx.p->symbol_table = lisp_make_table(symbol_table_size, ctx);
     ctx.p->global_env = lisp_make_null();
