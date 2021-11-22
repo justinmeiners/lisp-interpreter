@@ -17,9 +17,9 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 - **Data & Code**: Lisp s-expressions are undervalued as an alternative to JSON or XML.
     This implementation provides first-class support for working with data or code.
 
-- **Unintrusive**: Just copy in the header and source file.
-    Source code should be portable between major platforms.
+- **Unintrusive**: Just copy in the header file.
     Turn on and off major features with build macros.
+    It should be portable between major platforms.
 
 - **Unsurprising**: You should be able to read the source code and understand how it works.
   The header API should work how you expect.
@@ -29,8 +29,8 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 - Core scheme language: if, let, do, lambda, cons, car, eval, symbols, etc.
 - Data structures: lists, vectors, hash tables, integers, real numbers, characters, strings, and integers.
-- Standard library: subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html).
-  (If we choose to implement a feature, and it exists in MIT Scheme, we will try to follow their conventions.)
+- Standard library: subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html)
+  with Common Lisp features (like `push`) mixed in.
 - Exact [garbage collection](#garbage-collection) with explicit invocation.
 - Common lisp style unhygenic macros: `define-macro`.
 - Single header file.
