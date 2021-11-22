@@ -32,11 +32,11 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 - Standard library: subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html).
   (If we choose to implement a feature, and it exists in MIT Scheme, we will try to follow their conventions.)
 - Exact [garbage collection](#garbage-collection) with explicit invocation.
-- Common lisp style unhygenic macros `define-macro`.
-- Single header and source file.
+- Common lisp style unhygenic macros: `define-macro`.
+- Single header file.
 - Easy integration of C functions.
 - REPL command line tool.
-- Efficient data loading and manipulation.
+- Efficient parsing and manipulation of large data files.
 
 ### Non-Features
 
@@ -88,7 +88,7 @@ Looking up keys which are reused is even more efficient due to symbol comparison
 JSON
 ```json
 {
-   "name" : "bob jones",
+   "name" : "Bob Jones",
    "age" : 54,
    "city" : "SLC",
 }
@@ -96,9 +96,9 @@ JSON
 
 Lisp
 ```scheme
-#((name . "bob jones")
-    (age . 54)
-    (city . "SLC"))
+((name . "Bob Jones")
+ (age . 54)
+ (city . "SLC"))
 ```
 Loading the structure in C.
 
@@ -161,7 +161,7 @@ In Lisp
 Constants can also be stored in the environment in a similar fashion.
 
 ```c
-Lisp pi = lisp_make_float(3.1415);
+Lisp pi = lisp_make_real(3.1415);
 lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
 ```
 ## Macros
@@ -169,7 +169,7 @@ lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
 Common Lisp style (`defmacro`) is available with the name `define-macro`.
 
     (define-macro nil! (lambda (x)
-      `(set! x '()))
+      `(set! ,x '()))
 
 ## Garbage Collection
 
