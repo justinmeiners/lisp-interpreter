@@ -38,6 +38,101 @@
 (assert (= (largest-squares 3 4 5) (+ 25 16)))
 (assert (= (largest-squares 3 5 4) (+ 25 16)))
 
+; 1.09 - peano arithemetic
+(define (inc x) (+ x 1))
+(define (dec x) (- x 1))
+
+(define (peano-add a b)
+    (if (= a 0)
+        b
+        (peano-add (dec a) (inc b))))
+
+(assert (= (peano-add 4 5) 9))
+(assert (= (peano-add 20 10) 30))
+(assert (= (peano-add 100000 200000) 300000))
+
+
+; 1.14 change counter
+
+(define (count-change amount) (cc amount 5))
+
+(define (cc amount kinds-of-coins)
+    (cond ((= amount 0) 1)
+          ((or (< amount 0) (= kinds-of-coins 0)) 0)
+            (else (+ (cc amount
+                    (- kinds-of-coins 1))
+                    (cc (- amount 
+                        (first-denomination kinds-of-coins))
+                        kinds-of-coins)))))
+
+(define (first-denomination kinds-of-coins)
+    (cond ((= kinds-of-coins 1) 1)
+          ((= kinds-of-coins 2) 5)
+          ((= kinds-of-coins 3) 10)
+          ((= kinds-of-coins 4) 25)
+          ((= kinds-of-coins 5) 50)))
+
+(display "counting change: ")
+(display (count-change 75))
+(newline)
+
+; 1.16 - fast powers
+
+(define (exp-fast b n) (exp-iter b n 1))
+
+(define (exp-iter b n product)
+  (cond ((= n 0) product)
+    ; b^n = (b^2) n/2
+    ((even? n) (exp-iter (* b b) (/ n 2) product))
+    ; b^n = b * b^n-1
+    (else (exp-iter b (- n 1) (* product b)))))
+
+(assert (= (exp-fast 5 4) 625))
+(assert (= (exp-fast 2 8) 256))
+
+; 1.17 - fast multiply
+
+(define (double a) (+ a a))
+(define (halve a) (/ a 2))
+
+(define (fast-mul a b) (fast-mul-iter a b 0))
+
+(define (fast-mul-iter a b sum)
+  (cond ((= b 0) sum)
+    ((even? b) (fast-mul-iter (double a) (halve b) sum))
+    (else (fast-mul-iter a (- b 1) (+ sum a)))))
+
+(assert (= (fast-mul 3 4) 12))
+(assert (= (fast-mul 100 10) 1000))
+
+; 1.19  fibonacci
+
+(define (fib-helper n a b p q)
+  (cond
+       ((= n 0) b)
+       ((even? n) (fib-helper (/ n 2)
+                              a
+                              b
+                              (+  (* p p) (* q q))
+                              (+ (* 2 q p) (* q q ))
+                              ))
+
+       (else
+          (fib-helper
+            (- n 1)
+            (+ (* b q) (* a q) (* a p))
+            (+ (* b p) (* a q))
+            p
+            q))))
+
+(define (fib n)
+    (fib-helper n 1 0 0 1))
+
+(assert (= (fib 5) 5))
+(assert (= (fib 7) 13))
+(assert (= (fib 8) 21))
+
+
 
 ; 2.21 - square list
 
@@ -79,4 +174,5 @@
   (if (or (= a 1) (garbage here))
     'pass
     (assert 0)))
+
 
