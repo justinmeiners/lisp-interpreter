@@ -4522,6 +4522,37 @@ static const char* lib_code2 = " \
 (define sort quicksort-list) \
 \
 (define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) \
+\
+(define (quicksort-partition v lo hi op) \
+  (let ((pivot (vector-ref v (/ (+ lo hi) 2)))) \
+    (do ((i (- lo 1) (+ i 0)) (j (+ hi 1) (+ j 0))) \
+      ((>= i j) j) \
+      (begin \
+        (set! i (+ i 1)) \
+        (do ((x 0 (+ x 0))) \
+          ((or (>= i hi) (not (op (vector-ref v i) pivot))) 'nil) \
+          (set! i (+ i 1))) \
+        (set! i (min i hi)) \
+        (set! j (- j 1)) \
+        (do ((x 0 (+ x 0))) \
+          ((or (<= j lo) (op (vector-ref v j) pivot)) 'nil) \
+          (set! j (- j 1))) \
+        (set! j (max j lo)) \
+        (if (< i j) \
+         (let ((tmp (vector-ref v i))) \
+           (vector-set! v i (vector-ref v j)) \
+           (vector-set! v j tmp)) \
+         '()))))) \
+\
+(define (quicksort-vector v lo hi op) \
+  (if (and (>= lo 0) (>= hi 0) (< lo hi)) \
+    (let ((p (quicksort-partition v lo hi op))) \
+      (quicksort-vector v lo p op) \
+      (quicksort-vector v (+ p 1) hi op)))) \
+\
+(define (sort! v op) \
+  (quicksort-vector v 0 (- (vector-length v) 1) op) \
+  v) \
 ";
 
 LispContext lisp_init(void)
