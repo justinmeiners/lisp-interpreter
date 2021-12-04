@@ -4317,7 +4317,7 @@ static const char* lib_code0 = "\
     (if (not (pair? entry)) (syntax-error \"bad let entry\" entry)) \
     (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) def-list) \
   (cons `(lambda \
-    ,(map1 (lambda (entry) (car entry)) def-list '())  \
+    ,(map1 (lambda (entry) (car entry)) def-list '()) \
     ,(cons 'BEGIN body)) \
     (map1 (lambda (entry) (car (cdr entry))) def-list '())) )) \
 \
@@ -4379,7 +4379,7 @@ static const char* lib_code1 = " \
         (inits '()) \
         (steps '()) \
         (f (gensym))) \
-   (for-each1 (lambda (var)  \
+   (for-each1 (lambda (var) \
                (push (car var) names) \
                (set! var (cdr var)) \
                (push (car var) inits) \
@@ -4390,7 +4390,7 @@ static const char* lib_code1 = " \
             (set! ,f (lambda ,names \
                       (if ,(car loop-check) \
                        ,(car (cdr loop-check)) \
-                       ,(cons 'BEGIN (list loop (cons f steps))) )))    \
+                       ,(cons 'BEGIN (list loop (cons f steps))) ))) \
             ,(cons f inits) \
            )) '()) ))) \
 \
@@ -4512,8 +4512,8 @@ static const char* lib_code2 = " \
               (helper mid high 0))))) \
   (helper 0 (vector-length v) 0)) \
 \
-(define (quicksort-list l op)  \
-  (if (null? l) '()  \
+(define (quicksort-list l op) \
+  (if (null? l) '() \
       (append (quicksort-list (filter (lambda (x) (op x (car l))) \
                                  (cdr l)) op) \
               (list (car l)) \
