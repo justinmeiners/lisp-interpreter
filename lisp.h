@@ -1039,8 +1039,8 @@ Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx)
     int n = end - start;
     Lisp new_v = lisp_make_vector(n, lisp_make_null(), ctx);
     Vector* dst = vector_get_(new_v);
-    memcpy(dst->entries, src->entries, sizeof(LispVal) * n);
-    memcpy(_vector_types(dst), _vector_types(src), sizeof(char) * n);
+    memcpy(dst->entries, src->entries + start, sizeof(LispVal) * n);
+    memcpy(_vector_types(dst), _vector_types(src) + start, sizeof(char) * n);
     return new_v;
 }
 
@@ -4139,7 +4139,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SUBVECTOR", sch_subvector },
     { "LIST->VECTOR", sch_list_to_vector },
     { "VECTOR->LIST", sch_vector_to_list },
-    // TODO: sort
 
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
     { "STRING?", sch_is_string },
@@ -4317,7 +4316,7 @@ static const char* lib_code0 = "\
     (if (not (pair? entry)) (syntax-error \"bad let entry\" entry)) \
     (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) def-list) \
   (cons `(lambda \
-    ,(map1 (lambda (entry) (car entry)) def-list '())  \
+    ,(map1 (lambda (entry) (car entry)) def-list '()) \
     ,(cons 'BEGIN body)) \
     (map1 (lambda (entry) (car (cdr entry))) def-list '())) )) \
 \
@@ -4379,7 +4378,7 @@ static const char* lib_code1 = " \
         (inits '()) \
         (steps '()) \
         (f (gensym))) \
-   (for-each1 (lambda (var)  \
+   (for-each1 (lambda (var) \
                (push (car var) names) \
                (set! var (cdr var)) \
                (push (car var) inits) \
@@ -4390,7 +4389,7 @@ static const char* lib_code1 = " \
             (set! ,f (lambda ,names \
                       (if ,(car loop-check) \
                        ,(car (cdr loop-check)) \
-                       ,(cons 'BEGIN (list loop (cons f steps))) )))    \
+                       ,(cons 'BEGIN (list loop (cons f steps))) ))) \
             ,(cons f inits) \
            )) '()) ))) \
 \
@@ -4512,8 +4511,8 @@ static const char* lib_code2 = " \
               (helper mid high 0))))) \
   (helper 0 (vector-length v) 0)) \
 \
-(define (quicksort-list l op)  \
-  (if (null? l) '()  \
+(define (quicksort-list l op) \
+  (if (null? l) '() \
       (append (quicksort-list (filter (lambda (x) (op x (car l))) \
                                  (cdr l)) op) \
               (list (car l)) \
@@ -4522,6 +4521,27 @@ static const char* lib_code2 = " \
 (define sort quicksort-list) \
 \
 (define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) \
+\
+(define (quicksort-partition v lo hi op) \
+  (let ((pivot hi) (i (- lo 1))) \
+    (do ((j lo (+ j 1))) \
+      ((> j hi) i) \
+      (if (or (= j pivot) (op (vector-ref v j) (vector-ref v pivot))) \
+        (begin \
+          (set! i (+ i 1)) \
+          (let ((tmp (vector-ref v i))) \
+            (vector-set! v i (vector-ref v j)) \
+            (vector-set! v j tmp))))))) \
+\
+(define (quicksort-vector v lo hi op) \
+  (if (and (>= lo 0) (>= hi 0) (< lo hi)) \
+    (let ((p (quicksort-partition v lo hi op))) \
+      (quicksort-vector v lo (- p 1) op) \
+      (quicksort-vector v (+ p 1) hi op)))) \
+\
+(define (sort! v op) \
+  (quicksort-vector v 0 (- (vector-length v) 1) op) \
+  v) \
 ";
 
 LispContext lisp_init(void)
