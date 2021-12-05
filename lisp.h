@@ -4410,6 +4410,10 @@ static const char* lib_code1 = " \
 (define (char>? a b) (char<? b a)) \
 (define (char<=? a b) (not (char<? b a))) \
 \
+(define (string>=? a b) (not (string<? a b))) \
+(define (string>? a b) (string<? b a)) \
+(define (string<=? a b) (not (string<? b a))) \
+\
 (define (last-pair x) \
  (if (pair? (cdr x)) \
   (last-pair (cdr x)) x)) \
