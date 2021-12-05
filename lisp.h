@@ -3342,24 +3342,20 @@ static Lisp sch_divide(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_less(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp accum = lisp_car(args);
+    Lisp a = lisp_car(args);
     args = lisp_cdr(args);
-    int result = 0;
+    Lisp b = lisp_car(args);
 
-    if (lisp_type(accum) == LISP_INT)
+    switch (lisp_type(a))
     {
-        result = lisp_int(accum) < lisp_int(lisp_car(args));
+        case LISP_INT:
+            return lisp_make_bool(lisp_int(a) < lisp_int(b));
+        case LISP_REAL:
+            return lisp_make_bool(lisp_real(a) < lisp_real(b));
+        default:
+            *e = LISP_ERROR_BAD_ARG;
+            return lisp_make_null();
     }
-    else if (lisp_type(accum) == LISP_REAL)
-    {
-        result = lisp_real(accum) < lisp_real(lisp_car(args));
-    }
-    else
-    {
-        *e = LISP_ERROR_BAD_ARG;
-        return lisp_make_null();
-    }
-    return lisp_make_bool(result);
 }
 
 static Lisp sch_to_exact(Lisp args, LispError* e, LispContext ctx)
@@ -3610,6 +3606,14 @@ static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
         l = lisp_cdr(l);
     }
     return result;
+}
+
+static Lisp sch_char_less(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    return lisp_make_bool(lisp_char(a) < lisp_char(b));
 }
 
 static Lisp sch_is_char(Lisp args, LispError* e, LispContext ctx)
@@ -4158,7 +4162,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Characters https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Characters.html#Characters
     { "CHAR?", sch_is_char },
     { "CHAR=?", sch_equals },
-    { "CHAR<?", sch_less },
+    { "CHAR<?", sch_char_less },
     { "CHAR-UPCASE", sch_char_upcase },
     { "CHAR-DOWNCASE", sch_char_downcase },
     { "CHAR-WHITESPACE?", sch_char_is_white },
@@ -4400,7 +4404,15 @@ static const char* lib_code1 = " \
  \
 (define (>= a b) (not (< a b))) \
 (define (> a b) (< b a)) \
-(define (<= a b) (not (> a b))) \
+(define (<= a b) (not (< b a))) \
+\
+(define (char>=? a b) (not (char<? a b))) \
+(define (char>? a b) (char<? b a)) \
+(define (char<=? a b) (not (char<? b a))) \
+\
+(define (string>=? a b) (not (string<? a b))) \
+(define (string>? a b) (string<? b a)) \
+(define (string<=? a b) (not (string<? b a))) \
 \
 (define (last-pair x) \
  (if (pair? (cdr x)) \
