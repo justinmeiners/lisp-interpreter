@@ -64,17 +64,18 @@ extern "C" {
 typedef enum
 {
     LISP_NULL = 0,
-    LISP_REAL,  // decimal/floating point type
-    LISP_INT,    // integer type
-    LISP_CHAR,
-    LISP_PAIR,   // cons pair (car, cdr)
-    LISP_SYMBOL, // unquoted strings
-    LISP_STRING, // quoted strings
-    LISP_LAMBDA, // user defined lambda
-    LISP_FUNC,   // C function
-    LISP_TABLE,  // key/value storage
-    LISP_BOOL,
-    LISP_VECTOR, // heterogenous array but contiguous allocation
+    LISP_REAL,    // decimal/floating point type
+    LISP_INT,     // integer type
+    LISP_CHAR,    // ASCII character
+    LISP_PAIR,    // cons pair (car, cdr)
+    LISP_SYMBOL,  // unquoted strings
+    LISP_STRING,  // quoted strings
+    LISP_LAMBDA,  // user defined lambda
+    LISP_FUNC,    // C function
+    LISP_TABLE,   // key/value storage
+    LISP_BOOL,    // t/f
+    LISP_VECTOR,  // heterogenous array but contiguous allocation
+    LISP_PROMISE, // lazy value
     LISP_INTERNAL
 } LispType;
 
@@ -277,14 +278,15 @@ Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx);
 // LANGUAGE
 // -----------------------------------------
 
-// compound procedures
+// Lambdas (compound procedures)
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
 Lisp lisp_lambda_env(Lisp l);
 
-// C functions
+// C functions (compiled procedures)
 Lisp lisp_make_func(LispCFunc func_ptr);
 LispCFunc lisp_func(Lisp l);
-// This struct and function are a convenience for defining many C functions at a time. 
+
+// Convenience for defining many C functions at a time. 
 typedef struct
 {
     const char* name;
@@ -303,6 +305,14 @@ void lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
 
 // Macros
 Lisp lisp_macro_table(LispContext ctx);
+
+// Promises
+Lisp lisp_make_promise(Lisp proc, LispContext ctx);
+int lisp_promise_forced(Lisp p);
+Lisp lisp_promise_val(Lisp p);
+Lisp lisp_promise_proc(Lisp p);
+void lisp_promise_store(Lisp p, Lisp x);
+
 
 #ifdef __cplusplus
 }
@@ -402,6 +412,12 @@ typedef struct Block
         {
             int length;
         } vector;
+
+        struct
+        {
+            uint8_t cached;
+            uint8_t type;
+        } promise;
     } d;
 
     // 32 or 64
@@ -553,6 +569,13 @@ typedef struct
     Block block;
     LispVal entries[];
 } Vector;
+
+typedef struct
+{
+    Block block;
+    LispVal val_or_proc;
+} Promise;
+
 
 // hash table
 // linked list chaining
@@ -1062,6 +1085,53 @@ Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx)
         memcpy(_vector_types(dst), _vector_types(src), sizeof(char) * m);
         return new_v;
     }
+}
+
+Lisp lisp_make_promise(Lisp proc, LispContext ctx)
+{
+    assert(lisp_type(proc) == LISP_LAMBDA || lisp_type(proc) == LISP_FUNC);
+    Promise* promise = gc_alloc(sizeof(Promise), LISP_PROMISE, ctx);
+    promise->block.d.promise.cached = 0;
+    promise->block.d.promise.type = lisp_type(proc);
+    promise->val_or_proc = proc.val;
+
+    LispVal val;
+    val.ptr_val = promise;
+    return (Lisp) { val, LISP_PROMISE };
+}
+
+void lisp_promise_store(Lisp p, Lisp x)
+{
+    Promise* promise = p.val.ptr_val;
+    assert(!promise->block.d.promise.cached);
+    promise->block.d.promise.cached = 1;
+    promise->block.d.promise.type = lisp_type(x);
+    promise->val_or_proc = x.val;
+}
+
+int lisp_promise_forced(Lisp p)
+{
+    const Promise* promise = p.val.ptr_val;
+    return (int)promise->block.d.promise.cached;
+}
+
+static Lisp promise_body_or_val_(Lisp p)
+{
+    const Promise* promise = p.val.ptr_val;
+    LispType type = (LispType)promise->block.d.promise.type;
+    return (Lisp) { promise->val_or_proc, type }; 
+}
+
+Lisp lisp_promise_proc(Lisp p)
+{
+    assert(!promise->block.d.promise.cached);
+    return promise_body_or_val_(p);
+}
+
+Lisp lisp_promise_val(Lisp p)
+{
+    assert(promise->block.d.promise.cached);
+    return promise_body_or_val_(p);
 }
 
 Lisp lisp_make_string2(int n, int c, LispContext ctx)
@@ -2090,10 +2160,13 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             break;
         }
         case LISP_LAMBDA:
-            fprintf(file, "lambda-%i", lisp_lambda(l)->identifier);
+            fprintf(file, "<lambda-%i>", lisp_lambda(l)->identifier);
+            break;
+        case LISP_PROMISE:
+            fprintf(file, "<promise>");
             break;
         case LISP_FUNC:
-            fprintf(file, "c-func-%p", l.val.ptr_val);
+            fprintf(file, "<c-func-%p>", l.val.ptr_val);
             break;
         case LISP_TABLE:
         {
@@ -2722,6 +2795,7 @@ static LispVal gc_move_val(LispVal val, LispType type, Heap* to)
         case LISP_STRING:
         case LISP_LAMBDA:
         case LISP_VECTOR:
+        case LISP_PROMISE:
         {
             Block* block = val.ptr_val;
             if (!(block->gc_flags & GC_MOVED))
@@ -2863,18 +2937,18 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                     case LISP_PAIR:
                     {
                         // move the CAR and CDR
-                        Pair* pair = (Pair*)block;
-                        pair->car = gc_move_val(pair->car, pair->block.d.pair.car_type, &to);
-                        pair->cdr = gc_move_val(pair->cdr, pair->block.d.pair.cdr_type, &to);
+                        Pair* p = (Pair*)block;
+                        p->car = gc_move_val(p->car, p->block.d.pair.car_type, &to);
+                        p->cdr = gc_move_val(p->cdr, p->block.d.pair.cdr_type, &to);
                         break;
                     }
                     case LISP_VECTOR:
                     {
-                        Vector* vector = (Vector*)block;
-                        int n = _vector_len(vector);
-                        char* entry_types = _vector_types(vector);
+                        Vector* v = (Vector*)block;
+                        int n = _vector_len(v);
+                        char* entry_types = _vector_types(v);
                         for (int i = 0; i < n; ++i)
-                            vector->entries[i] = gc_move_val(vector->entries[i], entry_types[i], &to);
+                            v->entries[i] = gc_move_val(v->entries[i], entry_types[i], &to);
                         break;
                     }
                     case LISP_LAMBDA:
@@ -2885,6 +2959,13 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         lambda->body = gc_move(lambda->body, &to);
                         lambda->env = gc_move(lambda->env, &to);
                         break;
+                    }
+                    case LISP_PROMISE:
+                    {
+                        Promise* p = (Promise*)block;
+                        p->val_or_proc = gc_move_val(p->val_or_proc, p->block.d.promise.type, &to);
+                        break;
+
                     }
                     default: break;
                 }
@@ -3996,6 +4077,41 @@ static Lisp sch_table_to_alist(Lisp args, LispError* e, LispContext ctx)
     return lisp_table_to_assoc_list(table, ctx);
 }
 
+static Lisp sch_is_promise(Lisp args, LispError* e, LispContext ctx)
+{
+  return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_PROMISE);
+}
+
+static Lisp sch_make_promise(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp proc = lisp_car(args);
+    return lisp_make_promise(proc, ctx);
+}
+
+static Lisp sch_promise_store(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp promise = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp val = lisp_car(args);
+    lisp_promise_store(promise, val);
+    return lisp_make_null();
+}
+
+static Lisp sch_promise_proc(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_promise_proc(lisp_car(args));
+}
+
+static Lisp sch_promise_val(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_promise_val(lisp_car(args));
+}
+
+static Lisp sch_promise_forced(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_bool(lisp_promise_forced(lisp_car(args)));
+}
+
 static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp operator = lisp_car(args);
@@ -4224,6 +4340,13 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "HASH-TABLE-REF", sch_table_get },
     { "HASH-TABLE-SIZE", sch_table_size },
     { "HASH-TABLE->ALIST", sch_table_to_alist },
+
+    { "PROMISE?", sch_is_promise },
+    { "MAKE-PROMISE", sch_make_promise },
+    { "_PROMISE-PROCEDURE", sch_promise_proc },
+    { "_PROMISE-STORE!", sch_promise_store },
+    { "PROMISE-VALUE", sch_promise_val },
+    { "PROMISE-FORCED?", sch_promise_forced },
     
     // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
     { "APPLY", sch_apply },
@@ -4417,6 +4540,16 @@ static const char* lib_code1 = " \
 (define (last-pair x) \
  (if (pair? (cdr x)) \
   (last-pair (cdr x)) x)) \
+\
+(define-macro delay (lambda (expr) \
+  `(make-promise ,(cons 'LAMBDA \
+                    (cons '() \
+                      (cons expr '())))))) \
+\
+(define (force promise) \
+    (if (not (promise-forced? promise)) \
+        (_promise-store! promise ((_promise-procedure promise)))) \
+    (promise-value promise)) \
 ";
 
 static const char* lib_code2 = " \
