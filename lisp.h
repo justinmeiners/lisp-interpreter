@@ -4139,7 +4139,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SUBVECTOR", sch_subvector },
     { "LIST->VECTOR", sch_list_to_vector },
     { "VECTOR->LIST", sch_vector_to_list },
-    // TODO: sort
 
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
     { "STRING?", sch_is_string },
@@ -4524,32 +4523,20 @@ static const char* lib_code2 = " \
 (define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) \
 \
 (define (quicksort-partition v lo hi op) \
-  (let ((pivot (/ (+ lo hi) 2))) \
-    (do ((i (- lo 1) (+ i 0)) (j (+ hi 1) (+ j 0))) \
-      ((>= i j) j) \
-      (begin \
-        (set! i (+ i 1)) \
-        (do ((x 0 (+ x 0))) \
-          ((or (>= i hi) (not (op (vector-ref v i) (vector-ref v pivot)))) 'nil) \
-          (set! i (+ i 1))) \
-        (set! i (min i hi)) \
-        (set! j (- j 1)) \
-        (do ((x 0 (+ x 0))) \
-          ((or (<= j lo) (= j pivot) (op (vector-ref v j) (vector-ref v pivot))) 'nil) \
-          (set! j (- j 1))) \
-        (set! j (max j lo)) \
-        (if (< i j) \
-         (let ((tmp (vector-ref v i))) \
-           (vector-set! v i (vector-ref v j)) \
-           (vector-set! v j tmp) \
-           (if (= j pivot) (set! pivot i)) \
-           (if (= i pivot) (set! pivot j))) \
-         '()))))) \
+  (let ((pivot hi) (i (- lo 1))) \
+    (do ((j lo (+ j 1))) \
+      ((> j hi) i) \
+      (if (or (= j pivot) (op (vector-ref v j) (vector-ref v pivot))) \
+        (begin \
+          (set! i (+ i 1)) \
+          (let ((tmp (vector-ref v i))) \
+            (vector-set! v i (vector-ref v j)) \
+            (vector-set! v j tmp))))))) \
 \
 (define (quicksort-vector v lo hi op) \
   (if (and (>= lo 0) (>= hi 0) (< lo hi)) \
     (let ((p (quicksort-partition v lo hi op))) \
-      (quicksort-vector v lo p op) \
+      (quicksort-vector v lo (- p 1) op) \
       (quicksort-vector v (+ p 1) hi op)))) \
 \
 (define (sort! v op) \
