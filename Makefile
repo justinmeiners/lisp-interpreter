@@ -1,4 +1,4 @@
-CFLAGS = -Wall -pedantic -Wstrict-prototypes -O3
+CFLAGS = -Wall -pedantic -Wstrict-prototypes -g
 LDLIBS = -lm
 CC=cc
 

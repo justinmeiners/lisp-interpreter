@@ -120,6 +120,8 @@ typedef enum
 
     LISP_ERROR_SPLICE,
     LISP_ERROR_BAD_ARG,
+    LISP_ERROR_TOO_MANY_ARGS,
+    LISP_ERROR_TOO_FEW_ARGS,
     LISP_ERROR_RUNTIME,
 } LispError;
 
@@ -194,6 +196,8 @@ void lisp_set_car(Lisp p, Lisp x);
 void lisp_set_cdr(Lisp p, Lisp x);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 #define lisp_is_pair(p) ((p).type == LISP_PAIR)
+#define lisp_is_list(p) ((p).type == LISP_PAIR || (p).type == LISP_NULL)
+
 
 
 // Numbers
@@ -280,6 +284,7 @@ Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx);
 
 // Lambdas (compound procedures)
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx);
+Lisp lisp_lambda_body(Lisp l);
 Lisp lisp_lambda_env(Lisp l);
 
 // C functions (compiled procedures)
@@ -411,9 +416,16 @@ typedef struct Block
             uint8_t cached;
             uint8_t type;
         } promise;
+
+        struct
+        {
+            uint8_t body_type;
+            uint8_t args_type;
+            uint8_t arity;
+        } lambda;
     } d;
 
-    // 32 or 64
+    // 32
     uint8_t gc_flags;
     uint8_t type;
 } Block;
@@ -521,7 +533,6 @@ struct LispImpl
     Lisp global_env;
     Lisp macros;
 
-    int lambda_counter;
     int symbol_counter;
 
     Lisp symbol_cache[SYM_COUNT];
@@ -569,6 +580,10 @@ typedef struct
     LispVal val_or_proc;
 } Promise;
 
+static Lisp val_to_list_(LispVal x)
+{
+    return (Lisp) { x, x.ptr_val == NULL ? LISP_NULL : LISP_PAIR };
+}
 
 // hash table
 // linked list chaining
@@ -582,8 +597,7 @@ typedef struct
 
 static Lisp table_ref_(const Table* table, int i)
 {
-    LispVal val = table->entries[i];
-    return (Lisp) { val, val.ptr_val == NULL ? LISP_NULL : LISP_PAIR };
+    return val_to_list_(table->entries[i]);
 }
 
 Lisp lisp_make_null()
@@ -1298,36 +1312,52 @@ LispCFunc lisp_func(Lisp l)
 typedef struct
 {
     Block block;
-    int identifier;
-    Lisp args;
-    Lisp body;
-    Lisp env;
+    LispVal body;
+    LispVal args;
+    LispVal env;
 } Lambda;
 
 Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
 {
     Lambda* lambda = gc_alloc(sizeof(Lambda), LISP_LAMBDA, ctx);
-    lambda->identifier = ctx.p->lambda_counter++;
-    lambda->args = args;
-    lambda->body = body;
-    lambda->env = env;
+    lambda->block.d.lambda.body_type = (uint8_t)lisp_type(body);
+    lambda->block.d.lambda.args_type = (uint8_t)lisp_type(args);
+
+    //lambda->block.d.lambda.arity = lisp_length
     
-    Lisp l;
-    l.type = lambda->block.type;
-    l.val.ptr_val = lambda;
-    return l;
+    assert(lisp_is_list(env));
+
+    lambda->args = args.val;
+    lambda->body = body.val;
+    lambda->env = env.val;
+    
+    LispVal val;
+    val.ptr_val = lambda;
+    return (Lisp) { val, LISP_LAMBDA };
 }
 
-static Lambda* lisp_lambda(Lisp l)
+static Lambda* lambda_get_(Lisp l)
 {
     assert(l.type == LISP_LAMBDA);
     return l.val.ptr_val;
 }
 
+Lisp lisp_lambda_body(Lisp l)
+{
+     const Lambda* lambda = lambda_get_(l);
+     return (Lisp) { lambda->body, (LispType)lambda->block.d.lambda.body_type };
+}
+
+Lisp lambda_args_(Lisp l)
+{
+     const Lambda* lambda = lambda_get_(l);
+     return (Lisp) { lambda->args, (LispType)lambda->block.d.lambda.args_type };
+}
+
 Lisp lisp_lambda_env(Lisp l)
 {
-    Lambda* lambda = lisp_lambda(l);
-    return lambda->env;
+    const Lambda* lambda = lambda_get_(l);
+    return val_to_list_(lambda->env);
 }
 
 typedef enum
@@ -2155,10 +2185,10 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             break;
         }
         case LISP_LAMBDA:
-            fprintf(file, "<lambda-%i>", lisp_lambda(l)->identifier);
+            fputs("<lambda>", file);
             break;
         case LISP_PROMISE:
-            fprintf(file, "<promise>");
+            fputs("<promise>", file);
             break;
         case LISP_FUNC:
             fprintf(file, "<c-func-%p>", l.val.ptr_val);
@@ -2215,9 +2245,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             break;
         }
         default:
-            fprintf(stderr, "printing unknown lisp type\n");
-            
-            assert(0);
+            fprintf(stderr, "printing unknown lisp type: %d\n", lisp_type(l));
             break;
     }
 }
@@ -2264,42 +2292,47 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
     {
         case LISP_LAMBDA: // lambda call (compound procedure)
         {
-            const Lambda* lambda = lisp_lambda(operator);
-            
-            if (lisp_is_null(lambda->args))
-            {
-                *out_env = lambda->env;
-            }
-            else
+            Lisp var_names = lambda_args_(operator);
+            *out_env = lisp_lambda_env(operator);
+
+            if (!lisp_is_null(var_names))
             {
                 // make a new environment
                 Lisp new_table = lisp_make_table(13, ctx);
                 
                 // bind parameters to arguments
                 // to pass into function call
-                Lisp keyIt = lambda->args;
-                Lisp valIt = args;
-
-                while (lisp_is_pair(keyIt))
+                while (lisp_is_pair(var_names) && lisp_is_pair(args))
                 {
-                    lisp_table_set(new_table, lisp_car(keyIt), lisp_car(valIt), ctx);
-                    keyIt = lisp_cdr(keyIt);
-                    valIt = lisp_cdr(valIt);
+                    lisp_table_set(new_table, lisp_car(var_names), lisp_car(args), ctx);
+
+                    var_names = lisp_cdr(var_names);
+                    args = lisp_cdr(args);
                 }
-                
-                if (lisp_type(keyIt) == LISP_SYMBOL)
+
+                if (lisp_type(var_names) == LISP_SYMBOL)
                 {
                     // variable length arguments
-                    lisp_table_set(new_table, keyIt, valIt, ctx);
+                    lisp_table_set(new_table, var_names, args, ctx);
+                }
+                else if (!lisp_is_null(var_names))
+                {
+                    *error = LISP_ERROR_TOO_FEW_ARGS;
+                    return 0;
+                }
+                else if (!lisp_is_null(args))
+                {
+                    *error = LISP_ERROR_TOO_MANY_ARGS;
+                    return 0;
                 }
                 
                 // extend the environment
-                *out_env = lisp_env_extend(lambda->env, new_table, ctx);
+                *out_env = lisp_env_extend(*out_env, new_table, ctx);
             }
             
             // normally we would eval the body here
             // but while will eval
-            *out_result = lambda->body;
+            *out_result = lisp_lambda_body(operator);
             return 1;
         }
         case LISP_FUNC: // call into C functions
@@ -2943,22 +2976,22 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         int n = _vector_len(v);
                         char* entry_types = _vector_types(v);
                         for (int i = 0; i < n; ++i)
-                            v->entries[i] = gc_move_val(v->entries[i], entry_types[i], &to);
+                            v->entries[i] = gc_move_val(v->entries[i], (LispType)entry_types[i], &to);
                         break;
                     }
                     case LISP_LAMBDA:
                     {
                         // move the body and args
-                        Lambda* lambda = (Lambda*)block;
-                        lambda->args = gc_move(lambda->args, &to);
-                        lambda->body = gc_move(lambda->body, &to);
-                        lambda->env = gc_move(lambda->env, &to);
+                        Lambda* l = (Lambda*)block;
+                        l->args = gc_move_val(l->args, (LispType)l->block.d.lambda.args_type, &to);
+                        l->body = gc_move_val(l->body, (LispType)l->block.d.lambda.body_type, &to);
+                        l->env = gc_move_val(l->env, l->env.ptr_val == NULL ? LISP_NULL : LISP_PAIR, &to);
                         break;
                     }
                     case LISP_PROMISE:
                     {
                         Promise* p = (Promise*)block;
-                        p->val_or_proc = gc_move_val(p->val_or_proc, p->block.d.promise.type, &to);
+                        p->val_or_proc = gc_move_val(p->val_or_proc, (LispType)p->block.d.promise.type, &to);
                         break;
 
                     }
@@ -3068,6 +3101,10 @@ const char* lisp_error_string(LispError error)
             return "eval error: got into a bad state";
         case LISP_ERROR_BAD_ARG:
             return "eval error: bad argument type";
+        case LISP_ERROR_TOO_MANY_ARGS:
+            return "eval error: too many arguments";
+         case LISP_ERROR_TOO_FEW_ARGS:
+            return "eval error: missing arguments";
         case LISP_ERROR_OUT_OF_BOUNDS:
             return "eval error: index out of bounds";
         case LISP_ERROR_SPLICE:
@@ -3087,7 +3124,6 @@ LispContext lisp_init_empty_opt(int symbol_table_size, size_t stack_depth, size_
     if (!ctx.p) return ctx;
 
     ctx.p->out_file = out_file;
-    ctx.p->lambda_counter = 0;
     ctx.p->symbol_counter = 0;
     ctx.p->stack_ptr = 0;
     ctx.p->stack_depth = stack_depth;
@@ -4148,9 +4184,7 @@ static Lisp sch_is_func(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_lambda_body(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp l = lisp_car(args);
-    Lambda* lambda = lisp_lambda(l);
-    return lambda->body;
+    return lisp_lambda_body(lisp_car(args));
 }
 
 static Lisp sch_macroexpand(Lisp args, LispError* e, LispContext ctx)
@@ -4568,13 +4602,13 @@ static const char* lib_code2 = " \
 \
 (define (memq x list) \
     (cond ((null? list) #f) \
-          ((equal? (car list) x) list) \
+          ((eq? (car list) x) list) \
           (else (memq x (cdr list))))) \
 \
 (define (member x list) \
     (cond ((null? list) #f) \
           ((equal? (car list) x) list) \
-          (else (memq x (cdr list))))) \
+          (else (member x (cdr list))))) \
 \
 (define (make-list k elem) \
    (define (helper k l) \
