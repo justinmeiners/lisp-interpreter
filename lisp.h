@@ -421,7 +421,6 @@ typedef struct Block
         {
             uint8_t body_type;
             uint8_t args_type;
-            uint8_t arity;
         } lambda;
     } d;
 
@@ -1323,8 +1322,6 @@ Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
     lambda->block.d.lambda.body_type = (uint8_t)lisp_type(body);
     lambda->block.d.lambda.args_type = (uint8_t)lisp_type(args);
 
-    //lambda->block.d.lambda.arity = lisp_length
-    
     assert(lisp_is_list(env));
 
     lambda->args = args.val;

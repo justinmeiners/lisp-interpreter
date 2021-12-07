@@ -21,7 +21,6 @@ do
     printf "\n"
 done
 
-
 if [ $PASS = "0" ]
 then
   echo "**TESTS FAILED**"
