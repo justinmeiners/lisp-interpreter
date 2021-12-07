@@ -3,6 +3,7 @@ lisp
 *.exe
 *.stackdump
 temp/
+printer
 
 
 # Xcode

@@ -30,7 +30,7 @@
              ((combine f) (cdr x) (cdr y)))))))
 
 (define zip (combine cons))
-(assert (= (car (cdr (assoc 3 (zip (list 1 2 3 4) (list 5 6 7 8)))) 7)))
+(assert (= (car (cdr (assoc 3 (zip (list 1 2 3 4) (list 5 6 7 8))))) 7))
 
 (define riff-shuffle (lambda (deck) (begin
     (define take (lambda (n seq) (if (< n 1) (quote ()) (cons (car seq) (take (- n 1) (cdr seq))))))
