@@ -333,14 +333,7 @@ void lisp_promise_store(Lisp p, Lisp x);
 #include <setjmp.h>
 #include <stdint.h>
 #include <time.h>
-
-#ifndef LISP_DEBUG
-#define NDEBUG
-#endif
 #include <assert.h>
-#ifndef LISP_DEBUG
-#undef NDEBUG
-#endif
 
 #ifndef LISP_FILE_CHUNK_SIZE
 #define LISP_FILE_CHUNK_SIZE 4096
@@ -1124,12 +1117,14 @@ static Lisp promise_body_or_val_(Lisp p)
 
 Lisp lisp_promise_proc(Lisp p)
 {
+    const Promise* promise = p.val.ptr_val;
     assert(!promise->block.d.promise.cached);
     return promise_body_or_val_(p);
 }
 
 Lisp lisp_promise_val(Lisp p)
 {
+    const Promise* promise = p.val.ptr_val;
     assert(promise->block.d.promise.cached);
     return promise_body_or_val_(p);
 }
@@ -2977,12 +2972,12 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
         ++page_counter;
     }
     // check that we visited all the pages
-    assert(page_counter == &to->page_count);
+    assert(page_counter == to.page_count);
     
 #ifdef LISP_DEBUG
      {
           // DEBUG, check offsets
-          const Page* page = &to->bot&tom;
+          const Page* page = to.bottom;
           while (page)
           {
               size_t offset = 0;
