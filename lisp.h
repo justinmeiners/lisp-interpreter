@@ -199,7 +199,6 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 #define lisp_is_list(p) ((p).type == LISP_PAIR || (p).type == LISP_NULL)
 
 
-
 // Numbers
 Lisp lisp_make_int(LispInt n);
 LispInt lisp_int(Lisp x);
@@ -225,8 +224,10 @@ Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
 
 // Symbols
-// Pass NULL to generate a symbol
+// interned
 Lisp lisp_make_symbol(const char* string, LispContext ctx);
+// uninterned
+Lisp lisp_gen_symbol(LispContext ctx);
 const char* lisp_symbol_string(Lisp x);
 
 // -----------------------------------------
@@ -557,12 +558,6 @@ typedef struct
     Block block;
     char string[];
 } String;
-
-typedef struct
-{
-    Block block;
-    char string[];
-} Symbol;
 
 typedef struct
 {
@@ -1126,6 +1121,7 @@ void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
     table->capacity = new_capacity;
     table->keys = lisp_make_vector(new_capacity, lisp_make_null(), ctx).val;
     table->vals = lisp_make_vector(new_capacity, lisp_make_null(), ctx).val;
+    table->size = 0;
 
     for (int i = 0; i < old_capacity; ++i)
     {
@@ -1142,7 +1138,6 @@ void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
      {
         table_grow_(t, table->capacity * 2, ctx);
      }
-
      assert(2*table->size < table->capacity);
 
      Lisp keys = { table->keys, LISP_VECTOR };
@@ -1159,10 +1154,12 @@ void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
             ++table->size;
             lisp_vector_set(keys, i, key);
             lisp_vector_set(vals, i, x);
+            return;
         }
         else if (lisp_eq(saved_key, key))
         {
             lisp_vector_set(vals, i, x);
+            return;
         }
         ++i;
      }
@@ -1171,6 +1168,12 @@ void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
 Lisp lisp_table_get(Lisp t, Lisp key, int* present)
 {
     Table* table = table_get_(t);
+    int capacity = table->capacity;
+    if (capacity == 0)
+    {
+       *present = 0;
+       return lisp_make_null();
+    }
 
     Lisp keys = { table->keys, LISP_VECTOR };
     Lisp vals = { table->vals, LISP_VECTOR };
@@ -1178,20 +1181,21 @@ Lisp lisp_table_get(Lisp t, Lisp key, int* present)
     uint32_t i = hash_val(key.val);
     while (1)
     {
-        i &= (table->capacity - 1);
+        i &= (capacity - 1);
 
         Lisp saved_key = lisp_vector_ref(keys, i);
 
-        if (lisp_eq(saved_key, key))
-        {
-            *present = 1;
-            return lisp_vector_ref(vals, i);
-        }
-        else if (lisp_is_null(saved_key))
+        if (lisp_is_null(saved_key))
         {
             *present = 0;
             return lisp_make_null();
         }
+        else if (lisp_eq(saved_key, key))
+        {
+            *present = 1;
+            return lisp_vector_ref(vals, i);
+        }
+        ++i;
     }
 }
 
@@ -1345,17 +1349,16 @@ static uint64_t hash_bytes(const char *buffer, size_t n)
     return x;
 }
 
-static Symbol* symbol_get_(Lisp l)
+// Interned symbols cannot be garbage collected because
+// otherwise when their pointer is moved in the collection step,
+// their hash (of their pointer) is no longer correct.
+// So they need to be moved in the table.
+static Lisp symbol_make_(const char* string, int length)
 {
-    assert(l.type == LISP_SYMBOL);
-    return l.val.ptr_val;
-}
+    char* symbol = malloc(sizeof(char) * (length + 1));
+    memcpy(symbol, string, length);
+    symbol[length] = '\0';
 
-static Lisp symbol_make_(const char* string, int length, LispContext ctx)
-{
-    Symbol* symbol = gc_alloc(sizeof(Symbol) + length + 1, LISP_SYMBOL, ctx);
-    memcpy(symbol->string, string, length);
-    symbol->string[length] = '\0';
     LispVal x;
     x.ptr_val = symbol;
     return (Lisp) { x, LISP_SYMBOL };
@@ -1379,8 +1382,7 @@ static Lisp symbol_intern_(Lisp table, const char* string, size_t length, LispCo
     while (!lisp_is_null(it))
     {
         Lisp s = lisp_car(symbol_list);
-        const Symbol* symbol = symbol_get_(s);
-        if (strncmp(symbol->string, string, length) == 0)
+        if (strncmp(lisp_symbol_string(s), string, length) == 0)
         {
             return s; 
         }
@@ -1388,27 +1390,26 @@ static Lisp symbol_intern_(Lisp table, const char* string, size_t length, LispCo
     }
 
     // new symbol
-    Lisp symbol = symbol_make_(string, length, ctx);
+    Lisp symbol = symbol_make_(string, length);
     lisp_table_set(table, key, lisp_cons(symbol, symbol_list, ctx), ctx);
     return symbol;
 }
 
 Lisp lisp_make_symbol(const char* string, LispContext ctx)
 {
-    if (string == NULL)
-    {
-        char text[64];
-        int bytes = snprintf(text, 64, ":G%d", ctx.p->symbol_counter++);
-        return symbol_intern_(ctx.p->symbol_table, text, bytes, ctx);
-    }
-    else
-    {
-        int length = strlen(string);
-        return symbol_intern_(ctx.p->symbol_table, string, length, ctx);
-    }
+    assert(string);
+    int length = strnlen(string, LISP_FILE_CHUNK_SIZE);
+    return symbol_intern_(ctx.p->symbol_table, string, length, ctx);
 }
 
-const char* lisp_symbol_string(Lisp l) { return symbol_get_(l)->string; }
+Lisp lisp_gen_symbol(LispContext ctx)
+{
+    char text[64];
+    int bytes = snprintf(text, 64, ":G%d", ctx.p->symbol_counter++);
+    return symbol_make_(text, bytes);
+}
+
+const char* lisp_symbol_string(Lisp l) {  return l.val.ptr_val; }
 
 Lisp lisp_make_func(LispCFunc func)
 {
@@ -1918,7 +1919,6 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
             scratch[length] = '\0';
             for (int i = 0; i < length; ++i)
                 scratch[i] = toupper(scratch[i]);
-
             l = symbol_intern_(ctx.p->symbol_table, scratch, length, ctx);
             break;
         }
@@ -2184,7 +2184,7 @@ int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx)
     int present;
     while (lisp_is_pair(l))
     {
-        Lisp x = lisp_table_get(lisp_car(l), key, &present);
+        lisp_table_get(lisp_car(l), key, &present);
         if (present)
         {
             lisp_table_set(lisp_car(l), key, x, ctx);
@@ -2875,7 +2875,6 @@ static LispVal gc_move_val(LispVal val, LispType type, Heap* to)
     switch (type)
     {
         case LISP_PAIR:
-        case LISP_SYMBOL:
         case LISP_STRING:
         case LISP_LAMBDA:
         case LISP_VECTOR:
@@ -2969,8 +2968,11 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                     case LISP_TABLE:
                     {
                         Table* t = (Table*)block;
-                        t->keys = gc_move_val(t->keys, LISP_VECTOR, &to);
-                        t->vals = gc_move_val(t->vals, LISP_VECTOR, &to);
+                        if (t->capacity > 0)
+                        {
+                            t->keys = gc_move_val(t->keys, LISP_VECTOR, &to);
+                            t->vals = gc_move_val(t->vals, LISP_VECTOR, &to);
+                        }
                         break;
                     }
                     case LISP_LAMBDA:
@@ -3044,7 +3046,6 @@ void lisp_print_collect_stats(LispContext ctx)
     fprintf(ctx.p->out_file, "heap size: %lu\t pages: %lu\n", ctx.p->heap.size, ctx.p->heap.page_count);
     fprintf(ctx.p->out_file, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbol_table));
 }
-
 
 Lisp lisp_env_global(LispContext ctx)
 {
@@ -3572,7 +3573,7 @@ static Lisp sch_string_to_symbol(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_gensym(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(0, 0);
-    return lisp_make_symbol(NULL, ctx);
+    return lisp_gen_symbol(ctx);
 }
 
 static Lisp sch_is_string(Lisp args, LispError* e, LispContext ctx)
@@ -4808,7 +4809,6 @@ LispContext lisp_init_opt(size_t stack_depth, size_t page_size, FILE* out_file)
     if (error == LISP_ERROR_NONE)
     {
         lisp_collect(lisp_make_null(), ctx);
-
 #ifdef LISP_DEBUG
         lisp_print_collect_stats(ctx);
 #endif
