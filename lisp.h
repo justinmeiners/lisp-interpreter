@@ -4587,7 +4587,7 @@ static const char* lib_code1 = " \
     (promise-value promise)) \
 ";
 
-static const char* lib_code2 = " \
+static const char* lib_code_sequence = " \
 \
 (define (map proc . rest) \
   (define (helper lists result) \
@@ -4724,6 +4724,57 @@ static const char* lib_code2 = " \
   v) \
 ";
 
+static const char* lib_code_streams = " \
+(define-macro cons-stream (lambda (x expr) \
+   (list 'CONS x (list 'DELAY expr)))) \
+\
+(define (stream-car stream) (car stream)) \
+(define (stream-cdr stream) (force (cdr stream))) \
+\
+(define (stream-pair? x) \
+ (and (pair? x) (promise? (cdr x)))) \
+\
+(define (stream-null? stream) (null? stream)) \
+\
+(define (stream->list-helper stream result) \
+ (if (stream-null? stream) \
+  (reverse! result) \
+  (stream->list-helper \
+   (force (cdr stream)) \
+   (cons (car stream) result)))) \
+\
+(define (stream->list stream) \
+ (stream->list-helper stream '())) \
+\
+(define (list->stream list) \
+ (if (null? list) \
+  '() \
+  (cons-stream (car list) (list->stream (cdr list))))) \
+\
+(define (stream . args) (list->stream args)) \
+\
+(define (stream-head-helper stream k result) \
+ (if (= k 0) \
+  (reverse! result) \
+  (stream-head-helper (force (cdr stream)) (- k 1) (cons (car stream) result)))) \
+\
+  (define (stream-head stream k) \
+     (stream-head-helper stream k '())) \
+\
+(define (stream-tail stream k) \
+ (if (= k 0) \
+  stream \
+  (stream-tail (stream-cdr stream) (- k 1)))) \
+\
+(define (stream-filter pred stream) \
+ (cond ((stream-null? stream) the-empty-stream) \
+  ((pred (stream-car stream)) \
+   (cons-stream (stream-car stream) \
+    (stream-filter pred \
+     (stream-cdr stream)))) \
+  (else (stream-filter pred (stream-cdr stream))))) \
+";
+
 LispContext lisp_init(void)
 {
     return lisp_init_opt(LISP_DEFAULT_SYMBOL_TABLE_SIZE, LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE, stdout);
@@ -4740,8 +4791,8 @@ LispContext lisp_init_opt(int symbol_table_size, size_t stack_depth, size_t page
 
     LispError error;
 
-    const char* to_load[] = { lib_code0, lib_code1, lib_code2 };
-    for (int i = 0; i < 3; ++i)
+    const char* to_load[] = { lib_code0, lib_code1, lib_code_sequence, lib_code_streams };
+    for (int i = 0; i < 4; ++i)
     {
         lisp_eval_opt(lisp_read(to_load[i], NULL, ctx), system_env, &error, ctx);
 
