@@ -265,6 +265,7 @@ Lisp lisp_make_vector(int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, int i);
 void lisp_vector_set(Lisp v, int i, Lisp x);
+void lisp_vector_swap(Lisp v, int i, int j);
 void lisp_vector_fill(Lisp v, Lisp x);
 Lisp lisp_vector_assq(Lisp v, Lisp key); // O(n)
 Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx);
@@ -1030,6 +1031,22 @@ void lisp_vector_set(Lisp v, int i, Lisp x)
     vector->entries[i] = x.val;
     _vector_types(vector)[i] = (char)x.type;
 }
+
+void lisp_vector_swap(Lisp v, int i, int j)
+{
+    Vector* vector = vector_get_(v);
+    assert(i < _vector_len(vector));
+    assert(j < _vector_len(vector));
+
+    LispVal tmp_val = vector->entries[i];
+    vector->entries[i] = vector->entries[j];
+    vector->entries[j] = tmp_val;
+
+    char tmp_type = _vector_types(vector)[i];
+    _vector_types(vector)[i] = _vector_types(vector)[j];
+    _vector_types(vector)[j] = tmp_type;
+}
+
 void lisp_vector_fill(Lisp v, Lisp x)
 {
     Vector* vector = vector_get_(v);
@@ -3998,6 +4015,28 @@ static Lisp sch_vector_set(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
+static Lisp sch_vector_swap(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp v = lisp_list_ref(args, 0);
+    Lisp i = lisp_list_ref(args, 1);
+    Lisp j = lisp_list_ref(args, 2);
+
+    if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT || lisp_type(j) != LISP_INT)
+    {
+        *e = LISP_ERROR_BAD_ARG;
+        return lisp_make_null();
+    }
+
+    if (lisp_int(i) >= lisp_vector_length(v) || lisp_int(j) >= lisp_vector_length(v))
+    {
+        *e = LISP_ERROR_OUT_OF_BOUNDS;
+        return lisp_make_null();
+    }
+
+    lisp_vector_swap(v, lisp_int(i), lisp_int(j));
+    return v;
+}
+
 static Lisp sch_vector_fill(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp v = lisp_list_ref(args, 0);
@@ -4289,6 +4328,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "VECTOR-GROW", sch_vector_grow },
     { "VECTOR-LENGTH", sch_vector_length },
     { "VECTOR-SET!", sch_vector_set },
+    { "VECTOR-SWAP", sch_vector_swap },
     { "VECTOR-REF", sch_vector_ref },
     { "VECTOR-FILL!", sch_vector_fill },
     { "SUBVECTOR", sch_subvector },
