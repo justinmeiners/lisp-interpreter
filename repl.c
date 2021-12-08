@@ -5,7 +5,7 @@
 // Disable asserts?
 // #define NDEBUG
 
-//#define LISP_DEBUG
+#define LISP_DEBUG
 #define LISP_IMPLEMENTATION
 #include "lisp.h"
 
@@ -35,7 +35,7 @@ int main(int argc, const char* argv[])
         }
     }
     
-    LispContext ctx = lisp_init_opt(512, LISP_DEFAULT_STACK_DEPTH, page_size, stdout);
+    LispContext ctx = lisp_init_opt(LISP_DEFAULT_STACK_DEPTH, page_size, stdout);
 
     clock_t start_time, end_time;
         
