@@ -52,9 +52,9 @@
         (set! n  (+ i n)))
       (* 5 11)))
 
-
-
 (=> (subvector #(1 2 3 4) 1 4) #(2 3 4))
 (=> (subvector #(1 2 3 4) 0 2) #(1 2))
 (=> (subvector #(A 1 A 1 A 1 A 1) 1 3) #(1 A))
 
+(let ((sym (gensym)))
+   (assert (eq? sym sym)))
