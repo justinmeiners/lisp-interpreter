@@ -58,3 +58,5 @@
 
 (let ((sym (gensym)))
    (assert (eq? sym sym)))
+
+(assert (equal? (cons 2000 1) (cons 2000 1)))

@@ -385,9 +385,6 @@ typedef struct
 typedef struct Block
 {   
     // Be careful with alignment and padding!
-    // NEED: type, size.
-
-
     // 32 or 64
     union
     {
@@ -630,9 +627,7 @@ int lisp_equal_r(Lisp a, Lisp b)
         {
             while (lisp_is_pair(a) && lisp_is_pair(b))
             {
-                if (!lisp_equal_r(lisp_car(a), lisp_car(b)))
-                    return 0;
-                
+                if (!lisp_equal_r(lisp_car(a), lisp_car(b))) return 0;
                 a = lisp_cdr(a);
                 b = lisp_cdr(b);
             }
@@ -1048,15 +1043,14 @@ Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx)
     }
 }
 
-static uint64_t hash_uint64(uint64_t x) {
+static uint64_t hash_uint64(uint64_t x)
+{
     x *= 0xff51afd7ed558ccd;
     x ^= x >> 32;
     return x;
 }
 
-static uint64_t hash_val(LispVal x) {
-    return hash_uint64((uint64_t)x.int_val);
-}
+static uint64_t hash_val(LispVal x) { return hash_uint64((uint64_t)x.int_val); }
 
 // hash table
 // linked list chaining
@@ -1114,19 +1108,20 @@ static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
 
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
 { 
-     Table* table = table_get_(t);
-     if (2 * table->size >= table->capacity)
-     {
+
+    Table* table = table_get_(t);
+    if (2 * table->size >= table->capacity)
+    {
         table_grow_(t, table->capacity * 2, ctx);
-     }
-     assert(2*table->size < table->capacity);
+    }
+    assert(2*table->size < table->capacity);
 
-     Lisp keys = { table->keys, LISP_VECTOR };
-     Lisp vals = { table->vals, LISP_VECTOR };
+    Lisp keys = { table->keys, LISP_VECTOR };
+    Lisp vals = { table->vals, LISP_VECTOR };
 
-     uint32_t i = hash_val(key.val);
-     while (1)
-     {
+    uint32_t i = hash_val(key.val);
+    while (1)
+    {
         i &= (table->capacity - 1);
 
         Lisp saved_key = lisp_vector_ref(keys, i);
@@ -1143,7 +1138,7 @@ void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
             return;
         }
         ++i;
-     }
+    }
 }
 
 Lisp lisp_table_get(Lisp t, Lisp key, int* present)
@@ -1193,7 +1188,7 @@ Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx)
         Lisp key = lisp_vector_ref(keys, i);
         if (!lisp_is_null(key))
         {
-           result = lisp_cons(lisp_cons(key, lisp_vector_ref(vals, i), ctx), result, ctx);
+            result = lisp_cons(lisp_cons(key, lisp_vector_ref(vals, i), ctx), result, ctx);
         }
     }
     return result;
@@ -3286,6 +3281,7 @@ static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(1, 1);
     fputc(lisp_char(lisp_car(args)), ctx.p->out_file);
     return lisp_make_null();
 }
@@ -4102,6 +4098,12 @@ static Lisp sch_univeral_time(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int((LispInt)time(NULL));
 }
 
+static Lisp sch_is_table(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_TABLE);
+}
+
 static Lisp sch_table_make(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_make_table(ctx);
@@ -4109,11 +4111,21 @@ static Lisp sch_table_make(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_table_get(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(2, 3);
     Lisp table = lisp_car(args);
     args = lisp_cdr(args);
     Lisp key = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp def = lisp_car(args);
+
+    Lisp def;
+    if (lisp_is_pair(args))
+    {
+        args = lisp_cdr(args);
+        def = lisp_car(args);
+    }
+    else
+    {
+        def = lisp_make_null();
+    }
 
     int present;
     Lisp result = lisp_table_get(table, key, &present);
@@ -4122,6 +4134,7 @@ static Lisp sch_table_get(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_table_set(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(3, 3);
     Lisp table = lisp_car(args);
     args = lisp_cdr(args);
     Lisp key = lisp_car(args);
@@ -4401,10 +4414,11 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // TODO: purify
     
     // Hash Tables https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Basic-Hash-Table-Operations.html#Basic-Hash-Table-Operations
+    { "HASH-TABLE?", sch_is_table },
     { "MAKE-HASH-TABLE", sch_table_make },
-    { "HASH-TABLE-SET!", sch_table_set },
-    { "HASH-TABLE-REF", sch_table_get },
-    { "HASH-TABLE-SIZE", sch_table_size },
+    { "HASH-TABLE/PUT!", sch_table_set },
+    { "HASH-TABLE/GET", sch_table_get },
+    { "HASH-TABLE/COUNT", sch_table_size },
     { "HASH-TABLE->ALIST", sch_table_to_alist },
 
     { "PROMISE?", sch_is_promise },
@@ -4669,7 +4683,7 @@ static const char* lib_code_sequence = " \
 (define (alist->hash-table alist) \
   (define h (make-hash-table)) \
   (for-each1 (lambda (pair) \
-              (hash-table-set! h (car pair) (cdr pair))) \
+              (hash-table/put! h (car pair) (cdr pair))) \
             alist) \
   h) \
 \
