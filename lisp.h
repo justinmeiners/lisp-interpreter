@@ -1034,17 +1034,9 @@ void lisp_vector_set(Lisp v, int i, Lisp x)
 
 void lisp_vector_swap(Lisp v, int i, int j)
 {
-    Vector* vector = vector_get_(v);
-    assert(i < _vector_len(vector));
-    assert(j < _vector_len(vector));
-
-    LispVal tmp_val = vector->entries[i];
-    vector->entries[i] = vector->entries[j];
-    vector->entries[j] = tmp_val;
-
-    char tmp_type = _vector_types(vector)[i];
-    _vector_types(vector)[i] = _vector_types(vector)[j];
-    _vector_types(vector)[j] = tmp_type;
+    Lisp tmp = lisp_vector_ref(v, i);
+    lisp_vector_set(v, i, lisp_vector_ref(v, j));
+    lisp_vector_set(v, j, tmp);
 }
 
 void lisp_vector_fill(Lisp v, Lisp x)
@@ -4328,7 +4320,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "VECTOR-GROW", sch_vector_grow },
     { "VECTOR-LENGTH", sch_vector_length },
     { "VECTOR-SET!", sch_vector_set },
-    { "VECTOR-SWAP", sch_vector_swap },
+    { "VECTOR-SWAP!", sch_vector_swap },
     { "VECTOR-REF", sch_vector_ref },
     { "VECTOR-FILL!", sch_vector_fill },
     { "SUBVECTOR", sch_subvector },
@@ -4754,7 +4746,7 @@ static const char* lib_code_sequence = " \
       (do ((x (set! j (- j 1)) x)) \
           ((not (op pivot (vector-ref v j))) '()) \
           (set! j (- j 1))) \
-      (if (< i j) (vector-swap v i j))))) \
+      (if (< i j) (vector-swap! v i j))))) \
 \
 (define (quicksort-vector v lo hi op) \
   (if (and (>= lo 0) (>= hi 0) (< lo hi)) \

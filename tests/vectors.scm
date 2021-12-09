@@ -1,6 +1,6 @@
 
 (define v #(1 2 3))
-(vector-swap v 0 2)
+(vector-swap! v 0 2)
 (assert (= 3 (vector-ref v 0)))
 (assert (= 1 (vector-ref v 2)))
 
