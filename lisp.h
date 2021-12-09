@@ -993,17 +993,12 @@ void lisp_vector_set(Lisp v, int i, Lisp x)
     vector->entries[i] = x.val;
     _vector_types(vector)[i] = (char)x.type;
 }
+
 void lisp_vector_fill(Lisp v, Lisp x)
 {
-    Vector* vector = vector_get_(v);
-    int n = _vector_len(vector);
-
-    char* entry_types = _vector_types(vector);
+    int n = lisp_vector_length(v);
     for (int i = 0; i < n; ++i)
-    {
-        vector->entries[i] = x.val;
-        entry_types[i] = (char)x.type;
-    }
+        lisp_vector_set(v, i, x);
 }
 
 Lisp lisp_vector_assq(Lisp v, Lisp key)
@@ -1012,10 +1007,7 @@ Lisp lisp_vector_assq(Lisp v, Lisp key)
     for (int i = 0; i < n; ++i)
     {
         Lisp pair = lisp_vector_ref(v, i); 
-        if (lisp_eq(lisp_car(pair), key))
-        {
-            return pair;
-        }
+        if (lisp_eq(lisp_car(pair), key)) return pair;
     }
     return lisp_make_null();
 }
@@ -1055,7 +1047,6 @@ Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx)
         return new_v;
     }
 }
-
 
 static uint64_t hash_uint64(uint64_t x) {
     x *= 0xff51afd7ed558ccd;
