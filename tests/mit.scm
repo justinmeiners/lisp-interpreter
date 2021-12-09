@@ -3,13 +3,12 @@
 ; Conditionals
 ; https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Conditionals.html
 
-(assert '())
 (assert (and (= 2 2) (> 2 1)))
 (assert (and))
  
 
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_13.html
-(assert (= (apply + (list 3 4 5 6)) 18))
+
 
 ; Universl Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
 (assert (integer? (get-universal-time)))

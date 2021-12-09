@@ -20,7 +20,6 @@
 
 (assert (= (+ 2 (if (> b a) b a )) 6))
 
-
 (assert (= (* (cond ((> a b) a)
                 ((< a b) b)
                 (else -1))
@@ -38,18 +37,6 @@
 (assert (= (largest-squares 3 4 5) (+ 25 16)))
 (assert (= (largest-squares 3 5 4) (+ 25 16)))
 
-; 1.09 - peano arithemetic
-(define (inc x) (+ x 1))
-(define (dec x) (- x 1))
-
-(define (peano-add a b)
-    (if (= a 0)
-        b
-        (peano-add (dec a) (inc b))))
-
-(assert (= (peano-add 4 5) 9))
-(assert (= (peano-add 20 10) 30))
-(assert (= (peano-add 100000 200000) 300000))
 
 
 ; 1.14 change counter
