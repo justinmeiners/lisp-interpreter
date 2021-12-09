@@ -266,6 +266,7 @@ Lisp lisp_make_vector(int n, Lisp x, LispContext ctx);
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, int i);
 void lisp_vector_set(Lisp v, int i, Lisp x);
+void lisp_vector_swap(Lisp v, int i, int j);
 void lisp_vector_fill(Lisp v, Lisp x);
 Lisp lisp_vector_assq(Lisp v, Lisp key); // O(n)
 Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx);
@@ -983,6 +984,13 @@ void lisp_vector_set(Lisp v, int i, Lisp x)
     assert(i < _vector_len(vector));
     vector->entries[i] = x.val;
     _vector_types(vector)[i] = (char)x.type;
+}
+
+void lisp_vector_swap(Lisp v, int i, int j)
+{
+    Lisp tmp = lisp_vector_ref(v, i);
+    lisp_vector_set(v, i, lisp_vector_ref(v, j));
+    lisp_vector_set(v, j, tmp);
 }
 
 void lisp_vector_fill(Lisp v, Lisp x)
@@ -4019,6 +4027,28 @@ static Lisp sch_vector_set(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
+static Lisp sch_vector_swap(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp v = lisp_list_ref(args, 0);
+    Lisp i = lisp_list_ref(args, 1);
+    Lisp j = lisp_list_ref(args, 2);
+
+    if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT || lisp_type(j) != LISP_INT)
+    {
+        *e = LISP_ERROR_BAD_ARG;
+        return lisp_make_null();
+    }
+
+    if (lisp_int(i) >= lisp_vector_length(v) || lisp_int(j) >= lisp_vector_length(v))
+    {
+        *e = LISP_ERROR_OUT_OF_BOUNDS;
+        return lisp_make_null();
+    }
+
+    lisp_vector_swap(v, lisp_int(i), lisp_int(j));
+    return v;
+}
+
 static Lisp sch_vector_fill(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp v = lisp_list_ref(args, 0);
@@ -4324,6 +4354,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "VECTOR-GROW", sch_vector_grow },
     { "VECTOR-LENGTH", sch_vector_length },
     { "VECTOR-SET!", sch_vector_set },
+    { "VECTOR-SWAP!", sch_vector_swap },
     { "VECTOR-REF", sch_vector_ref },
     { "VECTOR-FILL!", sch_vector_fill },
     { "SUBVECTOR", sch_subvector },
@@ -4739,20 +4770,23 @@ static const char* lib_code_sequence = " \
 (define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) \
 \
 (define (quicksort-partition v lo hi op) \
-  (let ((pivot hi) (i (- lo 1))) \
-    (do ((j lo (+ j 1))) \
-      ((> j hi) i) \
-      (if (or (= j pivot) (op (vector-ref v j) (vector-ref v pivot))) \
-        (begin \
-          (set! i (+ i 1)) \
-          (let ((tmp (vector-ref v i))) \
-            (vector-set! v i (vector-ref v j)) \
-            (vector-set! v j tmp))))))) \
+  (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot) \
+       (i (- lo 1) i) \
+       (j (+ hi 1) j)) \
+    ((>= i j) j) \
+    (begin \
+      (do ((x (set! i (+ i 1)) x)) \
+          ((not (op (vector-ref v i) pivot)) '()) \
+          (set! i (+ i 1))) \
+      (do ((x (set! j (- j 1)) x)) \
+          ((not (op pivot (vector-ref v j))) '()) \
+          (set! j (- j 1))) \
+      (if (< i j) (vector-swap! v i j))))) \
 \
 (define (quicksort-vector v lo hi op) \
   (if (and (>= lo 0) (>= hi 0) (< lo hi)) \
     (let ((p (quicksort-partition v lo hi op))) \
-      (quicksort-vector v lo (- p 1) op) \
+      (quicksort-vector v lo p op) \
       (quicksort-vector v (+ p 1) hi op)))) \
 \
 (define (sort! v op) \

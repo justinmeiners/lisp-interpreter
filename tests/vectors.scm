@@ -1,3 +1,9 @@
+
+(define v #(1 2 3))
+(vector-swap! v 0 2)
+(assert (= 3 (vector-ref v 0)))
+(assert (= 1 (vector-ref v 2)))
+
 (define (vec-sorted? v op)
  ; "if x and y are any two adjacent elements in the result,
  ;  where x precedes y, it is the case that (procedure y x) => #f"
