@@ -1085,7 +1085,6 @@ Lisp lisp_make_table(LispContext ctx)
 static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
 {
     Table* table = table_get_(t);
-
     if (new_capacity < 16) new_capacity = 16;
     assert(IS_POW2(new_capacity));
 
@@ -1108,7 +1107,6 @@ static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
 
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
 { 
-
     Table* table = table_get_(t);
     if (2 * table->size >= table->capacity)
     {
@@ -2346,40 +2344,37 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
             Lisp slot_names = lambda_args_(operator);
             *out_env = lisp_lambda_env(operator);
 
-            if (!lisp_is_null(slot_names))
+            // make a new environment
+            Lisp new_table = lisp_make_table(ctx);
+            
+            // bind parameters to arguments
+            // to pass into function call
+            while (lisp_is_pair(slot_names) && lisp_is_pair(args))
             {
-                // make a new environment
-                Lisp new_table = lisp_make_table(ctx);
-                
-                // bind parameters to arguments
-                // to pass into function call
-                while (lisp_is_pair(slot_names) && lisp_is_pair(args))
-                {
-                    lisp_table_set(new_table, lisp_car(slot_names), lisp_car(args), ctx);
-                    slot_names = lisp_cdr(slot_names);
-                    args = lisp_cdr(args);
-                }
+                lisp_table_set(new_table, lisp_car(slot_names), lisp_car(args), ctx);
+                slot_names = lisp_cdr(slot_names);
+                args = lisp_cdr(args);
+            }
 
-                if (lisp_type(slot_names) == LISP_SYMBOL)
-                {
-                    // variable length arguments
-                    lisp_table_set(new_table, slot_names, args, ctx);
-                }
-                else if (!lisp_is_null(slot_names))
-                {
-                    *error = LISP_ERROR_TOO_FEW_ARGS;
-                    return 0;
-                }
-                else if (!lisp_is_null(args))
-                {
-                    *error = LISP_ERROR_TOO_MANY_ARGS;
-                    return 0;
-                }
-                
-                // extend the environment
-                *out_env = lisp_env_extend(*out_env, new_table, ctx);
+            if (lisp_type(slot_names) == LISP_SYMBOL)
+            {
+                // variable length arguments
+                lisp_table_set(new_table, slot_names, args, ctx);
+            }
+            else if (!lisp_is_null(slot_names))
+            {
+                *error = LISP_ERROR_TOO_FEW_ARGS;
+                return 0;
+            }
+            else if (!lisp_is_null(args))
+            {
+                *error = LISP_ERROR_TOO_MANY_ARGS;
+                return 0;
             }
             
+            // extend the environment
+            *out_env = lisp_env_extend(*out_env, new_table, ctx);
+        
             // normally we would eval the body here
             // but while will eval
             *out_result = lisp_lambda_body(operator);
