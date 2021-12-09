@@ -4597,6 +4597,10 @@ static const char* lib_code1 = " \
        (display (quote ,body)) \
        (error \" assert failed\"))))) \
 \
+(define-macro =>  \
+   (lambda (test expected) \
+      `(assert (equal? ,test (quote ,expected))) )) \
+\
 (define-macro push \
  (lambda (v l) \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
