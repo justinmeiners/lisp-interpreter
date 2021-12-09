@@ -350,8 +350,8 @@ void lisp_promise_store(Lisp p, Lisp x);
 enum
 {
     GC_CLEAR = 0,
-    GC_MOVED = (1 << 0), // has this block been moved to the to-space?
-    GC_VISITED = (1 << 1), // has this block's pointers been moved?
+    GC_GONE = 1, 
+    GC_NEED_VISIT = 2, 
 };
 
 typedef struct Page
@@ -423,7 +423,7 @@ typedef struct Block
     } d;
 
     // 32
-    uint8_t gc_flags;
+    uint8_t gc_state;
     uint8_t type;
 } Block;
 
@@ -497,7 +497,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
     heap->size += alloc_size;
 
     Block* block = address;
-    block->gc_flags = GC_CLEAR;
+    block->gc_state = GC_CLEAR;
     block->info.size = alloc_size;
     block->type = type;
     return address;
@@ -698,34 +698,34 @@ LispReal lisp_real(Lisp x)
     return x.val.real_val;
 }
 
-Lisp lisp_car(Lisp p)
+static Pair* pair_get_(Lisp p)
 {
     assert(p.type == LISP_PAIR);
-    const Pair* pair = p.val.ptr_val;
-    Lisp x = { pair->car, (LispType)pair->block.d.pair.car_type };
-    return x;
+    return p.val.ptr_val;
+}
+
+Lisp lisp_car(Lisp p)
+{
+    const Pair* pair = pair_get_(p); 
+    return (Lisp) { pair->car, (LispType)pair->block.d.pair.car_type };
 }
 
 Lisp lisp_cdr(Lisp p)
 {
-    assert(p.type == LISP_PAIR);
-    const Pair* pair = p.val.ptr_val;
-    Lisp x = { pair->cdr, (LispType)pair->block.d.pair.cdr_type };
-    return x;
+    const Pair* pair = pair_get_(p); 
+    return (Lisp) { pair->cdr, (LispType)pair->block.d.pair.cdr_type };
 }
 
 void lisp_set_car(Lisp p, Lisp x)
 {
-    assert(p.type == LISP_PAIR);
-    Pair* pair = p.val.ptr_val;
+    Pair* pair = pair_get_(p); 
     pair->car = x.val;
     pair->block.d.pair.car_type = x.type;
 }
 
 void lisp_set_cdr(Lisp p, Lisp x)
 {
-    assert(p.type == LISP_PAIR);
-    Pair* pair = p.val.ptr_val;
+    Pair* pair = pair_get_(p); 
     pair->cdr = x.val;
     pair->block.d.pair.cdr_type = x.type;
 }
@@ -1106,8 +1106,7 @@ Lisp lisp_make_table(LispContext ctx)
     return (Lisp) { x, LISP_TABLE };
 }
 
-static
-void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
+static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
 {
     Table* table = table_get_(t);
 
@@ -1242,9 +1241,15 @@ Lisp lisp_make_promise(Lisp proc, LispContext ctx)
     return (Lisp) { val, LISP_PROMISE };
 }
 
+static Promise* promise_get_(Lisp p)
+{
+    assert(p.type == LISP_PROMISE);
+    return p.val.ptr_val;
+}
+
 void lisp_promise_store(Lisp p, Lisp x)
 {
-    Promise* promise = p.val.ptr_val;
+    Promise* promise = promise_get_(p); 
     assert(!promise->block.d.promise.cached);
     promise->block.d.promise.cached = 1;
     promise->block.d.promise.type = lisp_type(x);
@@ -1253,27 +1258,27 @@ void lisp_promise_store(Lisp p, Lisp x)
 
 int lisp_promise_forced(Lisp p)
 {
-    const Promise* promise = p.val.ptr_val;
+    const Promise* promise = promise_get_(p); 
     return (int)promise->block.d.promise.cached;
 }
 
 static Lisp promise_body_or_val_(Lisp p)
 {
-    const Promise* promise = p.val.ptr_val;
+    const Promise* promise = promise_get_(p); 
     LispType type = (LispType)promise->block.d.promise.type;
     return (Lisp) { promise->val_or_proc, type }; 
 }
 
 Lisp lisp_promise_proc(Lisp p)
 {
-    const Promise* promise = p.val.ptr_val;
+    const Promise* promise = promise_get_(p); 
     assert(!promise->block.d.promise.cached);
     return promise_body_or_val_(p);
 }
 
 Lisp lisp_promise_val(Lisp p)
 {
-    const Promise* promise = p.val.ptr_val;
+    const Promise* promise = promise_get_(p); 
     assert(promise->block.d.promise.cached);
     return promise_body_or_val_(p);
 }
@@ -1349,15 +1354,17 @@ static uint64_t hash_bytes(const char *buffer, size_t n)
     return x;
 }
 
-// Interned symbols cannot be garbage collected because
-// otherwise when their pointer is moved in the collection step,
-// their hash (of their pointer) is no longer correct.
-// So they need to be moved in the table.
-static Lisp symbol_make_(const char* string, int length)
+typedef struct
 {
-    char* symbol = malloc(sizeof(char) * (length + 1));
-    memcpy(symbol, string, length);
-    symbol[length] = '\0';
+    Block block;
+    char text[];
+} Symbol;
+
+static Lisp symbol_make_(const char* string, int length, LispContext ctx)
+{
+    Symbol* symbol = gc_alloc(sizeof(Symbol) + (length + 1), LISP_SYMBOL, ctx);
+    memcpy(symbol->text, string, length);
+    symbol->text[length] = '\0';
 
     LispVal x;
     x.ptr_val = symbol;
@@ -1390,7 +1397,7 @@ static Lisp symbol_intern_(Lisp table, const char* string, size_t length, LispCo
     }
 
     // new symbol
-    Lisp symbol = symbol_make_(string, length);
+    Lisp symbol = symbol_make_(string, length, ctx);
     lisp_table_set(table, key, lisp_cons(symbol, symbol_list, ctx), ctx);
     return symbol;
 }
@@ -1406,10 +1413,14 @@ Lisp lisp_gen_symbol(LispContext ctx)
 {
     char text[64];
     int bytes = snprintf(text, 64, ":G%d", ctx.p->symbol_counter++);
-    return symbol_make_(text, bytes);
+    return symbol_make_(text, bytes, ctx);
 }
 
-const char* lisp_symbol_string(Lisp l) {  return l.val.ptr_val; }
+const char* lisp_symbol_string(Lisp l) {
+  assert(lisp_type(l) == LISP_SYMBOL);
+  Symbol* symbol = l.val.ptr_val;
+  return symbol->text;
+}
 
 Lisp lisp_make_func(LispCFunc func)
 {
@@ -2868,11 +2879,10 @@ Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
     return lisp_eval_opt(expr, lisp_env_global(ctx), out_error, ctx);
 }
 
-static Lisp gc_move(Lisp l, Heap* to);
 
-static LispVal gc_move_val(LispVal val, LispType type, Heap* to)
+static Lisp gc_move(Lisp x, LispContext ctx)
 {
-    switch (type)
+    switch (x.type)
     {
         case LISP_PAIR:
         case LISP_STRING:
@@ -2880,61 +2890,66 @@ static LispVal gc_move_val(LispVal val, LispType type, Heap* to)
         case LISP_VECTOR:
         case LISP_PROMISE:
         case LISP_TABLE:
+        case LISP_SYMBOL:
         {
-            Block* block = val.ptr_val;
-            if (!(block->gc_flags & GC_MOVED))
+            Block* block = x.val.ptr_val;
+            if (block->gc_state == GC_CLEAR)
             {
                 // copy the data to new block
-                Block* dest = heap_alloc(block->info.size, block->type, to);
+                Block* dest = heap_alloc(block->info.size, block->type, &ctx.p->heap);
                 memcpy(dest, block, block->info.size);
-                dest->gc_flags = GC_CLEAR;
+                dest->gc_state = GC_NEED_VISIT;
                 
                 // save forwarding address (offset in to)
                 block->info.forward = dest;
-                block->gc_flags = GC_MOVED;
+                block->gc_state = GC_GONE;
             }
+
+            assert(block->gc_state == GC_GONE);
             
             // return the moved block address
-            val.ptr_val = block->info.forward;
-            return val;
+            x.val.ptr_val = block->info.forward;
+            return x;
         }
         default:
-            return val;
+            return x;
     }
 }
 
-static Lisp gc_move(Lisp l, Heap* to)
+static LispVal gc_move_val(LispVal val, LispType type, LispContext ctx)
 {
-    l.val = gc_move_val(l.val, l.type, to);
-    return l;
+    return gc_move( (Lisp) { val, type}, ctx).val;
 }
 
-static void gc_move_v(Lisp* start, int n, Heap* to)
+static void gc_move_v(Lisp* start, int n, LispContext ctx)
 {
     int i;
     for (i = 0; i < n; ++i)
-        start[i] = gc_move(start[i], to);
+        start[i] = gc_move(start[i], ctx);
 }
 
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
     time_t start_time = clock();
 
-    Heap to;
-    heap_init(&to, ctx.p->heap.page_size);
+    // copy of old heap
+    Heap from = ctx.p->heap;
+
+    // make new heap to allocate and copy to
+    heap_init(&ctx.p->heap, ctx.p->heap.page_size);
 
     // move root object
-    ctx.p->symbol_table = gc_move(ctx.p->symbol_table, &to);
-    ctx.p->global_env = gc_move(ctx.p->global_env, &to);
-    ctx.p->macros = gc_move(ctx.p->macros, &to);
+    ctx.p->symbol_table = gc_move(ctx.p->symbol_table, ctx);
+    ctx.p->global_env = gc_move(ctx.p->global_env, ctx);
+    ctx.p->macros = gc_move(ctx.p->macros, ctx);
 
-    gc_move_v(ctx.p->symbol_cache, SYM_COUNT, &to);
-    gc_move_v(ctx.p->stack, ctx.p->stack_ptr, &to);
+    gc_move_v(ctx.p->symbol_cache, SYM_COUNT, ctx);
+    gc_move_v(ctx.p->stack, ctx.p->stack_ptr, ctx);
 
-    Lisp result = gc_move(root_to_save, &to);
+    Lisp result = gc_move(root_to_save, ctx);
 
     // move references
-    const Page* page = to.bottom;
+    const Page* page = ctx.p->heap.bottom;
     int page_counter = 0;
     while (page)
     {
@@ -2942,7 +2957,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
         while (offset < page->size)
         {
             Block* block = (Block*)(page->buffer + offset);
-            if (!(block->gc_flags & GC_VISITED))
+            if (block->gc_state == GC_NEED_VISIT)
             {
                 switch (block->type)
                 {
@@ -2952,48 +2967,77 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                     {
                         // move the CAR and CDR
                         Pair* p = (Pair*)block;
-                        p->car = gc_move_val(p->car, p->block.d.pair.car_type, &to);
-                        p->cdr = gc_move_val(p->cdr, p->block.d.pair.cdr_type, &to);
+                        p->car = gc_move_val(p->car, p->block.d.pair.car_type, ctx);
+                        p->cdr = gc_move_val(p->cdr, p->block.d.pair.cdr_type, ctx);
                         break;
                     }
                     case LISP_VECTOR:
                     {
+                        Lisp vector;
+                        vector.val.ptr_val = block;
+                        vector.type = LISP_VECTOR;
+
                         Vector* v = (Vector*)block;
                         int n = _vector_len(v);
-                        char* entry_types = _vector_types(v);
                         for (int i = 0; i < n; ++i)
-                            v->entries[i] = gc_move_val(v->entries[i], (LispType)entry_types[i], &to);
-                        break;
-                    }
-                    case LISP_TABLE:
-                    {
-                        Table* t = (Table*)block;
-                        if (t->capacity > 0)
-                        {
-                            t->keys = gc_move_val(t->keys, LISP_VECTOR, &to);
-                            t->vals = gc_move_val(t->vals, LISP_VECTOR, &to);
-                        }
+                            v->entries[i] = gc_move(lisp_vector_ref(vector, i), ctx).val;
                         break;
                     }
                     case LISP_LAMBDA:
                     {
                         // move the body and args
                         Lambda* l = (Lambda*)block;
-                        l->args = gc_move_val(l->args, (LispType)l->block.d.lambda.args_type, &to);
-                        l->body = gc_move_val(l->body, (LispType)l->block.d.lambda.body_type, &to);
-                        l->env = gc_move_val(l->env, l->env.ptr_val == NULL ? LISP_NULL : LISP_PAIR, &to);
+                        l->args = gc_move_val(l->args, (LispType)l->block.d.lambda.args_type, ctx);
+                        l->body = gc_move_val(l->body, (LispType)l->block.d.lambda.body_type, ctx);
+                        l->env = gc_move_val(l->env, l->env.ptr_val == NULL ? LISP_NULL : LISP_PAIR, ctx);
                         break;
                     }
                     case LISP_PROMISE:
                     {
                         Promise* p = (Promise*)block;
-                        p->val_or_proc = gc_move_val(p->val_or_proc, (LispType)p->block.d.promise.type, &to);
+                        p->val_or_proc = gc_move_val(p->val_or_proc, (LispType)p->block.d.promise.type, ctx);
                         break;
-
                     }
+                    case LISP_TABLE:
+                    {
+
+                        // During garbage collection all pointers change INCLUDING symbols,
+                        // so that means if a symbol pointer is being used as a key, it is no
+                        // longer in the correct place in the hash table.
+                        // So we have to move it to a new place during garbage collection.
+                        Lisp table;
+                        table.val.ptr_val = block;
+                        table.type = LISP_TABLE;
+
+                        Table* t = (Table*)block;
+                        t->size = 0;
+
+                        int n = t->capacity;
+                        if (n > 0)
+                        {
+                            Lisp old_keys = { t->keys, LISP_VECTOR };
+                            Lisp old_vals = { t->vals, LISP_VECTOR };
+
+                            t->keys = lisp_make_vector(n, lisp_make_null(), ctx).val;
+                            t->vals = lisp_make_vector(n, lisp_make_null(), ctx).val;
+
+                            for (int i = 0; i < n; ++i)
+                            {
+                                Lisp key = lisp_vector_ref(old_keys, i); 
+                                if (!lisp_is_null(key))
+                                {
+                                    Lisp moved_key = gc_move(key, ctx);
+                                    Lisp moved_val = gc_move(lisp_vector_ref(old_vals, i), ctx); 
+                                    lisp_table_set(table, moved_key, moved_val, ctx);
+                                }
+                            }
+                            assert(t->capacity == n);
+                        }
+                        break;
+                     }
                     default: break;
                 }
-                block->gc_flags |= GC_VISITED;
+                block->gc_state = GC_CLEAR;
             }
             offset += block->info.size;
         }
@@ -3001,18 +3045,20 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
         ++page_counter;
     }
     // check that we visited all the pages
-    assert(page_counter == to.page_count);
+    assert(page_counter == ctx.p->heap.page_count);
     
 #ifdef LISP_DEBUG
      {
           // DEBUG, check offsets
-          const Page* page = to.bottom;
+          const Page* page = ctx.p->heap.bottom;
           while (page)
           {
               size_t offset = 0;
               while (offset < page->size)
               {
                   Block* block = (Block*)(page->buffer + offset);
+                  assert(block->gc_state == GC_CLEAR);
+                  assert(block->info.size < page->size);
                   assert(block->info.size % sizeof(LispVal) == 0);
                   offset += block->info.size;
               }
@@ -3022,11 +3068,10 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     }
 #endif
     
-    size_t diff = ctx.p->heap.size - to.size;
+    size_t diff = from.size - ctx.p->heap.size;
 
     // swap the heaps
-    heap_shutdown(&ctx.p->heap);
-    ctx.p->heap = to;
+    heap_shutdown(&from);
     
     time_t end_time = clock();
     ctx.p->gc_stat_freed = diff;
