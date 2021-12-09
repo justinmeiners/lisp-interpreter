@@ -10,8 +10,7 @@
     (display v)
     (assert (eq? x (vector-ref v 0)))
     (gc-flip)
-    (assert (eq? x (vector-ref v 0)))
-)
+    (assert (eq? x (vector-ref v 0))))
 
 (define counter 500)
 (define big-vector '())

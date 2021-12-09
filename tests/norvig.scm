@@ -1,10 +1,6 @@
 ; From Peter Norvig's Lispy tests
 ; http://norvig.com/lispy2.html
 
-(assert (= (+ 2 2) 4))
-(assert (= (+ (* 2 100) (* 1 10)) 210))
-(assert (= (if (> 6 5) (+ 1 1) (+ 2 2)) 2))
-(assert (= (if (< 6 5) (+ 1 1) (+ 2 2)) 4))
 (define x 3)
 (assert (= x 3))
 (assert (= (+ x x) 6))
