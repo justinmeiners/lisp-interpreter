@@ -565,12 +565,6 @@ typedef struct
     LispVal entries[];
 } Vector;
 
-typedef struct
-{
-    Block block;
-    LispVal val_or_proc;
-} Promise;
-
 static Lisp val_to_list_(LispVal x)
 {
     return (Lisp) { x, x.ptr_val == NULL ? LISP_NULL : LISP_PAIR };
@@ -672,10 +666,7 @@ Lisp lisp_make_bool(int t)
     return (Lisp) { val, LISP_BOOL };
 }
 
-int lisp_bool(Lisp x)
-{
-    return x.val.char_val;
-}
+int lisp_bool(Lisp x) { return x.val.char_val; }
 
 int lisp_is_true(Lisp x)
 {
@@ -1228,6 +1219,12 @@ void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx)
     }
 }
 
+typedef struct
+{
+    Block block;
+    LispVal val_or_proc;
+} Promise;
+
 Lisp lisp_make_promise(Lisp proc, LispContext ctx)
 {
     assert(lisp_type(proc) == LISP_LAMBDA || lisp_type(proc) == LISP_FUNC);
@@ -1417,9 +1414,9 @@ Lisp lisp_gen_symbol(LispContext ctx)
 }
 
 const char* lisp_symbol_string(Lisp l) {
-  assert(lisp_type(l) == LISP_SYMBOL);
-  Symbol* symbol = l.val.ptr_val;
-  return symbol->text;
+    assert(lisp_type(l) == LISP_SYMBOL);
+    Symbol* symbol = l.val.ptr_val;
+    return symbol->text;
 }
 
 Lisp lisp_make_func(LispCFunc func)
@@ -1915,12 +1912,8 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
         case TOKEN_STRING:
         {
             // -2 length to skip quotes
-            String* string = gc_alloc(sizeof(String) + length - 1, LISP_STRING, ctx);
-            lexer_copy_token(lex, 1, length - 2, string->string);
-            string->string[length - 2] = '\0';
-            
-            l.type = string->block.type;
-            l.val.ptr_val = string;
+            l = lisp_make_string2(length - 2, '\0', ctx);
+            lexer_copy_token(lex, 1, length - 2, lisp_string(l));
             break;
         }
         case TOKEN_SYMBOL:
