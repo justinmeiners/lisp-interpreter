@@ -19,3 +19,11 @@
 (assert (equal? 2 (hash-table/get h2 2001 -1)))
 
 
+(define h3 (alist->hash-table '((APPLE . "apple") (PEAR . "pear") (BANANA . "banana"))))
+
+
+(assert (equal? "apple" (hash-table/get h3 'APPLE)))
+(assert (equal? "pear" (hash-table/get h3 'PEAR)))
+(assert (equal? '() (hash-table/get h3 'HASH)))
+
+

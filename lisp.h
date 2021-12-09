@@ -576,10 +576,7 @@ Lisp lisp_make_null()
 
 int lisp_equal(Lisp a, Lisp b)
 {
-    if (a.type != b.type)
-    {
-        return 0;
-    }
+    if (a.type != b.type) return 0;
 
     switch (a.type)
     {
@@ -595,6 +592,8 @@ int lisp_equal(Lisp a, Lisp b)
             return lisp_real(a) == lisp_real(b);
         case LISP_FUNC:
             return lisp_func(a) == lisp_func(b);
+        case LISP_STRING:
+            return strcmp(lisp_string(a), lisp_string(b)) == 0;
         default:
             return a.val.ptr_val == b.val.ptr_val;
     }
@@ -602,10 +601,7 @@ int lisp_equal(Lisp a, Lisp b)
 
 int lisp_equal_r(Lisp a, Lisp b)
 {
-    if (a.type != b.type)
-    {
-        return 0;
-    }
+    if (a.type != b.type) return 0;
 
     switch (a.type)
     {
@@ -4110,11 +4106,11 @@ static Lisp sch_table_get(Lisp args, LispError* e, LispContext ctx)
     Lisp table = lisp_car(args);
     args = lisp_cdr(args);
     Lisp key = lisp_car(args);
+    args = lisp_cdr(args);
 
     Lisp def;
     if (lisp_is_pair(args))
     {
-        args = lisp_cdr(args);
         def = lisp_car(args);
     }
     else
