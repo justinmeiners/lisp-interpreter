@@ -2539,15 +2539,18 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 else 
                 {
                     // operator application
+                    
+
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_car(*x), ctx);
                     
                     Lisp operator = eval_r(error_jmp, ctx);
                     
-                    lisp_stack_pop(ctx);
+                    Lisp operator_expr = lisp_stack_pop(ctx);
                     lisp_stack_pop(ctx);
                     
                     lisp_stack_push(operator, ctx);
+                    lisp_stack_push(operator_expr, ctx);
                     
                     Lisp arg_expr = lisp_cdr(*x);
                     
@@ -2569,11 +2572,20 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                         arg_expr = lisp_stack_pop(ctx);
                     }
                     
+                    operator_expr = lisp_stack_pop(ctx);
                     operator = lisp_stack_pop(ctx);
                     
                     LispError error = LISP_ERROR_NONE;
                     int needs_to_eval = apply(operator, lisp_list_reverse(args), x, env, &error, ctx);
-                    if (error != LISP_ERROR_NONE) longjmp(error_jmp, error);
+                    if (error != LISP_ERROR_NONE)
+                    {
+                        if (lisp_type(operator_expr) == LISP_SYMBOL)
+                        {
+                            fprintf(stderr, "operator: %s\n", lisp_symbol_string(operator_expr));
+                        }
+
+                        longjmp(error_jmp, error);
+                    }
 
                     if (!needs_to_eval)
                     {
@@ -4606,7 +4618,7 @@ static const char* lib_code1 = " \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
 \
 (define-macro do \
- (lambda (vars loop-check loop) \
+ (lambda (vars loop-check . loops) \
   (let ((names '()) \
         (inits '()) \
         (steps '()) \
@@ -4621,8 +4633,8 @@ static const char* lib_code1 = " \
            (begin \
             (set! ,f (lambda ,names \
                       (if ,(car loop-check) \
-                       ,(car (cdr loop-check)) \
-                       ,(cons 'BEGIN (list loop (cons f steps))) ))) \
+                       ,(if (pair? (cdr loop-check)) (car (cdr loop-check)) '()) \
+                       ,(cons 'BEGIN (append loops (list (cons f steps)))) ))) \
             ,(cons f inits) \
            )) '()) ))) \
 \
@@ -4799,8 +4811,7 @@ static const char* lib_code_sequence = " \
 ";
 
 static const char* lib_code_streams = " \
-(define-macro cons-stream (lambda (x expr) \
-   (list 'CONS x (list 'DELAY expr)))) \
+(define-macro cons-stream (lambda (x expr) `(cons ,x (delay ,expr)))) \
 \
 (define (stream-car stream) (car stream)) \
 (define (stream-cdr stream) (force (cdr stream))) \

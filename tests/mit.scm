@@ -22,6 +22,10 @@
 (assert (compiled-procedure? eval))
 
 
+(do ((i 0 (+ i 1)))
+  ((>= i 10))
+  (assert (>= i 0))
+  (display i))
 
 
 
