@@ -409,6 +409,11 @@ typedef struct Block
 
         struct
         {
+            int length;
+        } symbol;
+
+        struct
+        {
             uint8_t cached;
             uint8_t type;
         } promise;
@@ -1342,14 +1347,26 @@ static uint64_t hash_bytes(const char *buffer, size_t n)
 typedef struct
 {
     Block block;
+    // built in linked list
+    LispVal next;
     char text[];
 } Symbol;
+
+static Symbol* symbol_get_(Lisp x)
+{
+    assert(lisp_type(x) == LISP_SYMBOL);
+    return x.val.ptr_val;
+}
+int  lisp_symbol_length(Lisp l) { return symbol_get_(l)->block.d.symbol.length; }
+const char* lisp_symbol_string(Lisp l) { return symbol_get_(l)->text; }
 
 static Lisp symbol_make_(const char* string, int length, LispContext ctx)
 {
     Symbol* symbol = gc_alloc(sizeof(Symbol) + (length + 1), LISP_SYMBOL, ctx);
     memcpy(symbol->text, string, length);
     symbol->text[length] = '\0';
+    symbol->next.ptr_val = NULL; 
+    symbol->block.d.symbol.length = length;
 
     LispVal x;
     x.ptr_val = symbol;
@@ -1367,23 +1384,25 @@ static Lisp symbol_intern_(Lisp table, const char* string, size_t length, LispCo
 
     // linked list chaining in the resulting value.
     int present;
-    Lisp symbol_list = lisp_table_get(table, key, &present);
+    Lisp first_symbol = lisp_table_get(table, key, &present);
 
     // symbol found in linked list chain
-    Lisp it = symbol_list;
-    while (!lisp_is_null(it))
+    if (present)
     {
-        Lisp s = lisp_car(symbol_list);
-        if (strncmp(lisp_symbol_string(s), string, length) == 0)
+        Lisp it = first_symbol;
+        while (it.val.ptr_val != NULL)
         {
-            return s; 
+            if (lisp_symbol_length(it) == length &&
+                strncmp(lisp_symbol_string(it), string, length) == 0) return it;
+            it.val = symbol_get_(it)->next;
         }
-        it = lisp_cdr(it);
     }
 
     // new symbol
     Lisp symbol = symbol_make_(string, length, ctx);
-    lisp_table_set(table, key, lisp_cons(symbol, symbol_list, ctx), ctx);
+
+    symbol_get_(symbol)->next = first_symbol.val;
+    lisp_table_set(table, key, symbol, ctx);
     return symbol;
 }
 
@@ -1401,11 +1420,6 @@ Lisp lisp_gen_symbol(LispContext ctx)
     return symbol_make_(text, bytes, ctx);
 }
 
-const char* lisp_symbol_string(Lisp l) {
-    assert(lisp_type(l) == LISP_SYMBOL);
-    Symbol* symbol = l.val.ptr_val;
-    return symbol->text;
-}
 
 Lisp lisp_make_func(LispCFunc func)
 {
@@ -2375,7 +2389,8 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
                 *error = LISP_ERROR_TOO_MANY_ARGS;
                 return 0;
             }
-            
+
+ 
             // extend the environment
             *out_env = lisp_env_extend(*out_env, new_table, ctx);
         
@@ -2539,8 +2554,6 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 else 
                 {
                     // operator application
-                    
-
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_car(*x), ctx);
                     
@@ -2918,6 +2931,45 @@ static void gc_move_v(Lisp* start, int n, LispContext ctx)
         start[i] = gc_move(start[i], ctx);
 }
 
+static void gc_move_weak_symbols(Lisp old_table, LispContext ctx)
+{
+    // move symbol table (weak references)
+    Table* from = table_get_(old_table);
+    table_grow_(ctx.p->symbol_table, from->capacity, ctx);
+
+    int n = from->capacity;
+    Lisp hashes = { from->keys, LISP_VECTOR };
+    Lisp symbols = { from->vals, LISP_VECTOR };
+
+    for (int i = 0; i < n; ++i)
+    {
+        Lisp hash = lisp_vector_ref(hashes, i); 
+        if (!lisp_is_null(hashes))
+        {
+            Lisp old_symbol = lisp_vector_ref(symbols, i);
+            while (old_symbol.val.ptr_val != NULL)
+            {
+                if (symbol_get_(old_symbol)->block.gc_state == GC_GONE)
+                {
+                    Lisp to_insert = gc_move(old_symbol, ctx);
+                    int present;
+                    Lisp existing = lisp_table_get(ctx.p->symbol_table, hash, &present);
+
+                    symbol_get_(to_insert)->next = existing.val;
+                    lisp_table_set(ctx.p->symbol_table, hash, to_insert, ctx);
+                }
+                else
+                {
+#ifdef LISP_DEBUG
+                    //printf("losing symbol: %s\n", lisp_symbol_string(old_symbol));
+#endif
+                }
+                old_symbol.val = symbol_get_(old_symbol)->next;
+            }
+        }
+    }
+}
+
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
     time_t start_time = clock();
@@ -2929,7 +2981,6 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     heap_init(&ctx.p->heap, ctx.p->heap.page_size);
 
     // move root object
-    ctx.p->symbol_table = gc_move(ctx.p->symbol_table, ctx);
     ctx.p->global_env = gc_move(ctx.p->global_env, ctx);
     ctx.p->macros = gc_move(ctx.p->macros, ctx);
 
@@ -3036,6 +3087,10 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     }
     // check that we visited all the pages
     assert(page_counter == ctx.p->heap.page_count);
+
+    Lisp old  = ctx.p->symbol_table;
+    ctx.p->symbol_table = lisp_make_table(ctx); 
+    gc_move_weak_symbols(old, ctx);
     
 #ifdef LISP_DEBUG
      {
@@ -3048,7 +3103,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
               {
                   Block* block = (Block*)(page->buffer + offset);
                   assert(block->gc_state == GC_CLEAR);
-                  assert(block->info.size < page->size);
+                  assert(block->info.size <= page->size);
                   assert(block->info.size % sizeof(LispVal) == 0);
                   offset += block->info.size;
               }
