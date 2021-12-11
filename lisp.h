@@ -2929,11 +2929,12 @@ static void gc_move_v(Lisp* start, int n, LispContext ctx)
         start[i] = gc_move(start[i], ctx);
 }
 
-static void gc_move_weak_symbols(Lisp old_table, LispContext ctx)
+static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
 {
     // move symbol table (weak references)
     Table* from = table_get_(old_table);
-    table_grow_(ctx.p->symbol_table, from->capacity, ctx);
+    Lisp to_table = lisp_make_table(ctx);
+    table_grow_(to_table, from->capacity, ctx);
 
     int n = from->capacity;
     Lisp hashes = { from->keys, LISP_VECTOR };
@@ -2951,10 +2952,10 @@ static void gc_move_weak_symbols(Lisp old_table, LispContext ctx)
                 {
                     Lisp to_insert = gc_move(old_symbol, ctx);
                     int present;
-                    Lisp existing = lisp_table_get(ctx.p->symbol_table, hash, &present);
+                    Lisp existing = lisp_table_get(to_table, hash, &present);
 
                     symbol_get_(to_insert)->next = existing.val;
-                    lisp_table_set(ctx.p->symbol_table, hash, to_insert, ctx);
+                    lisp_table_set(to_table, hash, to_insert, ctx);
                 }
                 else
                 {
@@ -2966,6 +2967,7 @@ static void gc_move_weak_symbols(Lisp old_table, LispContext ctx)
             }
         }
     }
+    return to_table;
 }
 
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
@@ -3049,29 +3051,21 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         table.type = LISP_TABLE;
 
                         Table* t = (Table*)block;
-                        t->size = 0;
-
                         int n = t->capacity;
-                        if (n > 0)
+
+                        Lisp keys = { t->keys, LISP_VECTOR };
+                        Lisp vals = { t->vals, LISP_VECTOR };
+
+                        for (int i = 0; i < n; ++i)
                         {
-                            Lisp old_keys = { t->keys, LISP_VECTOR };
-                            Lisp old_vals = { t->vals, LISP_VECTOR };
-
-                            t->keys = lisp_make_vector(n, lisp_make_null(), ctx).val;
-                            t->vals = lisp_make_vector(n, lisp_make_null(), ctx).val;
-
-                            for (int i = 0; i < n; ++i)
+                            Lisp key = lisp_vector_ref(keys, i); 
+                            if (!lisp_is_null(key))
                             {
-                                Lisp key = lisp_vector_ref(old_keys, i); 
-                                if (!lisp_is_null(key))
-                                {
-                                    Lisp moved_key = gc_move(key, ctx);
-                                    Lisp moved_val = gc_move(lisp_vector_ref(old_vals, i), ctx); 
-                                    lisp_table_set(table, moved_key, moved_val, ctx);
-                                }
+                                lisp_vector_set(keys, i, gc_move(key, ctx));
+                                lisp_vector_set(vals, i, gc_move(lisp_vector_ref(vals, i), ctx));
                             }
-                            assert(t->capacity == n);
                         }
+                        table_grow_(table, n, ctx);
                         break;
                      }
                     default: break;
@@ -3085,10 +3079,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     }
     // check that we visited all the pages
     assert(page_counter == ctx.p->heap.page_count);
-
-    Lisp old  = ctx.p->symbol_table;
-    ctx.p->symbol_table = lisp_make_table(ctx); 
-    gc_move_weak_symbols(old, ctx);
+    ctx.p->symbol_table = gc_move_weak_symbols(ctx.p->symbol_table, ctx);
     
 #ifdef LISP_DEBUG
      {
