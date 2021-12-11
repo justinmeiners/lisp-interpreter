@@ -2,7 +2,7 @@
 
 PASS=1
 
-cd code
+cd tests/code
 
 for FILE in *.scm
 do

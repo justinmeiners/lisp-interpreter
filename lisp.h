@@ -533,8 +533,8 @@ struct LispImpl
     FILE* err_port;
     FILE* in_port;
 
-    Lisp symbol_table;
-    Lisp global_env;
+    Lisp symbols;
+    Lisp env;
     Lisp macros;
 
     int symbol_counter;
@@ -1413,7 +1413,7 @@ Lisp lisp_make_symbol(const char* string, LispContext ctx)
 {
     assert(string);
     int length = strnlen(string, LISP_FILE_CHUNK_SIZE);
-    return symbol_intern_(ctx.p->symbol_table, string, length, ctx);
+    return symbol_intern_(ctx.p->symbols, string, length, ctx);
 }
 
 Lisp lisp_gen_symbol(LispContext ctx)
@@ -1928,7 +1928,7 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
             scratch[length] = '\0';
             for (int i = 0; i < length; ++i)
                 scratch[i] = toupper(scratch[i]);
-            l = symbol_intern_(ctx.p->symbol_table, scratch, length, ctx);
+            l = symbol_intern_(ctx.p->symbols, scratch, length, ctx);
             break;
         }
         default: 
@@ -2905,7 +2905,6 @@ Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
     return lisp_eval_opt(expr, lisp_env_global(ctx), out_error, ctx);
 }
 
-
 static Lisp gc_move(Lisp x, LispContext ctx)
 {
     switch (x.type)
@@ -3006,7 +3005,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     heap_init(&ctx.p->heap, ctx.p->heap.page_size);
 
     // move root object
-    ctx.p->global_env = gc_move(ctx.p->global_env, ctx);
+    ctx.p->env = gc_move(ctx.p->env, ctx);
     ctx.p->macros = gc_move(ctx.p->macros, ctx);
 
     gc_move_v(ctx.p->symbol_cache, SYM_COUNT, ctx);
@@ -3104,7 +3103,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     }
     // check that we visited all the pages
     assert(page_counter == ctx.p->heap.page_count);
-    ctx.p->symbol_table = gc_move_weak_symbols(ctx.p->symbol_table, ctx);
+    ctx.p->symbols = gc_move_weak_symbols(ctx.p->symbols, ctx);
     
 #ifdef LISP_DEBUG
      {
@@ -3148,17 +3147,17 @@ void lisp_print_collect_stats(LispContext ctx)
     }
     fprintf(ctx.p->out_port, "\ngc collected: %lu\t time: %lu us\n", ctx.p->gc_stat_freed, ctx.p->gc_stat_time);
     fprintf(ctx.p->out_port, "heap size: %lu\t pages: %lu\n", ctx.p->heap.size, ctx.p->heap.page_count);
-    fprintf(ctx.p->out_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbol_table));
+    fprintf(ctx.p->out_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbols));
 }
 
 Lisp lisp_env_global(LispContext ctx)
 {
-    return ctx.p->global_env;
+    return ctx.p->env;
 }
 
 void lisp_env_set_global(Lisp env, LispContext ctx)
 {
-    ctx.p->global_env = env;
+    ctx.p->env = env;
 }
 
 void lisp_shutdown(LispContext ctx)
@@ -3234,8 +3233,8 @@ LispContext lisp_init(void)
     
     heap_init(&ctx.p->heap, LISP_PAGE_SIZE);
 
-    ctx.p->symbol_table = lisp_make_table(ctx);
-    ctx.p->global_env = lisp_make_null();
+    ctx.p->symbols = lisp_make_table(ctx);
+    ctx.p->env = lisp_make_null();
     ctx.p->macros = lisp_make_table(ctx);
 
     Lisp* c = ctx.p->symbol_cache;
@@ -4920,7 +4919,7 @@ void lisp_load_lib(LispContext ctx)
     Lisp table = lisp_make_table(ctx);
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
     Lisp system_env = lisp_env_extend(lisp_make_null(), table, ctx);
-    ctx.p->global_env = lisp_env_extend(system_env, lisp_make_table(ctx), ctx);
+    ctx.p->env = lisp_env_extend(system_env, lisp_make_table(ctx), ctx);
 
     LispError error;
 
