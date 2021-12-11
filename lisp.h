@@ -198,9 +198,11 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 // Numbers
 Lisp lisp_make_int(LispInt n);
 LispInt lisp_int(Lisp x);
+Lisp lisp_parse_int(const char* string);
 
 Lisp lisp_make_real(LispReal x);
 LispReal lisp_real(Lisp x);
+Lisp lisp_parse_real(const char* string);
 
 // Bools
 Lisp lisp_make_bool(int t);
@@ -348,8 +350,11 @@ void lisp_promise_store(Lisp p, Lisp x);
 #define LISP_STACK_DEPTH 1024
 #endif
 
+#ifndef LISP_IDENTIFIER_MAX
+#define LISP_IDENTIFIER_MAX 1024
+#endif
+
 #define IS_POW2(x) (((x) != 0) && ((x) & ((x)-1)) == 0)
-#define SCRATCH_MAX 1024
 
 enum
 {
@@ -659,6 +664,11 @@ LispInt lisp_int(Lisp x)
     return x.val.int_val;
 }
 
+Lisp lisp_parse_int(const char* string)
+{
+    return lisp_make_int((LispInt)strtol(string, NULL, 10));
+}
+
 Lisp lisp_make_bool(int t)
 {
     LispVal val;
@@ -676,10 +686,12 @@ int lisp_is_true(Lisp x)
 
 Lisp lisp_make_real(LispReal x)
 {
-    Lisp l = lisp_make_null();
-    l.type = LISP_REAL;
-    l.val.real_val = x;
-    return l;
+    return (Lisp) { .val.real_val = x, .type = LISP_REAL };
+}
+
+Lisp lisp_parse_real(const char* string)
+{
+    return lisp_make_real(strtod(string, NULL));
 }
 
 LispReal lisp_real(Lisp x)
@@ -1414,7 +1426,7 @@ static Lisp symbol_intern_(Lisp table, const char* string, size_t length, LispCo
 Lisp lisp_make_symbol(const char* string, LispContext ctx)
 {
     assert(string);
-    int length = strnlen(string, LISP_FILE_CHUNK_SIZE);
+    int length = strnlen(string, LISP_IDENTIFIER_MAX);
     return symbol_intern_(ctx.p->symbols, string, length, ctx);
 }
 
@@ -1502,7 +1514,7 @@ typedef enum
     TOKEN_SYMBOL,
     TOKEN_STRING,
     TOKEN_INT,
-    TOKEN_FLOAT,
+    TOKEN_REAL,
     TOKEN_CHAR,
     TOKEN_BOOL,
     TOKEN_HASH_L_PAREN,
@@ -1801,9 +1813,13 @@ static int lexer_match_string(Lexer* lex)
     }
 }
 
-static void lexer_copy_token(Lexer* lex, size_t start_index, size_t length, char* dest)
+static size_t lexer_copy_token(Lexer* lex, size_t start_index, size_t max_length, char* dest)
 {
-    assert((start_index + length) <= lex->scan_length);
+    size_t length;
+    if (start_index + max_length > lex->scan_length)
+        length = lex->scan_length - start_index;
+    else
+        length = max_length;
 
     if (lex->c_buff_index == lex->sc_buff_index)
     {
@@ -1833,30 +1849,22 @@ static void lexer_copy_token(Lexer* lex, size_t start_index, size_t length, char
             memcpy(dest + first_part_length, lex->buffs[lex->c_buff_index], length - first_part_length);
         }
     }
+    return max_length;
 }
 
 static TokenType token_from_char(char c)
 {
     switch (c)
     {
-        case '\0':
-            return TOKEN_NONE;
-        case '(':
-            return TOKEN_L_PAREN;
-        case ')':
-            return TOKEN_R_PAREN;
-        case '.':
-            return TOKEN_DOT;
-        case '\'':
-            return TOKEN_QUOTE;
-        case '`':
-            return TOKEN_BQUOTE;
-        case ',':
-            return TOKEN_COMMA;
-        case '@':
-            return TOKEN_AT;
-        default:
-            return TOKEN_NONE;
+        case '\0': return TOKEN_NONE;
+        case '(':  return TOKEN_L_PAREN;
+        case ')':  return TOKEN_R_PAREN;
+        case '.':  return TOKEN_DOT;
+        case '\'': return TOKEN_QUOTE;
+        case '`':  return TOKEN_BQUOTE;
+        case ',':  return TOKEN_COMMA;
+        case '@':  return TOKEN_AT;
+        default:   return TOKEN_NONE;
     }
 }
 
@@ -1873,39 +1881,26 @@ static void lexer_next_token(Lexer* lex)
     else
     {
         if (lexer_match_string(lex))
-        {
             lex->token = TOKEN_STRING;
-        }
         else if (lexer_match_real(lex))
-        {
-            lex->token = TOKEN_FLOAT;
-        }
+            lex->token = TOKEN_REAL;
         else if (lexer_match_int(lex))
-        {
             lex->token = TOKEN_INT;
-        }
         else if (lexer_match_symbol(lex))
-        {
             lex->token = TOKEN_SYMBOL;
-        }
         else if (lexer_match_char(lex))
-        {
             lex->token = TOKEN_CHAR;
-        }
         else if (lexer_match_bool(lex))
-        {
             lex->token = TOKEN_BOOL;
-        }
         else if (lexer_match_hash_paren(lex))
-        {
             lex->token = TOKEN_HASH_L_PAREN;
-        }
     }
 }
 
 // requires: length(out) >= (last - first)
 static char* string_unescape_(const char* first, const char* last, char* out)
 {
+    // becase first >= out we can use this in place
     while (first != last)
     {
         if (*first == '\\')
@@ -1913,23 +1908,12 @@ static char* string_unescape_(const char* first, const char* last, char* out)
             ++first;
             switch (*first)
             {
-                case '\\':
-                    *out = '\\';
-                    break;
-                case 'n':
-                    *out = '\n';
-                    break;
-                case 't':
-                    *out = '\t';
-                    break;
-                case 'f':
-                    *out = '\f';
-                    break;
-                case '"':
-                    *out = '"';
-                    break;
-                default:
-                    break;
+                case '\\': *out = '\\'; break;
+                case 'n': *out = '\n'; break;
+                case 't': *out = '\t'; break;
+                case 'f': *out = '\f'; break;
+                case '"': *out = '"'; break;
+                default: break;
             }
         }
         else
@@ -1972,52 +1956,41 @@ static void print_escaped_(const char* c, FILE* file)
     }
 }
 
-static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
-{ 
-    char scratch[SCRATCH_MAX];
-    size_t length = lex->scan_length;
-    Lisp l = lisp_make_null();
+static Lisp parse_number(Lexer* lex, LispContext ctx)
+{
+    char scratch[128];
+    TokenType type = lex->token;
+    size_t length = lexer_copy_token(lex, 0, 128, scratch);
+    scratch[length] = '\0';
 
     switch (lex->token)
     {
-        case TOKEN_INT:
-        {
-            lexer_copy_token(lex, 0, length, scratch);
-            scratch[length] = '\0';
-            l = lisp_make_int(atoi(scratch));
-            break;
-        }
-        case TOKEN_FLOAT:
-        {
-            lexer_copy_token(lex, 0, length, scratch);
-            scratch[length] = '\0'; 
-            l = lisp_make_real(atof(scratch));
-            break;
-        }
-        case TOKEN_STRING:
-        {
-            // -2 length to skip quotes
-            lexer_copy_token(lex, 1, length - 2, scratch);
-            l = lisp_make_string2(length - 2, '\0', ctx);
-            string_unescape_(scratch, scratch + length - 2, lisp_string(l));
-            break;
-        }
-        case TOKEN_SYMBOL:
-        {
-            // always convert symbols to uppercase
-            lexer_copy_token(lex, 0, length, scratch);
-            scratch[length] = '\0';
-            for (int i = 0; i < length; ++i)
-                scratch[i] = toupper(scratch[i]);
-            l = symbol_intern_(ctx.p->symbols, scratch, length, ctx);
-            break;
-        }
-        default: 
-            longjmp(error_jmp, LISP_ERROR_BAD_TOKEN);
+        case TOKEN_INT:  return lisp_parse_int(scratch);
+        case TOKEN_REAL: return lisp_parse_real(scratch);
+        default: assert(0);
     }
-    
-    lexer_next_token(lex);
+}
+
+static Lisp parse_string(Lexer* lex, LispContext ctx)
+{ 
+    // -2 length to skip quotes
+    size_t size = lex->scan_length - 2;
+    Lisp l = lisp_make_string2(size, '\0', ctx);
+    char* str = lisp_string(l);
+    lexer_copy_token(lex, 1, size, str);
+    char* out = string_unescape_(str, str + size, str);
+    *out = '\0';
     return l;
+}
+
+static Lisp parse_symbol(Lexer* lex, LispContext ctx)
+{
+    char scratch[LISP_IDENTIFIER_MAX];
+    size_t length = lexer_copy_token(lex, 0, LISP_IDENTIFIER_MAX, scratch);
+    // always convert symbols to uppercase
+    for (int i = 0; i < length; ++i)
+        scratch[i] = toupper(scratch[i]);
+    return symbol_intern_(ctx.p->symbols, scratch, length, ctx);
 }
 
 static const char* ascii_char_name_table[] =
@@ -2033,17 +2006,16 @@ static const char* ascii_char_name_table[] =
 
 static int parse_char_token(Lexer* lex)
 {
-    char scratch[SCRATCH_MAX];
-    size_t length = lex->scan_length - 2;
-    lexer_copy_token(lex, 2, length, scratch);
-    
+    char scratch[64];
+    size_t length = lexer_copy_token(lex, 2, 64, scratch);  
+    scratch[length] = '\0';
+
     if (length == 1)
     {
         return (int)scratch[0];
     }
     else
     {
-        scratch[length] = '\0';
         const char** name_it = ascii_char_name_table;
         
         int c = 0;
@@ -2106,9 +2078,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             longjmp(error_jmp, LISP_ERROR_PAREN_UNEXPECTED);
         case TOKEN_CHAR:
         {
-            int c = parse_char_token(lex);
-            lexer_next_token(lex);
-            return lisp_make_char(c);
+            return lisp_make_char(parse_char_token(lex));
         }
         case TOKEN_BOOL:
         {
@@ -2148,6 +2118,13 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             lexer_next_token(lex);
             return lisp_subvector(v, 0, count, ctx);
         }
+        case TOKEN_REAL:
+        case TOKEN_INT:
+            return parse_number(lex, ctx);
+        case TOKEN_STRING:
+            return parse_string(lex, ctx);
+        case TOKEN_SYMBOL:
+            return parse_symbol(lex, ctx);
         case TOKEN_COMMA:
             lexer_next_token(lex);
 
@@ -2175,9 +2152,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
              return lisp_cons(get_sym(quote_type, ctx), l, ctx);
         }
         default:
-        {
-            return parse_atom(lex, error_jmp, ctx);
-        } 
+            assert(0);
     }
 }
 
@@ -3337,7 +3312,6 @@ Lisp lisp_macro_table(LispContext ctx)
 {
     return ctx.p->macros;
 }
-#undef SCRATCH_MAX
 
 #ifndef LISP_NO_LIB
 
@@ -3702,6 +3676,7 @@ static Lisp sch_to_inexact(Lisp args, LispError* e, LispContext ctx)
     }
 }
 
+
 /*
 static Lisp sch_to_string(Lisp args, LispError* e, LispContext ctx)
 {
@@ -3913,6 +3888,20 @@ static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
         l = lisp_cdr(l);
     }
     return result;
+}
+
+static Lisp sch_string_to_number(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    const char* string = lisp_string(lisp_car(args));
+    if (strchr(string, '.'))
+    {
+        return lisp_parse_real(string);
+    }
+    else
+    {
+        return lisp_parse_int(string);
+    }
 }
 
 static Lisp sch_char_less(Lisp args, LispError* e, LispContext ctx)
@@ -4529,6 +4518,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "STRING-DOWNCASE", sch_string_downcase },
     { "STRING->LIST", sch_string_to_list },
     { "LIST->STRING", sch_list_to_string },
+    { "STRING->NUMBER", sch_string_to_number },
     
     // Characters https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Characters.html#Characters
     { "CHAR?", sch_is_char },
