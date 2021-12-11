@@ -35,6 +35,20 @@ else
     PASS=0
 fi
 
+cd ../
+cd printer
+
+( ./test.sh )
+RESULT=$?
+
+if [ $RESULT = "0" ]
+then
+    echo "FINISHED printer test"
+else
+    echo "*FAILED* printer test"
+    PASS=0
+fi
+
 if [ $PASS = "0" ]
 then
   echo "**TESTS FAILED**"

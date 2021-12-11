@@ -19,7 +19,6 @@ int main(int argc, const char* argv[])
         fprintf(stderr, "error: %s\n", lisp_error_string(error));
     }
     data = lisp_collect(data, ctx);
-
     lisp_print(data);
 
     lisp_shutdown(ctx);

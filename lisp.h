@@ -335,7 +335,7 @@ void lisp_promise_store(Lisp p, Lisp x);
 #include <assert.h>
 
 #ifndef LISP_FILE_CHUNK_SIZE
-#define LISP_FILE_CHUNK_SIZE 4096
+#define LISP_FILE_CHUNK_SIZE 8192
 #endif
 
 #ifndef LISP_PAGE_SIZE
@@ -1779,15 +1779,24 @@ static int lexer_match_string(Lexer* lex)
     if (*lex->c != '"') return 0;
     lexer_step(lex);
 
-    while (*lex->c != '"')
+    while (1)
     {
-        if (*lex->c == '\0' || *lex->c == '\n')
-            return 0;
-        lexer_step(lex);
+        switch (*lex->c)
+        {
+            case '"':
+                lexer_step(lex);
+                return 1;
+            case '\\':
+                lexer_step(lex);
+                lexer_step(lex);
+                break;
+            case '\0':
+            case '\n':
+                return 0;
+            default:
+                lexer_step(lex);
+        }
     }
-
-    lexer_step(lex);
-    return 1;    
 }
 
 static void lexer_copy_token(Lexer* lex, size_t start_index, size_t length, char* dest)
@@ -1892,6 +1901,75 @@ static void lexer_next_token(Lexer* lex)
     }
 }
 
+// requires: length(out) >= (last - first)
+static char* string_unescape_(const char* first, const char* last, char* out)
+{
+    while (first != last)
+    {
+        if (*first == '\\')
+        {
+            ++first;
+            switch (*first)
+            {
+                case '\\':
+                    *out = '\\';
+                    break;
+                case 'n':
+                    *out = '\n';
+                    break;
+                case 't':
+                    *out = '\t';
+                    break;
+                case 'f':
+                    *out = '\f';
+                    break;
+                case '"':
+                    *out = '"';
+                    break;
+                default:
+                    break;
+            }
+        }
+        else
+        {
+            *out = *first;
+        }
+        ++out;
+        ++first;
+    }
+    return out;
+}
+
+static void print_escaped_(const char* c, FILE* file)
+{
+    while (*c)
+    {
+        switch (*c)
+        {
+            case '\n':
+                fputc('\\', file);
+                fputc('n', file);
+                break;
+            case '\t':
+                fputc('\\', file);
+                fputc('t', file);
+                break;
+            case '\f':
+                fputc('\\', file);
+                fputc('f', file);
+                break;
+            case '\"':
+                fputc('\\', file);
+                fputc('"', file);
+                break;
+            default:
+                fputc(*c, file);
+                break;
+        }
+        ++c;
+    }
+}
+
 static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
 { 
     char scratch[SCRATCH_MAX];
@@ -1917,8 +1995,9 @@ static Lisp parse_atom(Lexer* lex, jmp_buf error_jmp,  LispContext ctx)
         case TOKEN_STRING:
         {
             // -2 length to skip quotes
+            lexer_copy_token(lex, 1, length - 2, scratch);
             l = lisp_make_string2(length - 2, '\0', ctx);
-            lexer_copy_token(lex, 1, length - 2, lisp_string(l));
+            string_unescape_(scratch, scratch + length - 2, lisp_string(l));
             break;
         }
         case TOKEN_SYMBOL:
@@ -2231,8 +2310,9 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             }
             else
             {
-                // TODO: escape
-                fprintf(file, "\"%s\"", lisp_string(l));
+                fputc('"', file);
+                print_escaped_(lisp_string(l), file);
+                fputc('"', file);
             }
             break;
         case LISP_CHAR:
