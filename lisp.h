@@ -4774,6 +4774,11 @@ static const char* lib_code1 = " \
  (lambda (v l) \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
 \
+(define (nthcdr n list) \
+ (cond ((= n 0) list) \
+       ((null? list) '()) \
+       (t (nthcdr (- n 1) (cdr list))))) \
+\
 (define-macro do \
  (lambda (vars loop-check . loops) \
   (let ((names '()) \
@@ -4794,6 +4799,14 @@ static const char* lib_code1 = " \
                        ,(cons 'BEGIN (append loops (list (cons f steps)))) ))) \
             ,(cons f inits) \
            )) '()) ))) \
+\
+(define-macro dotimes \
+ (lambda (form body) \
+  (apply (lambda (i n . result) \
+    `(do ((,i 0 (+ ,i 1))) \
+        ((>= ,i ,n) ,(if (null? result) result (car result)) ) \
+        ,body) \
+   ) form))) \
 \
 (define (number? x) (real? x)) \
 (define (odd? x) (not (even? x))) \
