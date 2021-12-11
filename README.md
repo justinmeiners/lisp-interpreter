@@ -50,7 +50,7 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 ### Interactive programming with Read, eval, print loop.
 ```bash
-$ ./lisp_i
+$ ./lisp
 > (define (sqr x) (* x x)))
 > (define length 40)
 > (define area 0)
@@ -58,7 +58,7 @@ $ ./lisp_i
 1600
 ```
 
-### Setup and evaulation 
+### Quickstart
 
 ```c
 LispContext ctx = lisp_init();
@@ -97,12 +97,11 @@ Lisp
 Loading the structure in C.
 
 ```c
-// setup lisp without any library
-LispContext ctx = lisp_init_empty();
+LispContext ctx = lisp_init();
 // load lisp structure
 Lisp data = lisp_read_file(file, ctx);
 // get value for age
-Lisp age = lisp_vector_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
+Lisp age = lisp_list_assoc(data, lisp_make_symbol("AGE", ctx), ctx);
 // ...
 lisp_shutdown(ctx);
 ```
