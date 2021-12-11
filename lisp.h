@@ -145,6 +145,7 @@ void lisp_load_lib(LispContext ctx);
 // this will free all objects which are not reachable from root_to_save or the global env
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 void lisp_print_collect_stats(LispContext ctx);
+const char* lisp_error_string(LispError error);
 
 // -----------------------------------------
 // REPL
@@ -155,19 +156,18 @@ Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
 Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
-// Expands special Lisp forms and checks syntax.
-// The default eval will do this for you, but this can prepare statements that are run multiple times.
-Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
-
 // evaluate a lisp expression
-Lisp lisp_eval_opt(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
-// same as above but uses global environment
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
+Lisp lisp_eval2(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
 
 // print out a lisp structure in 
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
-const char* lisp_error_string(LispError error);
+
+// Expands special Lisp forms and checks syntax.
+// The default eval will do this for you, but this can prepare statements that are run multiple times.
+Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
+
 void lisp_displayf(FILE* file, Lisp l);
 
 void lisp_port_set_out(FILE* file, LispContext ctx);
@@ -2818,7 +2818,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             LispError error = LISP_ERROR_NONE;
             if (apply(proc, lisp_cdr(l), &result, &calling_env, &error, ctx) == 1)
             {
-                result = lisp_eval_opt(result, calling_env, &error, ctx);
+                result = lisp_eval2(result, calling_env, &error, ctx);
             }
 
             if (error != LISP_ERROR_NONE) longjmp(error_jmp, error);
@@ -2855,7 +2855,7 @@ Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx)
     }
 }
 
-Lisp lisp_eval_opt(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
+Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 {
     LispError error;
     Lisp expanded = lisp_macroexpand(l, &error, ctx);
@@ -2902,7 +2902,7 @@ Lisp lisp_eval_opt(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
 {
-    return lisp_eval_opt(expr, lisp_env_global(ctx), out_error, ctx);
+    return lisp_eval2(expr, lisp_env_global(ctx), out_error, ctx);
 }
 
 static Lisp gc_move(Lisp x, LispContext ctx)
@@ -4306,7 +4306,7 @@ static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
     if (needs_to_eval)
     {
         // TODO: I don't think its safe to garbage collect
-        return lisp_eval_opt(x, env, e, ctx);
+        return lisp_eval2(x, env, e, ctx);
     }
     else
     {
@@ -4344,7 +4344,8 @@ static Lisp sch_macroexpand(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_eval(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_eval_opt(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
+    ARITY_CHECK(2, 2);
+    return lisp_eval2(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
 }
 
 static Lisp sch_system_env(Lisp args, LispError* e, LispContext ctx)
@@ -4827,15 +4828,6 @@ static const char* lib_code_sequence = " \
               (helper mid high 0))))) \
   (helper 0 (vector-length v) 0)) \
 \
-(define (quicksort-list l op) \
-  (if (null? l) '() \
-      (append (quicksort-list (filter (lambda (x) (op x (car l))) \
-                                 (cdr l)) op) \
-              (list (car l)) \
-              (quicksort-list (filter (lambda (x) (not (op x (car l)))) \
-                                 (cdr l)) op)))) \
-(define sort quicksort-list) \
-\
 (define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) \
 \
 (define (quicksort-partition v lo hi op) \
@@ -4859,8 +4851,9 @@ static const char* lib_code_sequence = " \
       (quicksort-vector v (+ p 1) hi op)))) \
 \
 (define (sort! v op) \
-  (quicksort-vector v 0 (- (vector-length v) 1) op) \
-  v) \
+  (quicksort-vector v 0 (- (vector-length v) 1) op) v) \
+\
+(define (sort list cmp) (vector->list (sort! (list->vector list) cmp))) \
 ";
 
 static const char* lib_code_streams = " \
@@ -4925,7 +4918,7 @@ void lisp_load_lib(LispContext ctx)
     const char* to_load[] = { lib_code0, lib_code1, lib_code_sequence, lib_code_streams };
     for (int i = 0; i < 4; ++i)
     {
-        lisp_eval_opt(lisp_read(to_load[i], NULL, ctx), system_env, &error, ctx);
+        lisp_eval2(lisp_read(to_load[i], NULL, ctx), system_env, &error, ctx);
 
         if (error != LISP_ERROR_NONE)
         {
