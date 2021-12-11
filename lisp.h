@@ -1523,7 +1523,7 @@ typedef enum
     TOKEN_SYMBOL,
     TOKEN_STRING,
     TOKEN_INT,
-    TOKEN_REAL,
+    TOKEN_FLOAT,
     TOKEN_CHAR,
     TOKEN_BOOL,
     TOKEN_HASH_L_PAREN,
@@ -1892,7 +1892,7 @@ static void lexer_next_token(Lexer* lex)
         if (lexer_match_string(lex))
             lex->token = TOKEN_STRING;
         else if (lexer_match_real(lex))
-            lex->token = TOKEN_REAL;
+            lex->token = TOKEN_FLOAT;
         else if (lexer_match_int(lex))
             lex->token = TOKEN_INT;
         else if (lexer_match_symbol(lex))
@@ -1974,7 +1974,7 @@ static Lisp parse_number(Lexer* lex, LispContext ctx)
     switch (lex->token)
     {
         case TOKEN_INT:  return lisp_parse_int(scratch);
-        case TOKEN_REAL: return lisp_parse_real(scratch);
+        case TOKEN_FLOAT: return lisp_parse_real(scratch);
         default: assert(0);
     }
 }
@@ -2127,7 +2127,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             // )
             return lisp_subvector(v, 0, count, ctx);
         }
-        case TOKEN_REAL:
+        case TOKEN_FLOAT:
         case TOKEN_INT:
             return parse_number(lex, ctx);
         case TOKEN_STRING:
