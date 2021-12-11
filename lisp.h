@@ -4901,8 +4901,13 @@ static const char* lib_code_sequence = " \
   (if (= b 0) a (_gcd-helper b (modulo a b)))) \
 \
 (define (gcd . args) \
-  (if (null? args) 0 \
-      (_gcd-helper (car args) (car (cdr args))))) \
+ (if (null? args) 0 \
+  (_gcd-helper (car args) (car (cdr args))))) \
+\
+(define (lcm . args) \
+   (if (null? args) 1 \
+      (abs (* (/ (car args) (apply gcd args)) \
+            (apply * (cdr args))))))  \
 \
 (define (reverse l) (reverse! (list-copy l))) \
 (define (vector-head v end) (subvector v 0 end)) \
