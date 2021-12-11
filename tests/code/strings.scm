@@ -30,5 +30,7 @@
 
 (display "Hello\nworld!")
 
+(=> (string->number (number->string 279)) 279)
+(=> (number->string (string->number "279")) "279")
 
- 
+(=> (string->number (number->string 0.5)) 0.5)
