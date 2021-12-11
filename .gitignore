@@ -4,6 +4,7 @@ lisp
 *.stackdump
 temp/
 printer
+sample
 
 
 # Xcode
