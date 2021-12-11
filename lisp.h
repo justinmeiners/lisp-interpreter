@@ -3971,59 +3971,49 @@ static Lisp sch_is_real(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_is_boolean(Lisp args, LispError* e, LispContext ctx)
 {
-    LispType t = lisp_type(lisp_car(args));
-    return lisp_make_bool(t == LISP_BOOL);
+    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_BOOL);
 }
 
 static Lisp sch_is_even(Lisp args, LispError* e, LispContext ctx)
 {
-    while (!lisp_is_null(args))
-    {
-        if ((lisp_int(lisp_car(args)) & 1) == 1) return lisp_false();
-        args = lisp_cdr(args);
-    }
-    return lisp_true();
+    ARITY_CHECK(1, 1);
+    return lisp_make_bool( (lisp_int(lisp_car(args)) & 1) == 0);
 }
 
 static Lisp sch_exp(Lisp args, LispError* e, LispContext ctx)
 {
-    LispReal x = exp(lisp_real(lisp_car(args)));
-    return lisp_make_real(x);
+    ARITY_CHECK(1, 1);
+    return lisp_make_real( exp(lisp_number_to_real(lisp_car(args))) );
 }
 
 static Lisp sch_log(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    LispReal x = log(lisp_real(lisp_car(args)));
-    return lisp_make_real(x);
+    return lisp_make_real( log(lisp_number_to_real(lisp_car(args))) );
 }
 
 static Lisp sch_sin(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    LispReal x = sin(lisp_real(lisp_car(args)));
-    return lisp_make_real(x);
+    return lisp_make_real( sin(lisp_number_to_real(lisp_car(args))) );
 }
 
 static Lisp sch_cos(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    LispReal x = cos(lisp_real(lisp_car(args)));
-    return lisp_make_real(x);
+    return lisp_make_real( cos(lisp_number_to_real(lisp_car(args))) );
 }
 
 static Lisp sch_tan(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    LispReal x = tan(lisp_real(lisp_car(args)));
-    return lisp_make_real(x);
+    return lisp_make_real( tan(lisp_number_to_real(lisp_car(args))) );
 }
 
 static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    LispReal x = sqrt(lisp_real(lisp_car(args)));
-    return lisp_make_real(x);
+    return lisp_make_real( sqrt(lisp_number_to_real(lisp_car(args))) );
 }
 
 static Lisp sch_quotient(Lisp args, LispError* e, LispContext ctx)
@@ -4040,7 +4030,6 @@ static Lisp sch_remainder(Lisp args, LispError* e, LispContext ctx)
     args = lisp_cdr(args);
     int b = lisp_int(lisp_car(args));
     return lisp_make_int(a % b);
-
 }
 
 static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
@@ -4055,12 +4044,13 @@ static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
 {
-    switch (lisp_type(lisp_car(args)))
+    Lisp x = lisp_car(args);
+    switch (lisp_type(x))
     {
         case LISP_INT:
-            return lisp_make_int(llabs(lisp_int(lisp_car(args))));
+            return lisp_make_int(llabs(lisp_int(x)));
         case LISP_REAL:
-            return lisp_make_real(fabs(lisp_real(lisp_car(args))));
+            return lisp_make_real(fabs(lisp_real(x)));
         default:
             *e = LISP_ERROR_TYPE;
             return lisp_make_null();
