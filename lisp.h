@@ -138,7 +138,7 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 // -----------------------------------------
 
 // You can use these if you would like to set the _opt params.
-#define LISP_DEFAULT_PAGE_SIZE 131072
+#define LISP_DEFAULT_PAGE_SIZE 512 * 1024
 #define LISP_DEFAULT_STACK_DEPTH 1024
 
 #ifndef LISP_NO_LIB
