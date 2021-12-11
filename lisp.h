@@ -257,8 +257,6 @@ Lisp lisp_list_assq(Lisp l, Lisp key); // O(n)
 
 // given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
 Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
- // concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
-Lisp lisp_list_accessor_mnemonic(Lisp p, const char* path);
 
 
 // Vectors (heterogeneous)
@@ -3287,14 +3285,6 @@ static Lisp sch_set_cdr(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
-static Lisp sch_accessor_mnemonic(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp path = lisp_car(args);
-    Lisp l = lisp_car(lisp_cdr(args));
-
-    return lisp_list_accessor_mnemonic(l, lisp_string(path));
-}
-
 static Lisp sch_exact_eq(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
@@ -4390,7 +4380,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
     { "MACROEXPAND", sch_macroexpand },
     
-    { "ACCESSOR-MNEMONIC", sch_accessor_mnemonic },
     
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_exact_eq },
