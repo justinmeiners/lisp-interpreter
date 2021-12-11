@@ -38,4 +38,20 @@
 (assert (odd? 3))
 (assert (odd? 7))
 (assert (not (odd? 4)))
+
+(assert (exact? (+ 1 2 3)))
+(assert (inexact? (+ 1 2.5 3)))
+(assert (inexact? (+ 1.3 2 3)))
+
+(assert (exact? (* 1 2 3)))
+(assert (inexact? (* 1 2.5 3)))
+(assert (inexact? (* 1.3 2 3)))
+
+(assert (exact? (- 1 2)))
+(assert (inexact? (- 1 2.5)))
+(assert (inexact? (- 1.3 2)))
+
+
+
+
  
