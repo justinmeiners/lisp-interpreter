@@ -9,6 +9,14 @@
 #define LISP_IMPLEMENTATION
 #include "lisp.h"
 
+static Lisp sch_load(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp path = lisp_car(args);
+    Lisp result = lisp_read_path(lisp_string(path), e, ctx);
+    if (*e != LISP_ERROR_NONE) return lisp_make_null();
+    return lisp_eval(result, e, ctx);
+}
+
 int main(int argc, const char* argv[])
 {
     const char* file_path = NULL;
@@ -30,6 +38,12 @@ int main(int argc, const char* argv[])
     
     LispContext ctx = lisp_init();
     lisp_load_lib(ctx);
+    lisp_env_define(
+        lisp_cdr(lisp_env_global(ctx)),
+        lisp_make_symbol("LOAD", ctx), 
+        lisp_make_func(sch_load),
+        ctx
+    );
 
     clock_t start_time, end_time;
         
