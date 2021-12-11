@@ -138,7 +138,7 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 // -----------------------------------------
 
 // You can use these if you would like to set the _opt params.
-#define LISP_DEFAULT_PAGE_SIZE 131072
+#define LISP_DEFAULT_PAGE_SIZE 512 * 1024
 #define LISP_DEFAULT_STACK_DEPTH 1024
 
 #ifndef LISP_NO_LIB
@@ -257,8 +257,6 @@ Lisp lisp_list_assq(Lisp l, Lisp key); // O(n)
 
 // given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
 Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
- // concise CAR/CDR combos such as CADR, CAAADR, CAAADAAR....
-Lisp lisp_list_accessor_mnemonic(Lisp p, const char* path);
 
 
 // Vectors (heterogeneous)
@@ -406,6 +404,11 @@ typedef struct Block
         {
             int length;
         } vector;
+
+        struct
+        {
+            int length;
+        } symbol;
 
         struct
         {
@@ -1342,14 +1345,26 @@ static uint64_t hash_bytes(const char *buffer, size_t n)
 typedef struct
 {
     Block block;
+    // built in linked list
+    LispVal next;
     char text[];
 } Symbol;
+
+static Symbol* symbol_get_(Lisp x)
+{
+    assert(lisp_type(x) == LISP_SYMBOL);
+    return x.val.ptr_val;
+}
+int  lisp_symbol_length(Lisp l) { return symbol_get_(l)->block.d.symbol.length; }
+const char* lisp_symbol_string(Lisp l) { return symbol_get_(l)->text; }
 
 static Lisp symbol_make_(const char* string, int length, LispContext ctx)
 {
     Symbol* symbol = gc_alloc(sizeof(Symbol) + (length + 1), LISP_SYMBOL, ctx);
     memcpy(symbol->text, string, length);
     symbol->text[length] = '\0';
+    symbol->next.ptr_val = NULL; 
+    symbol->block.d.symbol.length = length;
 
     LispVal x;
     x.ptr_val = symbol;
@@ -1367,23 +1382,25 @@ static Lisp symbol_intern_(Lisp table, const char* string, size_t length, LispCo
 
     // linked list chaining in the resulting value.
     int present;
-    Lisp symbol_list = lisp_table_get(table, key, &present);
+    Lisp first_symbol = lisp_table_get(table, key, &present);
 
     // symbol found in linked list chain
-    Lisp it = symbol_list;
-    while (!lisp_is_null(it))
+    if (present)
     {
-        Lisp s = lisp_car(symbol_list);
-        if (strncmp(lisp_symbol_string(s), string, length) == 0)
+        Lisp it = first_symbol;
+        while (it.val.ptr_val != NULL)
         {
-            return s; 
+            if (lisp_symbol_length(it) == length &&
+                strncmp(lisp_symbol_string(it), string, length) == 0) return it;
+            it.val = symbol_get_(it)->next;
         }
-        it = lisp_cdr(it);
     }
 
     // new symbol
     Lisp symbol = symbol_make_(string, length, ctx);
-    lisp_table_set(table, key, lisp_cons(symbol, symbol_list, ctx), ctx);
+
+    symbol_get_(symbol)->next = first_symbol.val;
+    lisp_table_set(table, key, symbol, ctx);
     return symbol;
 }
 
@@ -1401,11 +1418,6 @@ Lisp lisp_gen_symbol(LispContext ctx)
     return symbol_make_(text, bytes, ctx);
 }
 
-const char* lisp_symbol_string(Lisp l) {
-    assert(lisp_type(l) == LISP_SYMBOL);
-    Symbol* symbol = l.val.ptr_val;
-    return symbol->text;
-}
 
 Lisp lisp_make_func(LispCFunc func)
 {
@@ -2375,7 +2387,8 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
                 *error = LISP_ERROR_TOO_MANY_ARGS;
                 return 0;
             }
-            
+
+ 
             // extend the environment
             *out_env = lisp_env_extend(*out_env, new_table, ctx);
         
@@ -2539,8 +2552,6 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 else 
                 {
                     // operator application
-                    
-
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_car(*x), ctx);
                     
@@ -2918,6 +2929,47 @@ static void gc_move_v(Lisp* start, int n, LispContext ctx)
         start[i] = gc_move(start[i], ctx);
 }
 
+static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
+{
+    // move symbol table (weak references)
+    Table* from = table_get_(old_table);
+    Lisp to_table = lisp_make_table(ctx);
+    table_grow_(to_table, from->capacity, ctx);
+
+    int n = from->capacity;
+    Lisp hashes = { from->keys, LISP_VECTOR };
+    Lisp symbols = { from->vals, LISP_VECTOR };
+
+    for (int i = 0; i < n; ++i)
+    {
+        Lisp hash = lisp_vector_ref(hashes, i); 
+        if (!lisp_is_null(hashes))
+        {
+            Lisp old_symbol = lisp_vector_ref(symbols, i);
+            while (old_symbol.val.ptr_val != NULL)
+            {
+                if (symbol_get_(old_symbol)->block.gc_state == GC_GONE)
+                {
+                    Lisp to_insert = gc_move(old_symbol, ctx);
+                    int present;
+                    Lisp existing = lisp_table_get(to_table, hash, &present);
+
+                    symbol_get_(to_insert)->next = existing.val;
+                    lisp_table_set(to_table, hash, to_insert, ctx);
+                }
+                else
+                {
+#ifdef LISP_DEBUG
+                    //printf("losing symbol: %s\n", lisp_symbol_string(old_symbol));
+#endif
+                }
+                old_symbol.val = symbol_get_(old_symbol)->next;
+            }
+        }
+    }
+    return to_table;
+}
+
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
     time_t start_time = clock();
@@ -2929,7 +2981,6 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     heap_init(&ctx.p->heap, ctx.p->heap.page_size);
 
     // move root object
-    ctx.p->symbol_table = gc_move(ctx.p->symbol_table, ctx);
     ctx.p->global_env = gc_move(ctx.p->global_env, ctx);
     ctx.p->macros = gc_move(ctx.p->macros, ctx);
 
@@ -3000,29 +3051,21 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         table.type = LISP_TABLE;
 
                         Table* t = (Table*)block;
-                        t->size = 0;
-
                         int n = t->capacity;
-                        if (n > 0)
+
+                        Lisp keys = { t->keys, LISP_VECTOR };
+                        Lisp vals = { t->vals, LISP_VECTOR };
+
+                        for (int i = 0; i < n; ++i)
                         {
-                            Lisp old_keys = { t->keys, LISP_VECTOR };
-                            Lisp old_vals = { t->vals, LISP_VECTOR };
-
-                            t->keys = lisp_make_vector(n, lisp_make_null(), ctx).val;
-                            t->vals = lisp_make_vector(n, lisp_make_null(), ctx).val;
-
-                            for (int i = 0; i < n; ++i)
+                            Lisp key = lisp_vector_ref(keys, i); 
+                            if (!lisp_is_null(key))
                             {
-                                Lisp key = lisp_vector_ref(old_keys, i); 
-                                if (!lisp_is_null(key))
-                                {
-                                    Lisp moved_key = gc_move(key, ctx);
-                                    Lisp moved_val = gc_move(lisp_vector_ref(old_vals, i), ctx); 
-                                    lisp_table_set(table, moved_key, moved_val, ctx);
-                                }
+                                lisp_vector_set(keys, i, gc_move(key, ctx));
+                                lisp_vector_set(vals, i, gc_move(lisp_vector_ref(vals, i), ctx));
                             }
-                            assert(t->capacity == n);
                         }
+                        table_grow_(table, n, ctx);
                         break;
                      }
                     default: break;
@@ -3036,6 +3079,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     }
     // check that we visited all the pages
     assert(page_counter == ctx.p->heap.page_count);
+    ctx.p->symbol_table = gc_move_weak_symbols(ctx.p->symbol_table, ctx);
     
 #ifdef LISP_DEBUG
      {
@@ -3048,7 +3092,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
               {
                   Block* block = (Block*)(page->buffer + offset);
                   assert(block->gc_state == GC_CLEAR);
-                  assert(block->info.size < page->size);
+                  assert(block->info.size <= page->size);
                   assert(block->info.size % sizeof(LispVal) == 0);
                   offset += block->info.size;
               }
@@ -3230,14 +3274,6 @@ static Lisp sch_set_cdr(Lisp args, LispError* e, LispContext ctx)
     Lisp b = lisp_car(args);
     lisp_set_cdr(a, b);
     return lisp_make_null();
-}
-
-static Lisp sch_accessor_mnemonic(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp path = lisp_car(args);
-    Lisp l = lisp_car(lisp_cdr(args));
-
-    return lisp_list_accessor_mnemonic(l, lisp_string(path));
 }
 
 static Lisp sch_exact_eq(Lisp args, LispError* e, LispContext ctx)
@@ -4335,7 +4371,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
     { "MACROEXPAND", sch_macroexpand },
     
-    { "ACCESSOR-MNEMONIC", sch_accessor_mnemonic },
     
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_exact_eq },
