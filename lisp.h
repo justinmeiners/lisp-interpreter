@@ -383,7 +383,6 @@ typedef struct
     Page* top;
     size_t size;
     size_t page_count;
-    size_t page_size;
 } Heap;
 
 typedef struct Block
@@ -433,10 +432,9 @@ typedef struct Block
     uint8_t type;
 } Block;
 
-static void heap_init(Heap* heap, size_t page_size)
+static void heap_init(Heap* heap)
 {
-    heap->page_size = page_size;
-    heap->bottom = page_create(page_size);
+    heap->bottom = page_create(LISP_PAGE_SIZE);
     heap->top = heap->bottom;
     
     heap->size = 0;
@@ -472,7 +470,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
     assert(alloc_size % sizeof(LispVal) == 0);
 
     Page* to_use;
-    if (alloc_size >= heap->page_size)
+    if (alloc_size >= LISP_PAGE_SIZE)
     {
         /* add to bottom of stack.
          As soon as this page is made it it is full and can't be used.
@@ -487,7 +485,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
     {
         /* add to top of the stack.
          need a new page because ours is full */
-        to_use = page_create(heap->page_size);
+        to_use = page_create(LISP_PAGE_SIZE);
         heap->top->next = to_use;
         heap->top = to_use; 
         ++heap->page_count;
@@ -3086,7 +3084,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     Heap from = ctx.p->heap;
 
     // make new heap to allocate and copy to
-    heap_init(&ctx.p->heap, ctx.p->heap.page_size);
+    heap_init(&ctx.p->heap);
 
     // move root object
     ctx.p->env = gc_move(ctx.p->env, ctx);
@@ -3315,7 +3313,7 @@ LispContext lisp_init(void)
     ctx.p->gc_stat_freed = 0;
     ctx.p->gc_stat_time = 0;
     
-    heap_init(&ctx.p->heap, LISP_PAGE_SIZE);
+    heap_init(&ctx.p->heap);
 
     ctx.p->symbols = lisp_make_table(ctx);
     ctx.p->env = lisp_make_null();
