@@ -51,7 +51,8 @@
 (assert (inexact? (- 1 2.5)))
 (assert (inexact? (- 1.3 2)))
 
+(assert (exact? (expt 3 3)))
+(=> (expt 3 3) 27)
 
-
-
+(assert (inexact? (expt 3 2.5)))
  

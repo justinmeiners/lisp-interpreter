@@ -3986,6 +3986,38 @@ static Lisp sch_exp(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_real( exp(lisp_number_to_real(lisp_car(args))) );
 }
 
+static int ipow(int base, int exp)
+{
+    int result = 1;
+    for (;;)
+    {
+        if (exp & 1)
+            result *= base;
+        exp >>= 1;
+        if (!exp)
+            break;
+        base *= base;
+    }
+
+    return result;
+}
+
+static Lisp sch_power(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp base = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp power = lisp_car(args);
+
+    if (lisp_type(base) == LISP_INT && lisp_type(power) == LISP_INT)
+    {
+        return lisp_make_int( ipow(lisp_int(base), lisp_int(power)) );
+    }
+    else
+    {
+        return lisp_make_real( pow(lisp_number_to_real(base), lisp_number_to_real(power)) );
+    }
+}
+
 static Lisp sch_log(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
@@ -4543,6 +4575,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "EVEN?", sch_is_even },
     { "REAL?", sch_is_real },
     { "EXP", sch_exp },
+    { "EXPT", sch_power },
     { "LOG", sch_log },
     { "SIN", sch_sin },
     { "COS", sch_cos },
