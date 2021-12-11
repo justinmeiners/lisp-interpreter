@@ -4504,9 +4504,9 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Hash Tables https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Basic-Hash-Table-Operations.html#Basic-Hash-Table-Operations
     { "HASH-TABLE?", sch_is_table },
     { "MAKE-HASH-TABLE", sch_table_make },
-    { "HASH-TABLE/PUT!", sch_table_set },
-    { "HASH-TABLE/GET", sch_table_get },
-    { "HASH-TABLE/COUNT", sch_table_size },
+    { "HASH-TABLE-SET!", sch_table_set },
+    { "HASH-TABLE-REF", sch_table_get },
+    { "HASH-TABLE-SIZE", sch_table_size },
     { "HASH-TABLE->ALIST", sch_table_to_alist },
 
     { "PROMISE?", sch_is_promise },
@@ -4727,57 +4727,56 @@ static const char* lib_code1 = " \
 static const char* lib_code_sequence = " \
 \
 (define (map proc . rest) \
-  (define (helper lists result) \
-    (if (some? null? lists) \
-      (reverse! result) \
-      (helper (map1 cdr lists '()) \
-              (cons (apply proc (map1 car lists '())) result)))) \
-  (helper rest '())) \
+ (define (helper lists result) \
+  (if (some? null? lists) \
+   (reverse! result) \
+   (helper (map1 cdr lists '()) \
+    (cons (apply proc (map1 car lists '())) result)))) \
+ (helper rest '())) \
 \
 (define (for-each proc . rest) \
-  (define (helper lists) \
-    (if (some? null? lists) \
-      '() \
-      (begin \
-        (apply proc (map1 car lists '())) \
-        (helper (map1 cdr lists '()))))) \
-  (helper rest)) \
+ (define (helper lists) \
+  (if (some? null? lists) \
+   '() \
+   (begin \
+    (apply proc (map1 car lists '())) \
+    (helper (map1 cdr lists '()))))) \
+ (helper rest)) \
 \
 (define (memq x list) \
-    (cond ((null? list) #f) \
-          ((eq? (car list) x) list) \
-          (else (memq x (cdr list))))) \
+ (cond ((null? list) #f) \
+  ((eq? (car list) x) list) \
+  (else (memq x (cdr list))))) \
 \
 (define (member x list) \
-    (cond ((null? list) #f) \
-          ((equal? (car list) x) list) \
-          (else (member x (cdr list))))) \
+ (cond ((null? list) #f) \
+  ((equal? (car list) x) list) \
+  (else (member x (cdr list))))) \
 \
 (define (make-list k elem) \
-   (define (helper k l) \
-       (if (= k 0) l \
-	   (helper (- k 1) (cons elem l)))) \
-   (reverse! (helper k '()))) \
+ (define (helper k l) \
+  (if (= k 0) l \
+   (helper (- k 1) (cons elem l)))) \
+ (reverse! (helper k '()))) \
 \
 (define (list-tail x k) \
-    (if (zero? k) x \
-        (list-tail (cdr x) (- k 1)))) \
+ (if (zero? k) x \
+  (list-tail (cdr x) (- k 1)))) \
 \
 (define (filter pred l) \
-  (define (helper l result) \
-    (cond ((null? l) result) \
-          ((pred (car l)) \
-           (helper (cdr l) (cons (car l) result))) \
-          (else \
-            (helper (cdr l) result)))) \
-  (reverse! (helper l '()))) \
+ (define (helper l result) \
+  (cond ((null? l) result) \
+   ((pred (car l)) \
+    (helper (cdr l) (cons (car l) result))) \
+   (else \
+    (helper (cdr l) result)))) \
+ (reverse! (helper l '()))) \
 \
 (define (alist->hash-table alist) \
-  (define h (make-hash-table)) \
-  (for-each1 (lambda (pair) \
-              (hash-table/put! h (car pair) (cdr pair))) \
-            alist) \
-  h) \
+ (define h (make-hash-table)) \
+ (for-each1 (lambda (pair) \
+             (hash-table-set! h (car pair) (cdr pair))) alist) \
+ h) \
 \
 (define (reduce op acc lst) \
     (if (null? lst) acc \
