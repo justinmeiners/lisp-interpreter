@@ -14,7 +14,6 @@
 int main(int argc, const char* argv[])
 {
     const char* file_path = NULL;
-    size_t page_size = LISP_DEFAULT_PAGE_SIZE;
     int run_script = 0;
     int verbose = 0;
     
@@ -29,13 +28,10 @@ int main(int argc, const char* argv[])
             file_path = argv[i + 1];
             run_script = 1;
         }
-        else if (strcmp(argv[i], "--page-size") == 0)
-        {
-            page_size = atoi(argv[i + 1]);
-        }
     }
     
-    LispContext ctx = lisp_init_opt(LISP_DEFAULT_STACK_DEPTH, page_size, stdout);
+    LispContext ctx = lisp_init();
+    lisp_load_lib(ctx);
 
     clock_t start_time, end_time;
         
