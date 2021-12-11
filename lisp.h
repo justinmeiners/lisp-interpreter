@@ -2431,8 +2431,8 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
         }
         default:
         {
-            lisp_printf(stderr, operator);
-            fprintf(stderr, " is not an operator.\n");
+            lisp_printf(ctx.p->err_port, operator);
+            fprintf(ctx.p->err_port, " is not an operator.\n");
 
             *error = LISP_ERROR_BAD_OP;
             return 0;
@@ -2466,7 +2466,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 Lisp val = lisp_env_lookup(*env, *x, &present);
                 if (!present)
                 {
-                    fprintf(stderr, "%s is not defined.\n", lisp_symbol_string(*x));
+                    fprintf(ctx.p->err_port, "%s is not defined.\n", lisp_symbol_string(*x));
                     longjmp(error_jmp, LISP_ERROR_UNKNOWN_VAR); 
                     return lisp_make_null();
                 }
@@ -2563,7 +2563,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     Lisp symbol = lisp_list_ref(*x, 1);
                     if (!lisp_env_set(*env, symbol, value, ctx))
                     { 
-                        fprintf(stderr, "error: unknown variable: %s\n", lisp_symbol_string(symbol));
+                        fprintf(ctx.p->err_port, "error: unknown variable: %s\n", lisp_symbol_string(symbol));
                     }
                     return lisp_make_null();
                 }
@@ -2617,7 +2617,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     {
                         if (lisp_type(operator_expr) == LISP_SYMBOL)
                         {
-                            fprintf(stderr, "operator: %s\n", lisp_symbol_string(operator_expr));
+                            fprintf(ctx.p->err_port, "operator: %s\n", lisp_symbol_string(operator_expr));
                         }
 
                         longjmp(error_jmp, error);
@@ -2686,7 +2686,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
         // don't expand quotes
         if (lisp_list_length(l) != 2)
         {
-            fprintf(stderr, "(quote x)\n");
+            fprintf(ctx.p->err_port, "(quote x)\n");
             longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
         }
         return l;
@@ -2699,7 +2699,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     {
         if (lisp_list_length(l) != 3)
         {
-            fprintf(stderr, "(define-macro name proc)\n");
+            fprintf(ctx.p->err_port, "(define-macro name proc)\n");
             longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
         } 
 
@@ -2715,7 +2715,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
         }
         if (lisp_type(lambda) != LISP_LAMBDA)
         {
-            fprintf(stderr, "(define-macro name proc) not a procedure\n");
+            fprintf(ctx.p->err_port, "(define-macro name proc) not a procedure\n");
             longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
         } 
 
@@ -2766,14 +2766,14 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     else if (lisp_eq(op, get_sym(SYM_SET, ctx)) && op_valid)
     {
         if (lisp_list_length(l) != 3) {
-            fprintf(stderr, "(set! symbol x)\n");
+            fprintf(ctx.p->err_port, "(set! symbol x)\n");
             lisp_printf(stderr, l);
             longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
         }
 
         Lisp var = lisp_list_ref(l, 1);
         if (lisp_type(var) != LISP_SYMBOL) {
-            fprintf(stderr, "(set! symbol x) not a symbol\n");
+            fprintf(ctx.p->err_port, "(set! symbol x) not a symbol\n");
             longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
         }
         // continue with expansion
@@ -3379,13 +3379,13 @@ static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_syntax_error(Lisp args, LispError* e, LispContext ctx)
 {
-    fprintf(stderr, "expand error: %s ", lisp_string(lisp_car(args)));
+    fprintf(ctx.p->err_port, "expand error: %s ", lisp_string(lisp_car(args)));
     args = lisp_cdr(args);
     if (!lisp_is_null(args))
     {
         lisp_printf(stderr, lisp_car(args));
     }
-    fprintf(stderr, "\n");
+    fprintf(ctx.p->err_port, "\n");
 
     *e = LISP_ERROR_FORM_SYNTAX;
     return lisp_make_null();
@@ -4930,7 +4930,7 @@ void lisp_load_lib(LispContext ctx)
 
         if (error != LISP_ERROR_NONE)
         {
-            fprintf(stderr, "failed to init system library %d: %s\n", i, lisp_error_string(error));
+            fprintf(ctx.p->err_port, "failed to init system library %d: %s\n", i, lisp_error_string(error));
             lisp_shutdown(ctx);
             break;
         }
