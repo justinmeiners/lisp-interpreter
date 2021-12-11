@@ -6,8 +6,6 @@
 #define LISP_NO_LIB
 #include "lisp.h"
 
-#define LINE_MAX 2048
-
 int main(int argc, const char* argv[])
 {
     LispContext ctx = lisp_init();

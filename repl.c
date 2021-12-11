@@ -9,8 +9,6 @@
 #define LISP_IMPLEMENTATION
 #include "lisp.h"
 
-#define LINE_MAX 2048
-
 int main(int argc, const char* argv[])
 {
     const char* file_path = NULL;
@@ -105,8 +103,8 @@ int main(int argc, const char* argv[])
         while (!feof(stdin))
         {
             printf("> ");
-            char line[LINE_MAX];
-            fgets(line, LINE_MAX, stdin);
+            char line[LISP_FILE_CHUNK_SIZE];
+            fgets(line, LISP_FILE_CHUNK_SIZE, stdin);
 
             clock_t start_time = clock();
             LispError error;

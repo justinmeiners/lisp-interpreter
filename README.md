@@ -50,7 +50,7 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 ### Interactive programming with Read, eval, print loop.
 ```bash
-$ ./lisp_i
+$ ./lisp
 > (define (sqr x) (* x x)))
 > (define length 40)
 > (define area 0)
@@ -58,26 +58,20 @@ $ ./lisp_i
 1600
 ```
 
-### Embedding in a program
+### Quickstart
 
 ```c
 LispContext ctx = lisp_init();
+lisp_load_lib(ctx);
 
-// load lisp program (add 1 and 2)
 LispError error;
 Lisp program = lisp_read("(+ 1 2)", &error, ctx);
-
-// execute program using global environment
 Lisp result = lisp_eval(program, &error, ctx);
 
-// prints 3
-lisp_print(result);
+if (error != LISP_ERROR_NONE)
+    lisp_print(result); ; => 3
 
-// you are responsible for garbage collection
-lisp_collect(ctx, env);
-// ...
-// shutdown also garbage collects
-lisp_shutdown(ctx, env);
+lisp_shutdown(ctx);
 ```
 
 ### Loading Data
@@ -103,12 +97,11 @@ Lisp
 Loading the structure in C.
 
 ```c
-// setup lisp without any library
-LispContext ctx = lisp_init_empty();
+LispContext ctx = lisp_init();
 // load lisp structure
 Lisp data = lisp_read_file(file, ctx);
 // get value for age
-Lisp age = lisp_vector_for_key(data, lisp_make_symbol("AGE", ctx), ctx);
+Lisp age = lisp_list_assoc(data, lisp_make_symbol("AGE", ctx), ctx);
 // ...
 lisp_shutdown(ctx);
 ```
@@ -118,51 +111,49 @@ lisp_shutdown(ctx);
 C functions can be used to extend the interpreter, or call into C code.
 
 ```c
-Lisp sum_of_squares(Lisp args, LispError* e, LispContext ctx)
+Lisp integer_range(Lisp args, LispError* e, LispContext ctx)
 {
     // first argument
-    Lisp accum = lisp_car(args);
-    // remaining arguments
-    Lisp rest = lisp_cdr(args);
+    LispInt start = lisp_int(lisp_car(args));
+    args = lisp_cdr(args);
+    // second argument
+    LispInt end = lisp_int(lisp_car(args));
 
-    // iterate over the rest of the arguments
-    while (!lisp_is_null(rest))
+    if (end < start)
     {
-        Lisp val = lisp_car(rest);
-
-        // make this work for integers and floats
-        if (lisp_type(accum) == LISP_INT)
-        {
-            accum.int_val += lisp_int(val) * lisp_int(val);
-        }
-        else if (lisp_type(accum) == LISP_FLOAT)
-        {
-            accum.float_val += lisp_float(val) * lisp_float(val);
-        }
-
-        rest = lisp_cdr(rest);
+        *e = LISP_ERROR_OUT_OF_BOUNDS;
+        return lisp_make_null();
     }
 
-    return accum;
+    LispInt n = end - start;
+    Lisp numbers = lisp_make_vector(n, ctx);
+
+    for (LispInt i = 0; i < n; ++i)
+        lisp_vector_set(numbers, i, lisp_make_int(start + i));
+
+    return numbers;
 }
 
-// wrap in Lisp object
-Lisp func = lisp_make_func(sum_of_squares);
+// ...
 
-// add to enviornment with symbol SUM-OF-SQUARES
-lisp_env_set(env, lisp_make_symbol("SUM-OF-SQAURES", ctx), func, ctx);
+// wrap in Lisp object
+Lisp func = lisp_make_func(integers_in_range);
+
+// add to enviornment with symbol INTEGER-RANGE
+Lisp env = lisp_env_global(ctx);
+lisp_env_define(env, lisp_make_symbol("INTEGER-RANGE", ctx), func, ctx);
 ```
 
 In Lisp
 ```scheme
-(sum-of-squares 1 2 3)
-; returns 1 + 4 + 9 = 14
+(INTEGER-RANGE 5 15)
+; => #(5 6 7 8 9 10 11 12 13 14)
 ```
 Constants can also be stored in the environment in a similar fashion.
 
 ```c
-Lisp pi = lisp_make_real(3.1415);
-lisp_env_set(env, lisp_make_symbol("PI", ctx), pi, ctx);
+Lisp pi = lisp_make_real(3.141592);
+lisp_env_define(env, lisp_make_symbol("PI", ctx), pi, ctx);
 ```
 ## Macros
 
@@ -173,7 +164,8 @@ Common Lisp style (`defmacro`) is available with the name `define-macro`.
 
 ## Garbage Collection
 
-Unlike most languages, the garbage collector is not called automatically. You must call it yourself in C:
+Garbage is only collected if it is explicitly told to.
+You can invoke the garbage collector in C:
 
     lisp_collect(ctx);
 
@@ -185,8 +177,9 @@ Note that whenever a collect is issued
 ANY `Lisp` value which is not accessible
 through the global environment may become invalid.
 Be careful what variables you hold onto in C.
-Most C functions which are callable from Lisp
-don't have a problem as `eval` cannot be called within them.
+
+Don't call `eval` in a custom defined C function unless
+you know what you are doing.
 
 See [internals](INTERNALS.md) for more details.
 
