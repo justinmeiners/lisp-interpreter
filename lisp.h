@@ -13,6 +13,7 @@
  ----------------------
 
     LispContext ctx = lisp_init();
+    lisp_load_lib(ctx);
 
     LispError error;
     Lisp program = lisp_read("(+ 1 2)", &error, ctx);
@@ -39,10 +40,6 @@
   
      #define LISP_NO_LIB
 
- Build only with *safe* functions so the lisp environment cannot access
- system resources.
-
-     #define LISP_NO_SYSTEM_LIB
 
  Change how much data is read from a file at a time.
 
@@ -137,18 +134,12 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 // SETUP
 // -----------------------------------------
 
-// You can use these if you would like to set the _opt params.
-#define LISP_DEFAULT_PAGE_SIZE 512 * 1024
-#define LISP_DEFAULT_STACK_DEPTH 1024
+LispContext lisp_init(void);
+void lisp_shutdown(LispContext ctx);
 
 #ifndef LISP_NO_LIB
-LispContext lisp_init(void);
-LispContext lisp_init_opt(size_t stack_depth, size_t page_size, FILE* out_file);
+void lisp_load_lib(LispContext ctx);
 #endif
-
-LispContext lisp_init_empty(void);
-LispContext lisp_init_empty_opt(size_t stack_depth, size_t page_size, FILE* out_file);
-void lisp_shutdown(LispContext ctx);
 
 // garbage collection. 
 // this will free all objects which are not reachable from root_to_save or the global env
@@ -173,10 +164,15 @@ Lisp lisp_eval_opt(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
 // same as above but uses global environment
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
 
-// print out a lisp structure
+// print out a lisp structure in 
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 const char* lisp_error_string(LispError error);
+void lisp_displayf(FILE* file, Lisp l);
+
+void lisp_port_set_out(FILE* file, LispContext ctx);
+void lisp_port_set_in(FILE* file, LispContext ctx);
+void lisp_port_set_err(FILE* file, LispContext ctx);
 
 // -----------------------------------------
 // PRIMITIVES
@@ -324,7 +320,6 @@ void lisp_promise_store(Lisp p, Lisp x);
 
 #endif
 
-
 #ifdef LISP_IMPLEMENTATION
 
 #include <stdlib.h>
@@ -341,6 +336,14 @@ void lisp_promise_store(Lisp p, Lisp x);
 
 #ifndef LISP_FILE_CHUNK_SIZE
 #define LISP_FILE_CHUNK_SIZE 4096
+#endif
+
+#ifndef LISP_PAGE_SIZE
+#define LISP_PAGE_SIZE 512 * 1024
+#endif
+
+#ifndef LISP_STACK_DEPTH
+#define LISP_STACK_DEPTH 1024
 #endif
 
 #define IS_POW2(x) (((x) != 0) && ((x) & ((x)-1)) == 0)
@@ -520,12 +523,15 @@ enum {
 
 struct LispImpl
 {
-    FILE* out_file;
     Heap heap;
 
     Lisp* stack;
     size_t stack_ptr;
     size_t stack_depth;
+
+    FILE* out_port;
+    FILE* err_port;
+    FILE* in_port;
 
     Lisp symbol_table;
     Lisp global_env;
@@ -540,7 +546,6 @@ struct LispImpl
 };
 
 static Lisp get_sym(int sym, LispContext ctx) { return ctx.p->symbol_cache[sym]; }
-
 
 static void* gc_alloc(size_t size, LispType type, LispContext ctx)
 {
@@ -2200,7 +2205,7 @@ int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx)
     return 0; 
 }
 
-static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
+static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
 {
     switch (lisp_type(l))
     {
@@ -2214,29 +2219,44 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             fprintf(file, "%f", lisp_real(l));
             break;
         case LISP_NULL:
-            fprintf(file, "NIL");
+            fputs("NIL", file);
             break;
         case LISP_SYMBOL:
-            fprintf(file, "%s", lisp_symbol_string(l));
+            fputs(lisp_symbol_string(l), file);
             break;
         case LISP_STRING:
-            fprintf(file, "\"%s\"", lisp_string(l));
+            if (human_readable)
+            {
+                fputs(lisp_string(l), file);
+            }
+            else
+            {
+                // TODO: escape
+                fprintf(file, "\"%s\"", lisp_string(l));
+            }
             break;
         case LISP_CHAR:
         {
             int c = lisp_int(l);
-            
-            if (c >= 0 && c < 33)
+
+            if (human_readable)
             {
-                fprintf(file, "#\\%s", ascii_char_name_table[c]);
-            }
-            else if (isprint(c))
-            {
-                fprintf(file, "#\\%c", (char)c);
+                fputc(c, file);
             }
             else
             {
-                fprintf(file, "#\\+%d", c);
+                if (c >= 0 && c < 33)
+                {
+                    fprintf(file, "#\\%s", ascii_char_name_table[c]);
+                }
+                else if (isprint(c))
+                {
+                    fprintf(file, "#\\%c", (char)c);
+                }
+                else
+                {
+                    fprintf(file, "#\\+%d", c);
+                }
             }
             break;
         }
@@ -2263,9 +2283,9 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
                 {
                     Lisp val = lisp_vector_ref(vals, i);
 
-                    lisp_print_r(file, key, 0);
+                    lisp_print_r(file, key, human_readable, 0);
                     fprintf(file, ": ");
-                    lisp_print_r(file, val, 0);
+                    lisp_print_r(file, val, human_readable, 0);
                     fprintf(file, " ");
                 }
             }
@@ -2278,7 +2298,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             int N = lisp_vector_length(l);
             for (int i = 0; i < N; ++i)
             {
-                lisp_print_r(file, lisp_vector_ref(l, i), 0);
+                lisp_print_r(file, lisp_vector_ref(l, i), human_readable, 0);
                 if (i + 1 < N)
                 {
                     fprintf(file, " ");
@@ -2290,14 +2310,14 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
         case LISP_PAIR:
         {
             if (!is_cdr) fprintf(file, "(");
-            lisp_print_r(file, lisp_car(l), 0);
+            lisp_print_r(file, lisp_car(l), human_readable, 0);
 
             if (lisp_type(lisp_cdr(l)) != LISP_PAIR)
             {
                 if (!lisp_is_null(lisp_cdr(l)))
                 { 
                     fprintf(file, " . ");
-                    lisp_print_r(file, lisp_cdr(l), 0);
+                    lisp_print_r(file, lisp_cdr(l), human_readable, 0);
                 }
 
                 fprintf(file, ")");
@@ -2305,7 +2325,7 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
             else
             {
                 fprintf(file, " ");
-                lisp_print_r(file, lisp_cdr(l), 1);
+                lisp_print_r(file, lisp_cdr(l), human_readable, 1);
             } 
             break;
         }
@@ -2315,9 +2335,14 @@ static void lisp_print_r(FILE* file, Lisp l, int is_cdr)
     }
 }
 
-void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0);  }
+void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0, 0);  }
 void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
+void lisp_displayf(FILE* file, Lisp l) { lisp_print_r(file, l, 1, 0); }
+
+void lisp_port_set_out(FILE* file, LispContext ctx) { ctx.p->out_port = file; }
+void lisp_port_set_in(FILE* file, LispContext ctx) { ctx.p->in_port = file; }
+void lisp_port_set_err(FILE* file, LispContext ctx) { ctx.p->err_port = file; }
 
 static void lisp_stack_push(Lisp x, LispContext ctx)
 {
@@ -3121,9 +3146,9 @@ void lisp_print_collect_stats(LispContext ctx)
         printf("%lu/%lu ", page->size, page->capacity);
         page = page->next;
     }
-    fprintf(ctx.p->out_file, "\ngc collected: %lu\t time: %lu us\n", ctx.p->gc_stat_freed, ctx.p->gc_stat_time);
-    fprintf(ctx.p->out_file, "heap size: %lu\t pages: %lu\n", ctx.p->heap.size, ctx.p->heap.page_count);
-    fprintf(ctx.p->out_file, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbol_table));
+    fprintf(ctx.p->out_port, "\ngc collected: %lu\t time: %lu us\n", ctx.p->gc_stat_freed, ctx.p->gc_stat_time);
+    fprintf(ctx.p->out_port, "heap size: %lu\t pages: %lu\n", ctx.p->heap.size, ctx.p->heap.page_count);
+    fprintf(ctx.p->out_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbol_table));
 }
 
 Lisp lisp_env_global(LispContext ctx)
@@ -3190,22 +3215,24 @@ const char* lisp_error_string(LispError error)
     }
 }
 
-
-LispContext lisp_init_empty_opt(size_t stack_depth, size_t page_size, FILE* out_file)
+LispContext lisp_init(void)
 {
     LispContext ctx;
     ctx.p = malloc(sizeof(struct LispImpl));
     if (!ctx.p) return ctx;
 
-    ctx.p->out_file = out_file;
+    ctx.p->out_port = stdout;
+    ctx.p->in_port = stdin;
+    ctx.p->err_port = stderr;
+
     ctx.p->symbol_counter = 0;
     ctx.p->stack_ptr = 0;
-    ctx.p->stack_depth = stack_depth;
-    ctx.p->stack = malloc(sizeof(Lisp) * stack_depth);
+    ctx.p->stack_depth = LISP_STACK_DEPTH;
+    ctx.p->stack = malloc(sizeof(Lisp) * LISP_STACK_DEPTH);
     ctx.p->gc_stat_freed = 0;
     ctx.p->gc_stat_time = 0;
     
-    heap_init(&ctx.p->heap, page_size);
+    heap_init(&ctx.p->heap, LISP_PAGE_SIZE);
 
     ctx.p->symbol_table = lisp_make_table(ctx);
     ctx.p->global_env = lisp_make_null();
@@ -3225,10 +3252,11 @@ LispContext lisp_init_empty_opt(size_t stack_depth, size_t page_size, FILE* out_
     return ctx;
 }
 
-LispContext lisp_init_empty(void)
+Lisp lisp_macro_table(LispContext ctx)
 {
-    return lisp_init_empty_opt(LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE, stdout);
+    return ctx.p->macros;
 }
+#undef SCRATCH_MAX
 
 #ifndef LISP_NO_LIB
 
@@ -3312,36 +3340,39 @@ static Lisp sch_is_pair(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_PAIR);
 }
 
+static Lisp sch_write(Lisp args, LispError* e, LispContext ctx)
+{
+    lisp_printf(ctx.p->out_port, lisp_car(args));
+    return lisp_make_null();
+}
+
 static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp l = lisp_car(args);
-    if (lisp_type(l) == LISP_STRING)
-    {
-        fputs(lisp_string(l), ctx.p->out_file);
-    }
-    else
-    {
-        lisp_printf(ctx.p->out_file, l);
-    }
+    lisp_displayf(ctx.p->out_port, lisp_car(args));
     return lisp_make_null();
 }
 
 static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    fputc(lisp_char(lisp_car(args)), ctx.p->out_file);
+    fputc(lisp_char(lisp_car(args)), ctx.p->out_port);
     return lisp_make_null();
 }
 
 static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
 {
-    fflush(ctx.p->out_file); return lisp_make_null();
+    fflush(ctx.p->out_port); return lisp_make_null();
+}
+
+static Lisp sch_read(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_read_file(stdin, e, ctx);
 }
 
 static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
 {
    Lisp l = lisp_car(args);
-   fputs(lisp_string(l), ctx.p->out_file);
+   fputs(lisp_string(l), ctx.p->out_port);
 
    *e = LISP_ERROR_RUNTIME;
    return lisp_make_null();
@@ -3585,6 +3616,7 @@ static Lisp sch_to_inexact(Lisp args, LispError* e, LispContext ctx)
     }
 }
 
+/*
 static Lisp sch_to_string(Lisp args, LispError* e, LispContext ctx)
 {
     char scratch[SCRATCH_MAX];
@@ -3606,6 +3638,7 @@ static Lisp sch_to_string(Lisp args, LispError* e, LispContext ctx)
             return lisp_make_null();
     }
 }
+*/
 
 static Lisp sch_symbol_to_string(Lisp args, LispError* e, LispContext ctx)
 {
@@ -4337,15 +4370,6 @@ static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_null();
 }
 
-#ifndef LISP_NO_SYSTEM_LIB
-static Lisp sch_read_path(Lisp args, LispError *e, LispContext ctx)
-{
-    const char* path = lisp_string(lisp_car(args));
-    Lisp result = lisp_read_path(path, e, ctx);
-    return result;
-}
-#endif
-
 #undef ARITY_CHECK
 
 static const LispFuncDef lib_cfunc_defs[] = {
@@ -4353,21 +4377,17 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // NON STANDARD ADDITINONS
     { "ERROR", sch_error },
     { "SYNTAX-ERROR", sch_syntax_error },
-    
-#ifndef LISP_NO_SYSTEM_LIB
-    { "READ-PATH", sch_read_path },
 
     // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
+    { "WRITE", sch_write },
     { "DISPLAY", sch_display },
     { "WRITE-CHAR", sch_write_char },
     { "FLUSH-OUTPUT-PORT", sch_flush },
+    { "READ", sch_read },
     
-   
     // Universal Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
     { "GET-UNIVERSAL-TIME", sch_univeral_time },
-
     { "PRINT-GC-STATISTICS", sch_print_gc_stats },
-#endif
     
     { "MACROEXPAND", sch_macroexpand },
     
@@ -4895,15 +4915,8 @@ static const char* lib_code_streams = " \
   (else (stream-filter pred (stream-cdr stream))))) \
 ";
 
-LispContext lisp_init(void)
+void lisp_load_lib(LispContext ctx)
 {
-    return lisp_init_opt(LISP_DEFAULT_STACK_DEPTH, LISP_DEFAULT_PAGE_SIZE, stdout);
-}
-
-LispContext lisp_init_opt(size_t stack_depth, size_t page_size, FILE* out_file)
-{
-    LispContext ctx = lisp_init_empty_opt(stack_depth, page_size, out_file);
-
     Lisp table = lisp_make_table(ctx);
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
     Lisp system_env = lisp_env_extend(lisp_make_null(), table, ctx);
@@ -4931,18 +4944,8 @@ LispContext lisp_init_opt(size_t stack_depth, size_t page_size, FILE* out_file)
         lisp_print_collect_stats(ctx);
 #endif
     }
-
-    return ctx;
-}
-
-Lisp lisp_macro_table(LispContext ctx)
-{
-    return ctx.p->macros;
 }
 
 #endif
-
-
-#undef SCRATCH_MAX
 
 #endif
