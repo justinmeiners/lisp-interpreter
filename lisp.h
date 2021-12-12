@@ -3750,15 +3750,6 @@ static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_string2(lisp_int(n), c, ctx);
 }
 
-static Lisp sch_string_equal(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    int result = strcmp(lisp_string(a), lisp_string(b)) == 0;
-    return lisp_make_bool(result);
-}
-
 static Lisp sch_string_less(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp a = lisp_car(args);
@@ -3838,12 +3829,34 @@ static Lisp sch_string_downcase(Lisp args, LispError* e, LispContext ctx)
     Lisp r = lisp_make_string(lisp_string(s), ctx);
     
     char* c = lisp_string(r);
-    while (*c)
-    {
-        *c = tolower(*c);
-        ++c;
-    }
+    while (*c) { *c = tolower(*c); ++c; }
     return r;
+}
+
+static Lisp sch_string_append(Lisp args, LispError* e, LispContext ctx)
+{
+    int count = 0;
+    Lisp it = args;
+    while (lisp_is_pair(it))
+    {
+        Lisp x = lisp_car(it);
+        count += strlen(lisp_string(x));
+        it = lisp_cdr(it);
+    }
+
+    Lisp result = lisp_make_string2(count + 1, '\0', ctx);
+    char* c = lisp_string(result);
+
+    it = args;
+    while (lisp_is_pair(it))
+    {
+        Lisp x = lisp_car(it);
+        int n = (LispInt)strlen(lisp_string(x));
+        memcpy(c, lisp_string(x), n);
+        c += n;
+        it = lisp_cdr(it);
+    }
+    return result;
 }
 
 static Lisp sch_string_to_list(Lisp args, LispError* e, LispContext ctx)
@@ -4529,7 +4542,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
     { "STRING?", sch_is_string },
     { "MAKE-STRING", sch_make_string },
-    { "STRING=?", sch_string_equal },
+    { "STRING=?", sch_equal },
     { "STRING<?", sch_string_less },
     { "STRING-COPY", sch_string_copy },
     { "STRING-NULL?", sch_string_is_null },
@@ -4538,12 +4551,12 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "STRING-SET!", sch_string_set },
     { "STRING-UPCASE", sch_string_upcase },
     { "STRING-DOWNCASE", sch_string_downcase },
+    { "STRING-APPEND", sch_string_append },
     { "STRING->LIST", sch_string_to_list },
     { "LIST->STRING", sch_list_to_string },
     { "STRING->NUMBER", sch_string_to_number },
     { "NUMBER->STRING", sch_number_to_string },
 
-    
     // Characters https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Characters.html#Characters
     { "CHAR?", sch_is_char },
     { "CHAR=?", sch_equals },
@@ -4859,15 +4872,14 @@ static const char* lib_code_sequence = " \
     (helper (map1 cdr lists '()))))) \
  (helper rest)) \
 \
-(define (memq x list) \
+(define (_member x list eq?) \
  (cond ((null? list) #f) \
   ((eq? (car list) x) list) \
-  (else (memq x (cdr list))))) \
+  (else (_member x (cdr list))))) \
 \
-(define (member x list) \
- (cond ((null? list) #f) \
-  ((equal? (car list) x) list) \
-  (else (member x (cdr list))))) \
+(define (member x list) (_member x list equal?)) \
+(define (memq x list) (_member x list eq?)) \
+(define (memv x list) (_member x list eqv?)) \
 \
 (define (make-list k elem) \
  (define (helper k l) \
