@@ -21,6 +21,13 @@
 (assert (= 18 (apply + (list 3 4 5 6))))
 (assert (compiled-procedure? eval))
 
+(let ((x "hello")
+      (y "world"))
+(=> (string-append x y) "helloworld"))
+
+(let* ((x 2)
+       (y (+ x 1)))
+  (=> (+ x y) 5))
 
 (do ((i 0 (+ i 1)))
   ((>= i 10))
