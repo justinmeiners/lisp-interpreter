@@ -328,7 +328,6 @@ Lisp lisp_promise_val(Lisp p);
 Lisp lisp_promise_proc(Lisp p);
 void lisp_promise_store(Lisp p, Lisp x);
 
-
 #ifdef __cplusplus
 }
 #endif
@@ -885,7 +884,6 @@ Lisp lisp_alist_ref(Lisp l, Lisp key)
         {
             return pair;
         }
-
         l = lisp_cdr(l);
     }
     return lisp_make_null();
@@ -927,10 +925,7 @@ static Vector* vector_get_(Lisp v)
     return v.val.ptr_val;
 }
 
-int lisp_vector_length(Lisp v)
-{
-    return _vector_len(vector_get_(v));
-}
+int lisp_vector_length(Lisp v) { return _vector_len(vector_get_(v)); }
 
 Lisp lisp_vector_ref(Lisp v, int i)
 {
@@ -1303,15 +1298,7 @@ Lisp lisp_make_char(int c)
     return l;
 }
 
-int lisp_char(Lisp l)
-{
-    return l.val.char_val; 
-}
-
-// TODO
-#if defined(WIN32) || defined(WIN64)
-#define strncasecmp _stricmp
-#endif
+int lisp_char(Lisp l) { return l.val.char_val; }
 
 static uint64_t hash_bytes(const char *buffer, size_t n)
 {
@@ -1400,7 +1387,6 @@ Lisp lisp_gen_symbol(LispContext ctx)
     int bytes = snprintf(text, 64, ":G%d", ctx.p->symbol_counter++);
     return symbol_make_(text, bytes, ctx);
 }
-
 
 Lisp lisp_make_func(LispCFunc func)
 {
@@ -1621,7 +1607,6 @@ static void lexer_skip_empty(Lexer* lex)
     {
         // skip whitespace
         while (isspace(*lex->c)) lexer_step(lex);
-
         // skip comments to end of line
         if (*lex->c == ';')
         {
@@ -1698,7 +1683,7 @@ static int lexer_match_int(Lexer* lex)
     return 1;
 }
 
-static int lexer_match_real(Lexer* lex)
+static int lexer_match_float(Lexer* lex)
 {
     lexer_restart_scan(lex);
     
@@ -1844,20 +1829,13 @@ static void lexer_next_token(Lexer* lex)
     }
     else
     {
-        if (lexer_match_string(lex))
-            lex->token = TOKEN_STRING;
-        else if (lexer_match_real(lex))
-            lex->token = TOKEN_FLOAT;
-        else if (lexer_match_int(lex))
-            lex->token = TOKEN_INT;
-        else if (lexer_match_symbol(lex))
-            lex->token = TOKEN_SYMBOL;
-        else if (lexer_match_char(lex))
-            lex->token = TOKEN_CHAR;
-        else if (lexer_match_bool(lex))
-            lex->token = TOKEN_BOOL;
-        else if (lexer_match_hash_paren(lex))
-            lex->token = TOKEN_HASH_L_PAREN;
+        if (lexer_match_string(lex)) lex->token = TOKEN_STRING;
+        else if (lexer_match_float(lex)) lex->token = TOKEN_FLOAT;
+        else if (lexer_match_int(lex)) lex->token = TOKEN_INT;
+        else if (lexer_match_symbol(lex)) lex->token = TOKEN_SYMBOL;
+        else if (lexer_match_char(lex)) lex->token = TOKEN_CHAR;
+        else if (lexer_match_bool(lex)) lex->token = TOKEN_BOOL;
+        else if (lexer_match_hash_paren(lex)) lex->token = TOKEN_HASH_L_PAREN;
     }
 }
 
@@ -3296,7 +3274,10 @@ Lisp lisp_macro_table(LispContext ctx)
 static Lisp sch_cons(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
-    return lisp_cons(lisp_car(args), lisp_car(lisp_cdr(args)), ctx);
+    Lisp x = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp y = lisp_car(args);
+    return lisp_cons(x, y, ctx);
 }
 
 static Lisp sch_car(Lisp args, LispError* e, LispContext ctx)
@@ -3431,7 +3412,6 @@ static Lisp sch_equals(Lisp args, LispError* e, LispContext ctx)
         if (lisp_bool(lisp_car(args)) != lisp_bool(to_check)) return lisp_false();
         args = lisp_cdr(args);
     }
-    
     return lisp_true();
 }
 
@@ -3457,7 +3437,8 @@ static Lisp sch_list_ref(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
     Lisp list = lisp_car(args);
-    Lisp index = lisp_car(lisp_cdr(args));
+    args = lisp_cdr(args);
+    Lisp index = lisp_car(args);
     return lisp_list_ref(list, lisp_int(index));
 }
 
@@ -3539,11 +3520,20 @@ static Lisp sch_mult(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_sub(Lisp args, LispError* e, LispContext ctx)
 {
-    ARITY_CHECK(2, 2);
+    ARITY_CHECK(1, 2);
     Lisp x = lisp_car(args);
     args = lisp_cdr(args);
-    Lisp y = lisp_car(args);
 
+    Lisp y;
+    if (lisp_is_null(args))
+    {
+        y = x;
+        x = lisp_make_int(0);
+    }
+    else
+    {
+        y = lisp_car(args);
+    }
     switch (lisp_type(x))
     {
         case LISP_REAL:
@@ -3693,9 +3683,9 @@ static Lisp sch_string_is_null(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp n = lisp_car(args);
-    int c = '_';
-    
     args = lisp_cdr(args);
+
+    int c = '_';
     if (lisp_is_pair(args)) {
         c = lisp_char(lisp_car(args));
     }
@@ -3733,7 +3723,6 @@ static Lisp sch_string_length(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_string_ref(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
-
     Lisp str = lisp_car(args);
     Lisp index = lisp_car(lisp_cdr(args));
     if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
@@ -3747,9 +3736,11 @@ static Lisp sch_string_ref(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_string_set(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp str = lisp_list_ref(args, 0);
-    Lisp index = lisp_list_ref(args, 1);
-    Lisp val = lisp_list_ref(args, 2);
+    Lisp str = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp index = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp val = lisp_car(args); 
     if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
     {
         *e = LISP_ERROR_TYPE;
@@ -3767,11 +3758,7 @@ static Lisp sch_string_upcase(Lisp args, LispError* e, LispContext ctx)
     Lisp r = lisp_make_string(lisp_string(s), ctx);
     
     char* c = lisp_string(r);
-    while (*c)
-    {
-        *c = toupper(*c);
-        ++c;
-    }
+    while (*c) { *c = toupper(*c); ++c; }
     return r;
 }
 
@@ -4403,6 +4390,7 @@ static Lisp sch_lambda_env(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_is_func(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(1, 1);
     int type = lisp_type(lisp_car(args));
     return lisp_make_bool(type == LISP_FUNC);
 }
@@ -4440,6 +4428,7 @@ static Lisp sch_gc_flip(Lisp args, LispError* e, LispContext ctx)
     lisp_collect(lisp_make_null(), ctx);
     return lisp_make_null();
 }
+
 static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
 {
     lisp_print_collect_stats(ctx);
