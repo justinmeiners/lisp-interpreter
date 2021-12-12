@@ -35,17 +35,19 @@
      #define LISP_DEBUG
 
  Do not include the scheme standard library.
- This reduces the amount of code if you just care about reading s-expressions 
- or want to heavily customize the language.
+ This reduces the amount of code if you want to heavily customize the language.
   
      #define LISP_NO_LIB
 
+ Do not include any code related to eval including the scheme library.
+ This reduces the amount of code if you just care about reading s-expressions.
+  
+     #define LISP_NO_EVAL
 
  Change how much data is read from a file at a time.
 
-    #define LISP_FILE_CHUNK_SIZE 4096
+    #define LISP_FILE_CHUNK_SIZE 8192
 
- 
  */
 
 
@@ -56,8 +58,13 @@
 extern "C" {
 #endif
 
+
 #include <stdio.h>
 #include <stdint.h>
+
+#ifdef LISP_NO_EVAL
+#define LISP_NO_LIB
+#endif
 
 typedef enum
 {
@@ -138,7 +145,9 @@ LispContext lisp_init(void);
 void lisp_shutdown(LispContext ctx);
 
 #ifndef LISP_NO_LIB
+
 void lisp_load_lib(LispContext ctx);
+
 #endif
 
 // garbage collection. 
@@ -160,18 +169,21 @@ Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
 Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
+#ifndef LISP_NO_EVAL
+
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
 Lisp lisp_eval2(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
+// Expands special Lisp forms and checks syntax (called by eval).
+Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
+
+#endif
 
 // print out a lisp structure in 
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 
 void lisp_displayf(FILE* file, Lisp l);
-
-// Expands special Lisp forms and checks syntax (called by eval).
-Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
 
 // -----------------------------------------
 // PRIMITIVES
@@ -217,6 +229,7 @@ Lisp lisp_make_string(const char* c_string, LispContext ctx);
 Lisp lisp_make_string2(int n, int c, LispContext ctx);
 int lisp_string_ref(Lisp s, int n);
 void lisp_string_set(Lisp s, int n, int c);
+Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx);
 char* lisp_string(Lisp s);
 
 Lisp lisp_make_char(int c);
@@ -253,7 +266,7 @@ int lisp_list_length(Lisp l); // O(n)
 // returns the value with tgiven key.
 Lisp lisp_alist_ref(Lisp l, Lisp key); // O(n)
 
-// Vectors (heterogeneous)
+// Vectors (like C arrays, but heterogeneous).
 Lisp lisp_make_vector(int n, LispContext ctx);
 Lisp lisp_make_vector2(int n, Lisp fill, LispContext ctx);
 
@@ -264,8 +277,9 @@ void lisp_vector_swap(Lisp v, int i, int j);
 void lisp_vector_fill(Lisp v, Lisp x);
 Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx);
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx);
-Lisp lisp_avector_ref(Lisp l, Lisp key); // O(n)
 
+// association vector like "alist"
+Lisp lisp_avector_ref(Lisp l, Lisp key); // O(n)
 
 // Hash tables
 Lisp lisp_make_table(LispContext ctx);
@@ -951,8 +965,8 @@ void lisp_vector_fill(Lisp v, Lisp x)
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx)
 {
     assert(start <= end);
-    
-    Vector* src = old.val.ptr_val;
+    Vector* src = vector_get_(old);
+
     int m = _vector_len(src);
     if (end > m) end = m;
     
@@ -1218,6 +1232,7 @@ Lisp lisp_promise_val(Lisp p)
 
 Lisp lisp_make_string2(int n, int c, LispContext ctx)
 {
+    assert(n >= 0);
     String* string = gc_alloc(sizeof(String) + n + 1, LISP_STRING, ctx);
     string->string[n] = '\0';
     memset(string->string, c, n);
@@ -1255,6 +1270,29 @@ int lisp_string_ref(Lisp s, int n)
 void lisp_string_set(Lisp s, int n, int c)
 {
     get_string_(s)->string[n] = (char)c;
+}
+
+Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx)
+{
+    assert(start <= end);
+
+    int count = start;
+    char *first = lisp_string(s);
+    while (*first && count) {
+        --count;
+        ++first;
+    }
+
+    count = (end - start);
+    char *last = first;
+    while (*last && count)
+    {
+        --count;
+        ++last;
+    }
+    Lisp result = lisp_make_string2(last - first, '\0', ctx);
+    memcpy(lisp_string(result), first, last - first);
+    return result;
 }
 
 Lisp lisp_make_char(int c)
@@ -2331,6 +2369,8 @@ void lisp_port_set_out(FILE* file, LispContext ctx) { ctx.p->out_port = file; }
 void lisp_port_set_in(FILE* file, LispContext ctx) { ctx.p->in_port = file; }
 void lisp_port_set_err(FILE* file, LispContext ctx) { ctx.p->err_port = file; }
 
+#ifndef LISP_NO_EVAL
+
 static void lisp_stack_push(Lisp x, LispContext ctx)
 {
 #ifdef LISP_DEBUG
@@ -2892,6 +2932,8 @@ Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
     return lisp_eval2(expr, lisp_env_global(ctx), out_error, ctx);
 }
 
+#endif
+
 static Lisp gc_move(Lisp x, LispContext ctx)
 {
     switch (x.type)
@@ -3333,8 +3375,9 @@ static Lisp sch_write(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
 {
-    lisp_displayf(ctx.p->out_port, lisp_car(args));
-    return lisp_make_null();
+    Lisp x = lisp_car(args);
+    lisp_displayf(ctx.p->out_port, x);
+    return x;
 }
 
 static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
@@ -3661,6 +3704,7 @@ static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_string_less(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(2, 2);
     Lisp a = lisp_car(args);
     args = lisp_cdr(args);
     Lisp b = lisp_car(args);
@@ -3668,15 +3712,15 @@ static Lisp sch_string_less(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_bool(result);
 }
 
-static Lisp sch_string_copy(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_substring(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp val = lisp_car(args);
-    if (lisp_type(val) != LISP_STRING)
-    {
-        *e = LISP_ERROR_TYPE;
-        return lisp_make_null();
-    }
-     return lisp_make_string(lisp_string(val), ctx);
+    ARITY_CHECK(3, 3);
+    Lisp s = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp start = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp end = lisp_car(args);
+    return lisp_substring(s, lisp_int(start), lisp_int(end), ctx);
 }
 
 static Lisp sch_string_length(Lisp args, LispError* e, LispContext ctx)
@@ -3878,6 +3922,11 @@ static Lisp sch_char_is_white(Lisp args, LispError* e, LispContext ctx)
 {
     int c = lisp_char(lisp_car(args));
     return lisp_make_bool(isblank(c));
+}
+
+static Lisp sch_char_to_int(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_int(lisp_char(lisp_car(args)));
 }
 
 static Lisp sch_is_int(Lisp args, LispError* e, LispContext ctx)
@@ -4172,6 +4221,7 @@ static Lisp sch_vector_assq(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_subvector(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(3, 3);
     Lisp v = lisp_car(args);
     args = lisp_cdr(args);
     Lisp start = lisp_car(args);
@@ -4461,7 +4511,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "MAKE-STRING", sch_make_string },
     { "STRING=?", sch_equal },
     { "STRING<?", sch_string_less },
-    { "STRING-COPY", sch_string_copy },
+    { "SUBSTRING", sch_substring },
     { "STRING-NULL?", sch_string_is_null },
     { "STRING-LENGTH", sch_string_length },
     { "STRING-REF", sch_string_ref },
@@ -4484,7 +4534,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "CHAR-ALPHANUMERIC?", sch_char_is_alphanum },
     { "CHAR-ALPHABETIC?", sch_char_is_alpha },
     { "CHAR-NUMERIC?", sch_char_is_number },
-    { "CHAR->INTEGER", sch_to_exact },
+    { "CHAR->INTEGER", sch_char_to_int },
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
     // Numerical operations https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Numerical-operations.html
@@ -4602,7 +4652,18 @@ static const LispFuncDef lib_cfunc_defs[] = {
 //      (IF <pred1> t ...
 //          (if <predN> t f))
 
-static const char* lib_code0 = "\
+static const char* lib_code_lang0 = "\
+(define-macro assert \
+ (lambda (body) \
+  `(if ,body '() \
+      (begin \
+       (display (quote ,body)) \
+       (error \" assert failed\"))))) \
+\
+(define-macro =>  \
+   (lambda (test expected) \
+      `(assert (equal? ,test (quote ,expected))) )) \
+\
 (define (first x) (car x)) \
 (define (second x) (car (cdr x))) \
 (define (third x) (car (cdr (cdr x)))) \
@@ -4623,20 +4684,19 @@ static const char* lib_code0 = "\
     (if (null? l) '() \
          (begin (proc (car l)) (for-each1 proc (cdr l ))))) \
 \
-(define (reverse-append! l tail) \
-  (if (null? l) tail \
-    (let ((next (cdr l))) \
-      (set-cdr! l tail) \
-      (reverse-append! next l)))) \
-\
 (define-macro let (lambda (def-list . body) \
   (for-each1 (lambda (entry) \
     (if (not (pair? entry)) (syntax-error \"bad let entry\" entry)) \
     (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) def-list) \
-  (cons `(lambda \
-    ,(map1 (lambda (entry) (car entry)) def-list '()) \
-    ,(cons 'BEGIN body)) \
+  (cons (list 'LAMBDA \
+    (map1 (lambda (entry) (car entry)) def-list '()) \
+    (if (null? (cdr body)) (car body) (cons 'BEGIN body))) \
     (map1 (lambda (entry) (car (cdr entry))) def-list '())) )) \
+\
+(define (_let*-helper def-list body) \
+    (if (null? def-list) (if (null? (cdr body)) (car body) (cons 'BEGIN body)) \
+     (list 'LET (list (car def-list)) (_let*-helper (cdr def-list) body)))) \
+(define-macro let* (lambda (def-list . body) (_let*-helper def-list body))) \
 \
 (define (_cond-helper clauses) \
  (if (null? clauses) \
@@ -4647,7 +4707,6 @@ static const char* lib_code0 = "\
     (car (car clauses)) \
     (cons 'BEGIN (cdr (car clauses))) \
     (_cond-helper (cdr clauses)))))) \
-\
 (define-macro cond \
  (lambda clauses \
   (begin \
@@ -4676,20 +4735,7 @@ static const char* lib_code0 = "\
  (lambda preds (_or-helper preds))) \
 ";
 
-static const char* lib_code1 = " \
-(define (newline) (write-char #\\newline)) \
-\
-(define-macro assert \
- (lambda (body) \
-  `(if ,body '() \
-      (begin \
-       (display (quote ,body)) \
-       (error \" assert failed\"))))) \
-\
-(define-macro =>  \
-   (lambda (test expected) \
-      `(assert (equal? ,test (quote ,expected))) )) \
-\
+static const char* lib_code_lang1 = " \
 (define-macro push \
  (lambda (v l) \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
@@ -4722,40 +4768,18 @@ static const char* lib_code1 = " \
         ((>= ,i ,n) ,(if (null? result) result (car result)) ) \
         ,body) \
    ) form))) \
-\
-(define (number? x) (real? x)) \
-(define (odd? x) (not (even? x))) \
-(define (inexact? x) (not (exact? x))) \
-(define (zero? x) (= x 0)) \
- \
-(define (>= a b) (not (< a b))) \
-(define (> a b) (< b a)) \
-(define (<= a b) (not (< b a))) \
-\
-(define (char>=? a b) (not (char<? a b))) \
-(define (char>? a b) (char<? b a)) \
-(define (char<=? a b) (not (char<? b a))) \
-\
-(define (string>=? a b) (not (string<? a b))) \
-(define (string>? a b) (string<? b a)) \
-(define (string<=? a b) (not (string<? b a))) \
+";
+
+static const char* lib_code_lists = " \
+(define (append-reverse! l tail) \
+  (if (null? l) tail \
+    (let ((next (cdr l))) \
+      (set-cdr! l tail) \
+      (append-reverse! next l)))) \
 \
 (define (last-pair x) \
  (if (pair? (cdr x)) \
   (last-pair (cdr x)) x)) \
-\
-(define-macro delay (lambda (expr) \
-  `(make-promise ,(cons 'LAMBDA \
-                    (cons '() \
-                      (cons expr '())))))) \
-\
-(define (force promise) \
-    (if (not (promise-forced? promise)) \
-        (_promise-store! promise ((_promise-procedure promise)))) \
-    (promise-value promise)) \
-";
-
-static const char* lib_code_sequence = " \
 \
 (define (map proc . rest) \
  (define (helper lists result) \
@@ -4813,15 +4837,22 @@ static const char* lib_code_sequence = " \
     (helper (cdr l) result)))) \
  (reverse! (helper l '()))) \
 \
-(define (alist->hash-table alist) \
- (define h (make-hash-table)) \
- (for-each1 (lambda (pair) \
-             (hash-table-set! h (car pair) (cdr pair))) alist) \
- h) \
-\
 (define (reduce op acc lst) \
     (if (null? lst) acc \
         (reduce op (op acc (car lst)) (cdr lst)))) \
+\
+(define (reverse l) (reverse! (list-copy l))) \
+";
+
+static const char* lib_code_math = " \
+(define (number? x) (real? x)) \
+(define (odd? x) (not (even? x))) \
+(define (inexact? x) (not (exact? x))) \
+(define (zero? x) (= x 0)) \
+ \
+(define (>= a b) (not (< a b))) \
+(define (> a b) (< b a)) \
+(define (<= a b) (not (< b a))) \
 \
 (define (max . ls) \
   (reduce (lambda (m x) \
@@ -4846,8 +4877,31 @@ static const char* lib_code_sequence = " \
    (if (null? args) 1 \
       (abs (* (/ (car args) (apply gcd args)) \
             (apply * (cdr args))))))  \
+";
+
+
+static const char* lib_code_sequence = " \
+(define (newline) (write-char #\\newline)) \
+ \
+(define (char>=? a b) (not (char<? a b))) \
+(define (char>? a b) (char<? b a)) \
+(define (char<=? a b) (not (char<? b a))) \
 \
-(define (reverse l) (reverse! (list-copy l))) \
+(define (string>=? a b) (not (string<? a b))) \
+(define (string>? a b) (string<? b a)) \
+(define (string<=? a b) (not (string<? b a))) \
+\
+(define (string-copy s) (substring s 0 (string-length v)))\
+(define (string-head s end) (subvector s 0 end)) \
+(define (string-tail s start) (subvector s start (string-length v))) \
+\
+(define (alist->hash-table alist) \
+ (define h (make-hash-table)) \
+ (for-each1 (lambda (pair) \
+             (hash-table-set! h (car pair) (cdr pair))) alist) \
+ h) \
+\
+(define (vector-copy v) (subvector v 0 (vector-length v)))\
 (define (vector-head v end) (subvector v 0 end)) \
 (define (vector-tail v start) (subvector v start (vector-length v))) \
 \
@@ -4902,6 +4956,16 @@ static const char* lib_code_sequence = " \
 ";
 
 static const char* lib_code_streams = " \
+(define-macro delay (lambda (expr) \
+  `(make-promise ,(cons 'LAMBDA \
+                    (cons '() \
+                      (cons expr '())))))) \
+\
+(define (force promise) \
+    (if (not (promise-forced? promise)) \
+        (_promise-store! promise ((_promise-procedure promise)))) \
+    (promise-value promise)) \
+\
 (define-macro cons-stream (lambda (x expr) `(cons ,x (delay ,expr)))) \
 \
 (define (stream-car stream) (car stream)) \
@@ -4960,8 +5024,14 @@ void lisp_load_lib(LispContext ctx)
 
     LispError error;
 
-    const char* to_load[] = { lib_code0, lib_code1, lib_code_sequence, lib_code_streams };
-    for (int i = 0; i < 4; ++i)
+    const char* to_load[] =
+    {
+        lib_code_lang0, lib_code_lang1,
+        lib_code_lists, lib_code_math,
+        lib_code_sequence, lib_code_streams
+    };
+
+    for (int i = 0; i < 6; ++i)
     {
         lisp_eval2(lisp_read(to_load[i], NULL, ctx), system_env, &error, ctx);
 

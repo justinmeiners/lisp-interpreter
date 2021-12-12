@@ -36,3 +36,5 @@
 (=> (number->string (string->number "279")) "279")
 
 (=> (string->number (number->string 0.5)) 0.5)
+
+(=> (- (char->integer #\c) (char->integer #\a)) 2)

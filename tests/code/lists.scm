@@ -38,6 +38,8 @@
  
 (assert (= (apply + (list 3 4 5 6)) 18)) 
 
+(=> (append-reverse! '("y" "x" "w") '("z")) ("w" "x" "y" "z"))
+
 ; Association lists
 (define list-map '((bob . 1) (john . 2) (dan . 3) (alice . 4)))
 

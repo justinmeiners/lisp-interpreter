@@ -7,15 +7,12 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 ### Philosophy
 
-- **Simple**: Interpreters can easily get complicated with fancy features
-    This project doesn't aim to be an optimal, fully featured, or standards compliant Scheme implementation.
+- **Simple**: Language implementations often are quite complicated and have too many fancy features.
+    This project doesn't aim to be an optimal, fully featured, or compliant Scheme implementation.
     It is just a robust foundation for scripting. 
 
    If you need a more complete implementation try [s7](https://ccrma.stanford.edu/software/snd/snd/s7.html)
     or [chicken](https://www.call-cc.org)
-
-- **Data & Code**: Lisp s-expressions are undervalued as an alternative to JSON or XML.
-    This implementation provides first-class support for working with data or code.
 
 - **Unintrusive**: Just copy in the header file.
     Turn on and off major features with build macros.
@@ -24,6 +21,9 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 - **Unsurprising**: You should be able to read the source code and understand how it works.
   The header API should work how you expect.
 
+- **First class data**: Lisp s-expressions are undervalued as an alternative to JSON or XML.
+    Preprocessor flags can remove most scheme features if you just want to read s-expressions
+    and manipulate them in C.
 
 ### Features
 
@@ -40,6 +40,7 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 ### Non-Features
 
+- compiler
 - complex numbers
 - rational numbers
 - call/cc
@@ -90,9 +91,9 @@ JSON
 
 Lisp
 ```scheme
-((name . "Bob Jones")
- (age . 54)
- (city . "SLC"))
+#((name . "Bob Jones")
+  (age . 54)
+  (city . "SLC"))
 ```
 Loading the structure in C.
 
