@@ -1,10 +1,10 @@
 *.out
-lisp
+/lisp
 *.exe
 *.stackdump
 temp/
-printer
-sample
+/printer
+/sample
 
 
 # Xcode
