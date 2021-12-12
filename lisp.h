@@ -147,6 +147,10 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 void lisp_print_collect_stats(LispContext ctx);
 const char* lisp_error_string(LispError error);
 
+void lisp_port_set_out(FILE* file, LispContext ctx);
+void lisp_port_set_in(FILE* file, LispContext ctx);
+void lisp_port_set_err(FILE* file, LispContext ctx);
+
 // -----------------------------------------
 // REPL
 // -----------------------------------------
@@ -164,15 +168,10 @@ Lisp lisp_eval2(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 
-// Expands special Lisp forms and checks syntax.
-// The default eval will do this for you, but this can prepare statements that are run multiple times.
-Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
-
 void lisp_displayf(FILE* file, Lisp l);
 
-void lisp_port_set_out(FILE* file, LispContext ctx);
-void lisp_port_set_in(FILE* file, LispContext ctx);
-void lisp_port_set_err(FILE* file, LispContext ctx);
+// Expands special Lisp forms and checks syntax (called by eval).
+Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
 
 // -----------------------------------------
 // PRIMITIVES
@@ -194,7 +193,6 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 #define lisp_is_pair(p) ((p).type == LISP_PAIR)
 #define lisp_is_list(p) ((p).type == LISP_PAIR || (p).type == LISP_NULL)
 
-
 // Numbers
 Lisp lisp_make_int(LispInt n);
 LispInt lisp_int(Lisp x);
@@ -206,7 +204,6 @@ Lisp lisp_parse_real(const char* string);
 
 LispReal lisp_number_to_real(Lisp x);
 LispInt lisp_number_to_int(Lisp x);
-
 
 // Bools
 Lisp lisp_make_bool(int t);
@@ -249,17 +246,12 @@ Lisp lisp_list_reverse2(Lisp l, Lisp tail); // O(n)
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
 Lisp lisp_list_advance(Lisp l, int i); // O(n)
 Lisp lisp_list_ref(Lisp l, int i); // O(n)
-int lisp_list_index_of(Lisp l, Lisp x); // O(n)
 int lisp_list_length(Lisp l); // O(n)
-// given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))
-// returns the pair with the given key or null of none
-Lisp lisp_list_assoc(Lisp l, Lisp key); // O(n)
 
-Lisp lisp_list_assq(Lisp l, Lisp key); // O(n)
-
-// given a list of pairs returns the value of the pair with the given key. (car (cdr (assoc ..)))
-Lisp lisp_list_for_key(Lisp l, Lisp key); // O(n)
-
+// Association lists "alists"
+// Given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))
+// returns the value with tgiven key.
+Lisp lisp_alist_ref(Lisp l, Lisp key); // O(n)
 
 // Vectors (heterogeneous)
 Lisp lisp_make_vector(int n, LispContext ctx);
@@ -270,16 +262,17 @@ Lisp lisp_vector_ref(Lisp v, int i);
 void lisp_vector_set(Lisp v, int i, Lisp x);
 void lisp_vector_swap(Lisp v, int i, int j);
 void lisp_vector_fill(Lisp v, Lisp x);
-Lisp lisp_vector_assq(Lisp v, Lisp key); // O(n)
 Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx);
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx);
+Lisp lisp_avector_ref(Lisp l, Lisp key); // O(n)
+
 
 // Hash tables
 Lisp lisp_make_table(LispContext ctx);
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx);
 Lisp lisp_table_get(Lisp t, Lisp key, int* present);
 int lisp_table_size(Lisp t);
-Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx);
+Lisp lisp_table_to_alist(Lisp t, LispContext ctx);
 
 // -----------------------------------------
 // LANGUAGE
@@ -862,45 +855,14 @@ Lisp lisp_list_ref(Lisp l, int n)
     return lisp_make_null();
 }
 
-int lisp_list_index_of(Lisp l, Lisp x)
-{
-    int i = 0;
-    while (lisp_is_pair(l))
-    {
-        if (lisp_eq(lisp_car(l), x)) return i;
-        ++i;
-        l = lisp_cdr(l);
-    }
-    return -1;
-}
-
 int lisp_list_length(Lisp l)
 {
-    int count = 0;
-    while (lisp_is_pair(l))
-    {
-        ++count;
-        l = lisp_cdr(l);
-    }
-    return count;
+    int n = 0;
+    while (lisp_is_pair(l)) { ++n; l = lisp_cdr(l); }
+    return n;
 }
 
-Lisp lisp_list_assoc(Lisp l, Lisp key)
-{
-    while (lisp_is_pair(l))
-    {
-        Lisp pair = lisp_car(l);
-        if (lisp_is_pair(pair) && lisp_equal_r(lisp_car(pair), key))
-        {
-            return pair;
-        }
-
-        l = lisp_cdr(l);
-    }
-    return lisp_make_null();
-}
-
-Lisp lisp_list_assq(Lisp l, Lisp key)
+Lisp lisp_alist_ref(Lisp l, Lisp key)
 {
     while (lisp_is_pair(l))
     {
@@ -913,51 +875,6 @@ Lisp lisp_list_assq(Lisp l, Lisp key)
         l = lisp_cdr(l);
     }
     return lisp_make_null();
-}
-
-Lisp lisp_list_for_key(Lisp l, Lisp key)
-{
-    Lisp pair = lisp_list_assq(l, key);
-    Lisp x = lisp_cdr(pair);
-    if (!lisp_is_pair(x)) return lisp_make_null();
-    return lisp_car(x);
-}
-
-// TODO: get rid of this?
-Lisp lisp_list_accessor_mnemonic(Lisp p, const char* c)
-{
-    if (toupper(*c) != 'C') return lisp_make_null();
-
-    ++c;
-    int i = 0;
-    while (toupper(*c) != 'R' && *c)
-    {
-        ++i;
-        ++c;
-    }
-
-    if (toupper(*c) != 'R') return lisp_make_null();
-    --c;
-
-    while (i > 0)
-    {
-        if (toupper(*c) == 'D')
-        {
-            p = lisp_cdr(p);
-        }
-        else if (toupper(*c) == 'A')
-        {
-            p = lisp_car(p);
-        }
-        else
-        {
-            return lisp_make_null();
-        }
-        --c;
-        --i;
-    }
-
-    return p;
 }
 
 static int _vector_len(const Vector* v) { return v->block.d.vector.length; }
@@ -1031,17 +948,6 @@ void lisp_vector_fill(Lisp v, Lisp x)
         lisp_vector_set(v, i, x);
 }
 
-Lisp lisp_vector_assq(Lisp v, Lisp key)
-{
-    int n = lisp_vector_length(v);
-    for (int i = 0; i < n; ++i)
-    {
-        Lisp pair = lisp_vector_ref(v, i); 
-        if (lisp_eq(lisp_car(pair), key)) return pair;
-    }
-    return lisp_make_null();
-}
-
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx)
 {
     assert(start <= end);
@@ -1076,6 +982,17 @@ Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx)
         memcpy(_vector_types(dst), _vector_types(src), sizeof(char) * m);
         return new_v;
     }
+}
+
+Lisp lisp_avector_ref(Lisp v, Lisp key)
+{
+    int n = lisp_vector_length(v);
+    for (int i = 0; i < n; ++i)
+    {
+        Lisp pair = lisp_vector_ref(v, i);
+        if (lisp_is_pair(pair) && lisp_eq(lisp_car(pair), key)) return pair;
+    }
+    return lisp_make_null();
 }
 
 static uint64_t hash_uint64(uint64_t x)
@@ -1208,7 +1125,7 @@ Lisp lisp_table_get(Lisp t, Lisp key, int* present)
     }
 }
 
-Lisp lisp_table_to_assoc_list(Lisp t, LispContext ctx)
+Lisp lisp_table_to_alist(Lisp t, LispContext ctx)
 {
     const Table* table = table_get_(t);
     Lisp result = lisp_make_null();
@@ -3512,21 +3429,13 @@ static Lisp sch_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
     ARITY_CHECK(1, 1);
     return lisp_list_reverse(lisp_car(args));
 }
-
-static Lisp sch_assoc(Lisp args, LispError* e, LispContext ctx)
+static Lisp sch_list_advance(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
-    Lisp key = lisp_car(args);
-    Lisp l = lisp_car(lisp_cdr(args));
-    return lisp_list_assoc(l, key);
-}
-
-static Lisp sch_assq(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp key = lisp_car(args);
-    Lisp l = lisp_car(lisp_cdr(args));
-    return lisp_list_assq(l, key);
+    Lisp x = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp count = lisp_car(args);
+    return lisp_list_advance(x, lisp_int(count));
 }
 
 static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
@@ -3987,6 +3896,11 @@ static Lisp sch_is_boolean(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_BOOL);
 }
 
+static Lisp sch_not(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_bool(!lisp_is_true(lisp_car(args)));
+}
+
 static Lisp sch_is_even(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
@@ -4242,17 +4156,18 @@ static Lisp sch_vector_swap(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_vector_fill(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp v = lisp_list_ref(args, 0);
-    Lisp x = lisp_list_ref(args, 1);
-    lisp_vector_fill(v, x);
+    Lisp v = lisp_car(args);
+    args = lisp_cdr(args);
+    lisp_vector_fill(v, lisp_car(args));
     return lisp_make_null();
 }
 
 static Lisp sch_vector_assq(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp key = lisp_car(args);
-    Lisp v = lisp_car(lisp_cdr(args));
-    return lisp_vector_assq(v, key);
+    Lisp k = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp v = lisp_car(args);
+    return lisp_avector_ref(v, k); 
 }
 
 static Lisp sch_subvector(Lisp args, LispError* e, LispContext ctx)
@@ -4365,7 +4280,7 @@ static Lisp sch_table_size(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_table_to_alist(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp table = lisp_car(args);
-    return lisp_table_to_assoc_list(table, ctx);
+    return lisp_table_to_alist(table, ctx);
 }
 
 static Lisp sch_is_promise(Lisp args, LispError* e, LispContext ctx)
@@ -4485,7 +4400,6 @@ static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
 
 static const LispFuncDef lib_cfunc_defs[] = {
     
-    // NON STANDARD ADDITINONS
     { "ERROR", sch_error },
     { "SYNTAX-ERROR", sch_syntax_error },
 
@@ -4502,14 +4416,15 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
     { "MACROEXPAND", sch_macroexpand },
     
-    
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_exact_eq },
     { "EQV?", sch_equal },
     { "EQUAL?", sch_equal_r },
     
     // Booleans https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Booleans.html
-    
+    { "BOOLEAN?", sch_is_boolean },
+    { "NOT", sch_not },
+
     // Lists https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
     { "CONS", sch_cons },
     { "CAR", sch_car },
@@ -4524,6 +4439,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "APPEND", sch_append },
     { "LIST-REF", sch_list_ref },
     { "REVERSE!", sch_reverse_inplace },
+    { "NTHCDR", sch_list_advance },
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
     { "VECTOR", sch_vector },
@@ -4535,6 +4451,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "VECTOR-SWAP!", sch_vector_swap },
     { "VECTOR-REF", sch_vector_ref },
     { "VECTOR-FILL!", sch_vector_fill },
+    { "VECTOR-ASSQ", sch_vector_assq },
     { "SUBVECTOR", sch_subvector },
     { "LIST->VECTOR", sch_list_to_vector },
     { "VECTOR->LIST", sch_vector_to_list },
@@ -4570,13 +4487,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "CHAR->INTEGER", sch_to_exact },
 
     // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
-    { "ASSOC", sch_assoc },
-    { "ASSQ", sch_assq },
-
-    // TODO: Non Standard
-    { "VECTOR-ASSQ", sch_vector_assq },
-    { "BOOLEAN?", sch_is_boolean },
-
     // Numerical operations https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Numerical-operations.html
     { "=", sch_equals },
     { "+", sch_add },
@@ -4615,7 +4525,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SYSTEM-GLOBAL-ENVIRONMENT", sch_system_env },
     { "USER-INITIAL-ENVIRONMENT", sch_user_env },
     // { "THE-ENVIRONMENT", sch_current_env },
-    // TODO: purify
     
     // Hash Tables https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Basic-Hash-Table-Operations.html#Basic-Hash-Table-Operations
     { "HASH-TABLE?", sch_is_table },
@@ -4694,8 +4603,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
 //          (if <predN> t f))
 
 static const char* lib_code0 = "\
-(define (not x) (if x #f #t)) \
-\
 (define (first x) (car x)) \
 (define (second x) (car (cdr x))) \
 (define (third x) (car (cdr (cdr x)))) \
@@ -4787,11 +4694,6 @@ static const char* lib_code1 = " \
  (lambda (v l) \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
 \
-(define (nthcdr n list) \
- (cond ((= n 0) list) \
-       ((null? list) '()) \
-       (t (nthcdr (- n 1) (cdr list))))) \
-\
 (define-macro do \
  (lambda (vars loop-check . loops) \
   (let ((names '()) \
@@ -4872,10 +4774,21 @@ static const char* lib_code_sequence = " \
     (helper (map1 cdr lists '()))))) \
  (helper rest)) \
 \
+(define (_assoc key list eq?) \
+ (if (null? list) '() \
+  (let ((pair (car list))) \
+    (if (and (pair? pair) (eq? key (car pair))) \
+        pair \
+        (_assoc key (cdr list) eq?))))) \
+\
+(define (assoc key list) (_assoc key list equal?)) \
+(define (assq key list) (_assoc key list eq?)) \
+(define (assv key list) (_assoc key list eqv?)) \
+\
 (define (_member x list eq?) \
  (cond ((null? list) #f) \
   ((eq? (car list) x) list) \
-  (else (_member x (cdr list))))) \
+  (else (_member x (cdr list) eq?)))) \
 \
 (define (member x list) (_member x list equal?)) \
 (define (memq x list) (_member x list eq?)) \

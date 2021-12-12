@@ -63,3 +63,11 @@
 (=> (subvector #(1 2 3 4) 0 2) #(1 2))
 (=> (subvector #(A 1 A 1 A 1 A 1) 1 3) #(1 A))
  
+; Association 
+(define avector #((bob . 1) (john . 2) (dan . 3) (alice . 4)))
+
+(assert (= (cdr (vector-assq 'john avector)) 2))
+(assert (= (cdr (vector-assq 'alice avector)) 4))
+(assert (null? (vector-assq 'bad-key avector)))
+
+
