@@ -25,16 +25,6 @@
 (hello-world)
 
 ; vector and list assoc
-(define vec-map #((bob . 1) (john . 2) (dan . 3) (alice . 4)))
-(define list-map '((bob . 1) (john . 2) (dan . 3) (alice . 4)))
-
-(assert (= (cdr (vector-assq 'john vec-map)) 2))
-(assert (= (cdr (vector-assq 'alice vec-map)) 4))
-(assert (null? (vector-assq 'bad-key vec-map)))
-
-(assert (= (cdr (assoc 'john list-map)) 2))
-(assert (= (cdr (assoc 'alice list-map)) 4))
-(assert (null? (assoc 'bad-key list-map)))
 
 (assert
   (= (do ((i 1 (+ i 1)) (n 0 n))
@@ -49,3 +39,4 @@
 (assert (equal? (cons 2000 1) (cons 2000 1)))
 
 (assert (equal? "apple" "apple"))
+(assert (not (eq? 'DEFINE 'DEFINE-MACRO)))

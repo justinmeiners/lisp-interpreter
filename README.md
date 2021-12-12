@@ -101,7 +101,7 @@ LispContext ctx = lisp_init();
 // load lisp structure
 Lisp data = lisp_read_file(file, ctx);
 // get value for age
-Lisp age = lisp_list_assoc(data, lisp_make_symbol("AGE", ctx), ctx);
+Lisp age_entry = lisp_avector_ref(data, lisp_make_symbol("AGE", ctx), ctx);
 // ...
 lisp_shutdown(ctx);
 ```

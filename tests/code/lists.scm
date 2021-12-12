@@ -37,3 +37,15 @@
 (=> (memq 'a '(b c d)) #f)
  
 (assert (= (apply + (list 3 4 5 6)) 18)) 
+
+; Association lists
+(define list-map '((bob . 1) (john . 2) (dan . 3) (alice . 4)))
+
+(assert (= (cdr (assoc 'john list-map)) 2))
+(assert (= (cdr (assoc 'alice list-map)) 4))
+(assert (null? (assoc 'bad-key list-map)))
+
+(assert (= (cdr (assq 'john list-map)) 2))
+(assert (= (cdr (assq 'alice list-map)) 4))
+(assert (null? (assq 'bad-key list-map)))
+ 

@@ -12,7 +12,9 @@
 (assert (string=? "PIE" "PIE"))
 (assert (not (string=? "PIE" "pie")))
 
-(=> (list->string (string->list "hello")) "hello")
+(=> (list->string (string->list "hello 123")) "hello 123")
+(=> (string->list (list->string '(#\A #\B #\3))) (#\A #\B #\3))
+
 
 ; https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Symbols.html
 (assert (symbol? 'foo))

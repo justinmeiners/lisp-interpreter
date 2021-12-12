@@ -6,10 +6,15 @@
 
 (assert (= (gcd 32 -36) 4))
 (assert (= (gcd 4 3) 1))
-(assert (= (gcd) 0))
+(=> (gcd) 0)
+
+(=> (lcm 32 -36) 288)
+(assert (exact? (lcm 32 -36)))
+(assert (inexact? (lcm 32.0 -36)))
+
+(=> (lcm) 1)
 
 (assert (= (abs -1) 1))
-
 (=> (map + '(1 1 1) '(2 2 2)) (3 3 3))
 (=> (map abs '(-1 -2 3)) (1 2 3))
 (=> (vector-map abs #(-1 -2 3)) #(1 2 3))
@@ -51,7 +56,8 @@
 (assert (inexact? (- 1 2.5)))
 (assert (inexact? (- 1.3 2)))
 
+(assert (exact? (expt 3 3)))
+(=> (expt 3 3) 27)
 
-
-
+(assert (inexact? (expt 3 2.5)))
  
