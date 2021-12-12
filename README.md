@@ -7,7 +7,7 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 ### Philosophy
 
-- **Simple**: Languages can easily get complicated with fancy features
+- **Simple**: Language implementations often are quite complicated and have too many fancy features.
     This project doesn't aim to be an optimal, fully featured, or compliant Scheme implementation.
     It is just a robust foundation for scripting. 
 
