@@ -40,3 +40,18 @@
 
 (assert (equal? "apple" "apple"))
 (assert (not (eq? 'DEFINE 'DEFINE-MACRO)))
+
+(define (scope-test var)
+  (let ((var "dog"))
+    (=> var "dog"))
+  (=> var "cat"))
+(scope-test "cat")
+
+(define (scope-test-named var)
+  (let block-name ((var "dog"))
+    (=> var "dog"))
+  (=> var "cat"))
+(scope-test-named "cat")
+
+
+ 

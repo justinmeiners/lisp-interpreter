@@ -5,10 +5,17 @@
 
 (assert (and (= 2 2) (> 2 1)))
 (assert (and))
- 
+
+(define (bit-type x)
+  (cond ((= x 0) 'OFF)
+        ((= x 1) 'ON)
+         (else 'UNKNOWN)))
+
+(=> (bit-type 0) OFF)
+(=> (bit-type 1) ON)
+(=> (bit-type 25) UNKNOWN)
 
 ; https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_13.html
-
 
 ; Universl Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
 (assert (integer? (get-universal-time)))
@@ -34,6 +41,7 @@
   (assert (>= i 0))
   (display i))
 
-
 (=> (eval '(+ 2 2) (user-initial-environment)) 4)
+
+
 

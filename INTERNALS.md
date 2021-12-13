@@ -54,7 +54,11 @@ waiting for garbage collection.
 [sicp-environments]: https://mitpress.mit.edu/sicp/full-text/book/book-Z-H-21.html#%_sec_3.2
 [environment-objects]: https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_14.html
 
+What is the cost of a helper (nested) function? 
+It must allocate a new lambda, but it doesn't have to read/expand it again.
+
 ## Symbols
 
 - Reference counting symbol table? - http://sandbox.mc.edu/~bennet/cs404/ex/lisprcnt.html
+
 

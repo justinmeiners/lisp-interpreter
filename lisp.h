@@ -2826,7 +2826,11 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                 result = lisp_eval2(result, calling_env, &error, ctx);
             }
 
-            if (error != LISP_ERROR_NONE) longjmp(error_jmp, error);
+            if (error != LISP_ERROR_NONE)
+            {
+                fprintf(ctx.p->out_port, "macroexpand failed: %s\n", lisp_symbol_string(op));
+                longjmp(error_jmp, error);
+            }
             return expand_r(result, error_jmp, ctx);
         }
     }
@@ -4606,33 +4610,36 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
 // MACRO GUIDE
 
-// (LET ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
-//  -> ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
+// (LET <name> ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
+//  => ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
+//  => named 
+//    ((lambda ()
+//        (define <name> (LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)))
+//        (<name> <expr0> ... <exprN>)))
 
 // (COND (<pred0> <expr0>)
 //       (<pred1> <expr1>)
 //        ...
-//        (else <expr-1>)) ->
-//
-//  (IF <pred0> <expr0>
+//        (else <expr-1>)) 
+// =>
+// (IF <pred0> <expr0>
 //      (if <pred1> <expr1>
 //          ....
 //      (if <predN> <exprN> <expr-1>)) ... )
 
 // (DO ((<var0> <init0> <step0>) ...) (<test> <result>) <body>)
-// -> ((lambda (f)
-//        (begin
-//          (set! f (lambda (<var0> ... <varN>)
+// -> ((lambda ()
+//          (define (f <var0> ... <varN>)
 //                   (if <test>
 //                       <result>
 //                       (begin
 //                          <body>
-//                          (f <step0> ... <stepN>)))))
-//          (f <init0> ... <initN>))) NULL)
+//                          (f <step0> ... <stepN>))))
+//          (f <init0> ... <initN>))))
 
 // (AND <pred0> <pred1> ... <predN>) 
 // -> (IF <pred0> 
-//      (IF <pred1> ...
+//      IF <pred1> ...
 //          (IF <predN> t f)
 
 
@@ -4650,37 +4657,45 @@ static const char* lib_code_lang0 = "\
        (error \" assert failed\"))))) \
 \
 (define-macro =>  \
-   (lambda (test expected) \
-      `(assert (equal? ,test (quote ,expected))) )) \
+ (lambda (test expected) \
+  `(assert (equal? ,test (quote ,expected))) )) \
 \
 (define (first x) (car x)) \
 (define (second x) (car (cdr x))) \
 (define (third x) (car (cdr (cdr x)))) \
 \
 (define (some? pred l) \
-  (if (null? l) #f \
-    (if (pred (car l)) #t \
-       (some? pred (cdr l))))) \
+ (if (null? l) #f \
+  (if (pred (car l)) #t \
+   (some? pred (cdr l))))) \
 \
 (define (map1 proc l result) \
-  (if (null? l) \
-    (reverse! result) \
-    (map1 proc \
-          (cdr l) \
-          (cons (proc (car l)) result)))) \
+ (if (null? l) \
+  (reverse! result) \
+  (map1 proc \
+   (cdr l) \
+   (cons (proc (car l)) result)))) \
 \
 (define (for-each1 proc l) \
-    (if (null? l) '() \
-         (begin (proc (car l)) (for-each1 proc (cdr l ))))) \
+ (if (null? l) '() \
+  (begin (proc (car l)) (for-each1 proc (cdr l ))))) \
 \
-(define-macro let (lambda (def-list . body) \
-  (for-each1 (lambda (entry) \
-    (if (not (pair? entry)) (syntax-error \"bad let entry\" entry)) \
-    (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) def-list) \
-  (cons (list 'LAMBDA \
-    (map1 (lambda (entry) (car entry)) def-list '()) \
-    (if (null? (cdr body)) (car body) (cons 'BEGIN body))) \
-    (map1 (lambda (entry) (car (cdr entry))) def-list '())) )) \
+(define (_let->combination var bindings body) \
+ (for-each1 (lambda (entry) \
+        (if (not (pair? entry)) (syntax-error \"bad let binding\" entry)) \
+        (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) bindings) \
+ (define body-func (list 'LAMBDA \
+                    (map1 (lambda (entry) (car entry)) bindings '()) \
+                    (if (null? (cdr body)) (car body) (cons 'BEGIN body)))) \
+ (define initial-args (map1 (lambda (entry) (car (cdr entry))) bindings '())) \
+ (if (null? var) \
+  (cons body-func initial-args) \
+  (list (list 'LAMBDA '() (list 'DEFINE var body-func) (cons var initial-args))))) \
+\
+(define-macro let (lambda args  \
+(if (pair? (first args)) \
+     (_let->combination '() (car args) (cdr args)) \
+     (_let->combination (first args) (second args) (cdr (cdr args)))))) \
 \
 (define (_let*-helper def-list body) \
     (if (null? def-list) (if (null? (cdr body)) (car body) (cons 'BEGIN body)) \
@@ -4731,24 +4746,20 @@ static const char* lib_code_lang1 = " \
 \
 (define-macro do \
  (lambda (vars loop-check . loops) \
-  (let ((names '()) \
-        (inits '()) \
-        (steps '()) \
-        (f (gensym))) \
+  (let ( (names '()) (inits '()) (steps '()) (f (gensym)) ) \
    (for-each1 (lambda (var) \
                (push (car var) names) \
                (set! var (cdr var)) \
                (push (car var) inits) \
                (set! var (cdr var)) \
                (push (car var) steps)) vars) \
-   `((lambda (,f) \
-           (begin \
-            (set! ,f (lambda ,names \
+   `((lambda () \
+            (define ,f (lambda ,names \
                       (if ,(car loop-check) \
                        ,(if (pair? (cdr loop-check)) (car (cdr loop-check)) '()) \
                        ,(cons 'BEGIN (append loops (list (cons f steps)))) ))) \
             ,(cons f inits) \
-           )) '()) ))) \
+           )) ))) \
 \
 (define-macro dotimes \
  (lambda (form body) \
@@ -4757,9 +4768,22 @@ static const char* lib_code_lang1 = " \
         ((>= ,i ,n) ,(if (null? result) result (car result)) ) \
         ,body) \
    ) form))) \
+\
+(define (_expand-mnemonic-body path) \
+  (if (null? path) (cons 'pair '()) \
+      (list (if (char=? (car path) #\\A) \
+            (cons 'CAR (_expand-mnemonic-body (cdr path))))))) \
+\
+(define (_expand-mnemonic text) \
+  (cons 'DEFINE  (cons (list (string->symbol (string-append \"C\" text \"R\")) 'pair) \
+        (_expand-mnemonic-body (string->list text))))) \
+\
+(define-macro _mnemonic-accessors (lambda args (cons 'BEGIN (map1 _expand-mnemonic args '())))) \
 ";
 
 static const char* lib_code_lists = " \
+(_mnemonic-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"DDDD\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\") \
+\
 (define (append-reverse! l tail) \
   (if (null? l) tail \
     (let ((next (cdr l))) \
@@ -4807,11 +4831,10 @@ static const char* lib_code_lists = " \
 (define (memq x list) (_member x list eq?)) \
 (define (memv x list) (_member x list eqv?)) \
 \
-(define (make-list k elem) \
- (define (helper k l) \
+(define (_make-list k x l) \
   (if (= k 0) l \
-   (helper (- k 1) (cons elem l)))) \
- (reverse! (helper k '()))) \
+   (_make-list (- k 1) x (cons x l)))) \
+(define (make-list k x) (reverse! (_make-list k x '()))) \
 \
 (define (list-tail x k) \
  (if (zero? k) x \
