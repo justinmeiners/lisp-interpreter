@@ -21,6 +21,7 @@
 (assert (symbol? (car '(a b))))
 (assert (not (symbol? "bar")))
 
+(assert (eq? 'foo (string->symbol "FOO")))
 (assert (string=? "FLYING-FISH" (symbol->string 'flying-fish)))
 
 ; specials
@@ -36,5 +37,9 @@
 (=> (number->string (string->number "279")) "279")
 
 (=> (string->number (number->string 0.5)) 0.5)
+
+
+(assert (symbol<? 'A 'B))
+(assert (not (symbol<? 'WALK 'DOG)))
 
 (=> (- (char->integer #\c) (char->integer #\a)) 2)

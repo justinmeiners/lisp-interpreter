@@ -3651,6 +3651,16 @@ static Lisp sch_is_symbol(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_SYMBOL);
 }
 
+static Lisp sch_symbol_less(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(2, 2);
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    int result = strncmp(lisp_symbol_string(a), lisp_symbol_string(b), LISP_IDENTIFIER_MAX) < 0;
+    return lisp_make_bool(result);
+}
+
 static Lisp sch_string_to_symbol(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp val = lisp_car(args);
@@ -4174,9 +4184,11 @@ static Lisp sch_vector_set(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_vector_swap(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp v = lisp_list_ref(args, 0);
-    Lisp i = lisp_list_ref(args, 1);
-    Lisp j = lisp_list_ref(args, 2);
+    Lisp v = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp i = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp j = lisp_car(args);
 
     if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT || lisp_type(j) != LISP_INT)
     {
@@ -4558,6 +4570,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     
     // Symbols https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Symbols.html
     { "SYMBOL?", sch_is_symbol },
+    { "SYMBOL<?", sch_symbol_less },
     { "STRING->SYMBOL", sch_string_to_symbol },
     { "SYMBOL->STRING", sch_symbol_to_string },
     { "GENERATE-UNINTERNED-SYMBOL", sch_gensym },
