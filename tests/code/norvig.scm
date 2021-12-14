@@ -58,3 +58,13 @@
 (display "sqrt(200)=")
 (display (square-root 200.0))
 (newline)
+
+(=> (call/cc (lambda (throw) (+ 5 (* 10 (throw 1))))) 1)
+(=> (call/cc (lambda (throw) (+ 5 (* 10 1)))) 15)
+(=> (call/cc (lambda (throw) (+ 5 (* 10 (call/cc (lambda (escape) (* 100 (escape 3)))))))) 35)
+(=> (call/cc (lambda (throw) (+ 5 (* 10 (call/cc (lambda (escape) (* 100 (throw 3)))))))) 3)
+(=> (call/cc (lambda (throw) (+ 5 (* 10 (call/cc (lambda (escape) (* 100 1))))))) 1005)
+
+(=> (let ((a 1) (b 2)) (+ a b)) 3)
+
+

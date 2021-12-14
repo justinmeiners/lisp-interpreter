@@ -81,6 +81,7 @@ typedef enum
     LISP_BOOL,    // t/f
     LISP_VECTOR,  // heterogenous array but contiguous allocation
     LISP_PROMISE, // lazy value
+    LISP_CONTINUE,// continuation
     LISP_INTERNAL
 } LispType;
 
@@ -2211,20 +2212,12 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
 {
     switch (lisp_type(l))
     {
-        case LISP_INT:
-            fprintf(file, "%lli", lisp_int(l));
-            break;
+        case LISP_INT: fprintf(file, "%lli", lisp_int(l)); break;
+        case LISP_REAL: fprintf(file, "%f", lisp_real(l)); break;
+        case LISP_NULL: fputs("NIL", file); break;
+        case LISP_SYMBOL: fputs(lisp_symbol_string(l), file); break;
         case LISP_BOOL:
             fprintf(file, "#%c", lisp_bool(l) == 0 ? 'f' : 't');
-            break;
-        case LISP_REAL:
-            fprintf(file, "%f", lisp_real(l));
-            break;
-        case LISP_NULL:
-            fputs("NIL", file);
-            break;
-        case LISP_SYMBOL:
-            fputs(lisp_symbol_string(l), file);
             break;
         case LISP_STRING:
             if (human_readable)
@@ -2263,15 +2256,10 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             }
             break;
         }
-        case LISP_LAMBDA:
-            fputs("<lambda>", file);
-            break;
-        case LISP_PROMISE:
-            fputs("<promise>", file);
-            break;
-        case LISP_FUNC:
-            fprintf(file, "<c-func-%p>", l.val.ptr_val);
-            break;
+        case LISP_CONTINUE: fputs("<continue>", file); break;
+        case LISP_LAMBDA: fputs("<lambda>", file); break;
+        case LISP_PROMISE: fputs("<promise>", file); break;
+        case LISP_FUNC: fprintf(file, "<c-func-%p>", l.val.ptr_val); break;
         case LISP_TABLE:
         {
             const Table* table = table_get_(l);
@@ -2456,15 +2444,6 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
         
         switch (lisp_type(*x))
         {
-            case LISP_INT:
-            case LISP_BOOL:
-            case LISP_REAL:
-            case LISP_CHAR:
-            case LISP_STRING:
-            case LISP_LAMBDA:
-            case LISP_VECTOR:
-            case LISP_NULL:
-                return *x; // atom
             case LISP_SYMBOL: // variable reference
             {
                 int present;
@@ -2637,7 +2616,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 break;
             }
             default:
-                longjmp(error_jmp, LISP_ERROR_UNKNOWN_EVAL);
+               return *x; // atom
         }
     }
 }
@@ -4376,21 +4355,12 @@ static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
     Lisp operator = lisp_car(args);
     args = lisp_cdr(args);
     Lisp op_args = lisp_car(args);
-    
+
     // TODO: argument passing is a little more sophisitaed
     Lisp x;
     Lisp env;
     int needs_to_eval = apply(operator, op_args, &x, &env, e, ctx);
-    
-    if (needs_to_eval)
-    {
-        // TODO: I don't think its safe to garbage collect
-        return lisp_eval2(x, env, e, ctx);
-    }
-    else
-    {
-        return x;
-    }
+    return needs_to_eval ? lisp_eval2(x, env, e, ctx) : x;
 }
 
 static Lisp sch_is_lambda(Lisp args, LispError* e, LispContext ctx)
@@ -4449,6 +4419,73 @@ static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
 {
     lisp_print_collect_stats(ctx);
     return lisp_make_null();
+}
+
+typedef struct
+{
+    Block block;
+    jmp_buf jmp;
+    int stack_ptr;
+} Continue;
+
+static Lisp lisp_make_continue(LispContext ctx)
+{
+    Continue* c = gc_alloc(sizeof(Continue), LISP_CONTINUE, ctx);
+    return (Lisp) { .val = { .ptr_val = c }, .type = LISP_CONTINUE };
+}
+
+static Continue* continue_get_(Lisp x) { return x.val.ptr_val; }
+
+static Lisp sch_go_continue(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp cont = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp result = lisp_car(args);
+
+    Continue* c = continue_get_(cont);
+    ctx.p->stack_ptr = c->stack_ptr;
+    ctx.p->stack[c->stack_ptr - 1] = result;
+    longjmp(c->jmp, 1);
+}
+
+static Lisp sch_call_cc(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp cont = lisp_make_continue(ctx);
+    Continue* c = continue_get_(cont);
+
+    lisp_stack_push(cont, ctx);
+    c->stack_ptr = ctx.p->stack_ptr;
+
+    int has_result = setjmp(c->jmp);
+    if (has_result == 0)
+    {
+        Lisp lambda = lisp_car(args);
+        Lisp var = lisp_make_symbol("RESULT", ctx);
+        Lisp body = lisp_make_listv(
+                ctx,
+                lisp_make_symbol("_GO-CONTINUE", ctx),
+                cont,
+                var, 
+                lisp_make_terminate()
+                );
+        Lisp callback = lisp_make_lambda(lisp_cons(var, lisp_make_null(), ctx), body, ctx.p->env, ctx);
+        Lisp result = sch_apply(
+                lisp_make_listv(
+                ctx,
+                lambda,
+                lisp_cons(callback, lisp_make_null(), ctx),
+                lisp_make_terminate()
+                ),
+                e,
+                ctx
+                );
+        lisp_stack_pop(ctx);
+        return result;
+    }
+    else
+    {
+        return lisp_stack_pop(ctx);
+    }
 }
 
 #undef ARITY_CHECK
@@ -4604,6 +4641,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "PROCEDURE-ENVIRONMENT", sch_lambda_env },
     // TOOD: Almost standard
     { "PROCEDURE-BODY", sch_lambda_body },
+    { "CALL/CC", sch_call_cc },
+    { "_GO-CONTINUE", sch_go_continue },
 
     // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
     { "RANDOM", sch_pseudo_rand },

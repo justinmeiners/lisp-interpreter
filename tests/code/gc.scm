@@ -30,5 +30,8 @@
 
 (basic-loop)
 
+(=> (call/cc (lambda (throw) (define x '(1 2 3)) (gc-flip) (throw x))) (1 2 3))
+
 (print-gc-statistics)
+
 
