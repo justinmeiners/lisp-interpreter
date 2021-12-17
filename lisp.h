@@ -321,6 +321,9 @@ int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
 
 // Macros
 Lisp lisp_macro_table(LispContext ctx);
+// the macro table keeps strong references to its members. 
+// So if you want to delete them you need to make a new table.
+void lisp_macro_table_set(Lisp table, LispContext ctx);
 
 // Promises
 Lisp lisp_make_promise(Lisp proc, LispContext ctx);
@@ -3248,6 +3251,13 @@ Lisp lisp_macro_table(LispContext ctx)
     return ctx.p->macros;
 }
 
+void lisp_macro_table_set(Lisp table, LispContext ctx)
+{
+    assert(lisp_type(table) == LISP_TABLE);
+    ctx.p->macros = table;
+}
+
+
 #ifndef LISP_NO_LIB
 
 #define ARITY_CHECK(min_, max_) do { \
@@ -4725,8 +4735,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
     // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
     { "RANDOM", sch_pseudo_rand },
-    
-    // TODO: this is nonstandar_rd
     { "RANDOM-SEED!", sch_pseudo_seed },
    
     // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
