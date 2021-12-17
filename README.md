@@ -27,13 +27,13 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 
 ### Features
 
+- C99 no dependencies. Single header.
 - Core scheme language: if, let, do, lambda, cons, car, eval, symbols, etc.
 - Data structures: lists, vectors, hash tables, integers, real numbers, characters, strings, and integers.
 - Standard library: subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html)
   with Common Lisp features (like `push`) mixed in.
 - Exact [garbage collection](#garbage-collection) with explicit invocation.
 - Common lisp style unhygenic macros: `define-macro`.
-- Single header file.
 - Easy integration of C functions.
 - REPL command line tool.
 - Efficient parsing and manipulation of large data files.
@@ -41,10 +41,9 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 ### Non-Features
 
 - compiler
-- complex numbers
-- rational numbers
-- call/cc
-- port IO
+- full numeric tower: complex and rational numbers.
+- full call/cc (simple stack jump supported)
+- full port IO
 - unix system library
 
 ## Examples

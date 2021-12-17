@@ -611,8 +611,6 @@ int lisp_equal(Lisp a, Lisp b)
             return lisp_char(a) == lisp_char(b) && a.type == b.type;
         case LISP_FUNC:
             return lisp_func(a) == lisp_func(b) && a.type == b.type;
-        case LISP_STRING:
-            return a.type == b.type && strcmp(lisp_string(a), lisp_string(b)) == 0;
         case LISP_INT:
             if (b.type == LISP_INT) return lisp_int(a) == lisp_int(b);
             else return lisp_number_to_real(a) == lisp_number_to_real(b);
@@ -625,12 +623,11 @@ int lisp_equal(Lisp a, Lisp b)
 
 int lisp_equal_r(Lisp a, Lisp b)
 {
-    if (a.type != b.type) return 0;
-
     switch (a.type)
     {
         case LISP_VECTOR:
         {
+            if (a.type != b.type) return 0;
             int n = lisp_vector_length(a);
             int m = lisp_vector_length(b);
             if (n != m) return 0;
@@ -645,6 +642,7 @@ int lisp_equal_r(Lisp a, Lisp b)
         }
         case LISP_PAIR:
         {
+            if (a.type != b.type) return 0;
             while (lisp_is_pair(a) && lisp_is_pair(b))
             {
                 if (!lisp_equal_r(lisp_car(a), lisp_car(b))) return 0;
@@ -653,6 +651,10 @@ int lisp_equal_r(Lisp a, Lisp b)
             }
             
             return lisp_equal_r(a, b);
+        }
+        case LISP_STRING:
+        {
+            return a.type == b.type && strcmp(lisp_string(a), lisp_string(b)) == 0;
         }
         default:
             return lisp_equal(a, b);
@@ -4004,16 +4006,85 @@ static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_real( sqrt(lisp_number_to_real(lisp_car(args))) );
 }
 
+static Lisp sch_atan(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 2);
+    LispReal y = lisp_number_to_real(lisp_car(args));
+    args = lisp_cdr(args);
+
+    if (lisp_is_null(args))
+    {
+        return lisp_make_real( atan(y) );
+    }
+    else
+    {
+        LispReal x = lisp_number_to_real(lisp_car(args));
+        return lisp_make_real( atan2(y, x) );
+    }
+}
+
+static Lisp sch_round(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    Lisp x = lisp_car(args);
+    switch (lisp_type(x))
+    {
+        case LISP_INT:
+            return lisp_make_int((LispInt)round(lisp_int(x)));
+        case LISP_REAL:
+            return lisp_make_real(round(lisp_real(x)));
+        default:
+            *e = LISP_ERROR_TYPE;
+            return lisp_make_null();
+    }
+
+}
+
+static Lisp sch_floor(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    Lisp x = lisp_car(args);
+    switch (lisp_type(x))
+    {
+        case LISP_INT:
+            return lisp_make_int((LispInt)floor(lisp_int(x)));
+        case LISP_REAL:
+            return lisp_make_real(floor(lisp_real(x)));
+        default:
+            *e = LISP_ERROR_TYPE;
+            return lisp_make_null();
+    }
+
+}
+
+static Lisp sch_ceiling(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    Lisp x = lisp_car(args);
+    switch (lisp_type(x))
+    {
+        case LISP_INT:
+            return lisp_make_int((LispInt)ceil(lisp_int(x)));
+        case LISP_REAL:
+            return lisp_make_real(ceil(lisp_real(x)));
+        default:
+            *e = LISP_ERROR_TYPE;
+            return lisp_make_null();
+    }
+}
+
 static Lisp sch_quotient(Lisp args, LispError* e, LispContext ctx)
 {
-    int a = lisp_int(lisp_car(args));
+    ARITY_CHECK(2, 2);
+    LispInt a = lisp_int(lisp_car(args));
     args = lisp_cdr(args);
-    int b = lisp_int(lisp_car(args));
+    LispInt b = lisp_int(lisp_car(args));
     return lisp_make_int(a / b);
 }
 
 static Lisp sch_remainder(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(2, 2);
     int a = lisp_int(lisp_car(args));
     args = lisp_cdr(args);
     int b = lisp_int(lisp_car(args));
@@ -4032,6 +4103,7 @@ static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(1, 1);
     Lisp x = lisp_car(args);
     switch (lisp_type(x))
     {
@@ -4356,6 +4428,7 @@ static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
     args = lisp_cdr(args);
     Lisp op_args = lisp_car(args);
 
+    // TODO: wrong env
     // TODO: argument passing is a little more sophisitaed
     Lisp x;
     Lisp env;
@@ -4551,7 +4624,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
     { "STRING?", sch_is_string },
     { "MAKE-STRING", sch_make_string },
-    { "STRING=?", sch_equal },
+    { "STRING=?", sch_equal_r },
     { "STRING<?", sch_string_less },
     { "SUBSTRING", sch_substring },
     { "STRING-NULL?", sch_string_is_null },
@@ -4595,11 +4668,17 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SIN", sch_sin },
     { "COS", sch_cos },
     { "TAN", sch_tan },
+    { "ATAN", sch_atan },
     { "SQRT", sch_sqrt },
+    { "ROUND", sch_round },
+    { "FLOOR", sch_floor },
+    { "CEILING", sch_ceiling },
     { "QUOTIENT", sch_quotient },
     { "REMAINDER", sch_remainder },
     { "MODULO", sch_modulo },
     { "ABS", sch_abs },
+    { "MAGNITUDE", sch_abs },
+
     
     { "EXACT?", sch_is_int },
     { "EXACT->INEXACT", sch_to_inexact },
@@ -4647,7 +4726,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
     { "RANDOM", sch_pseudo_rand },
     
-    // TODO: this is nonstandard
+    // TODO: this is nonstandar_rd
     { "RANDOM-SEED!", sch_pseudo_seed },
    
     // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
@@ -4701,17 +4780,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
 //          (if <predN> t f))
 
 static const char* lib_code_lang0 = "\
-(define-macro assert \
- (lambda (body) \
-  `(if ,body '() \
-      (begin \
-       (display (quote ,body)) \
-       (error \" assert failed\"))))) \
-\
-(define-macro =>  \
- (lambda (test expected) \
-  `(assert (equal? ,test (quote ,expected))) )) \
-\
 (define (first x) (car x)) \
 (define (second x) (car (cdr x))) \
 (define (third x) (car (cdr (cdr x)))) \
@@ -4913,6 +4981,8 @@ static const char* lib_code_math = " \
 (define (odd? x) (not (even? x))) \
 (define (inexact? x) (not (exact? x))) \
 (define (zero? x) (= x 0)) \
+(define (positive? x) (>= x 0)) \
+(define (negative? x) (< x 0)) \
  \
 (define (>= a b) (not (< a b))) \
 (define (> a b) (< b a)) \
@@ -5017,6 +5087,17 @@ static const char* lib_code_sequence = " \
   (quicksort-vector v 0 (- (vector-length v) 1) op) v) \
 \
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp))) \
+\
+(define-macro assert \
+ (lambda (body) \
+  `(if ,body '() \
+      (begin \
+       (display (quote ,body)) \
+       (error \" assert failed\"))))) \
+\
+(define-macro =>  \
+ (lambda (test expected) \
+  `(assert (equal? ,test (quote ,expected))) )) \
 ";
 
 static const char* lib_code_streams = " \

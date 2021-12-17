@@ -64,4 +64,16 @@
 (=> (expt 3 3) 27)
 
 (assert (inexact? (expt 3 2.5)))
+
+(=> (magnitude 13) 13)
+(=> (magnitude -13) 13)
+
+(=> (floor 0.87) 0)
+(=> (ceiling 0.87) 1)
+(=> (round 0.87) 1)
+
+(assert (< (- (abs (atan 0)) (/ 3.141592 4)) 0.001))
+
+
+
  
