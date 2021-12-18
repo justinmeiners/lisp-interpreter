@@ -1,6 +1,6 @@
-(=> (force (delay (+ 1 2))) 3)
+(==> (force (delay (+ 1 2))) 3)
 
-(=> (let ((p (delay (+ 1 2))))
+(==> (let ((p (delay (+ 1 2))))
       (list (force p) (force p))) (3 3))
 
 (assert (promise? (delay (+ 1 2))))
@@ -17,13 +17,13 @@
 
 (define x 5)
 
-(=> count 0)
+(==> count 0)
 (assert (promise? p))
-(=> (force p) 15)
+(==> (force p) 15)
 (assert (promise? p))
-(=> count 1)
-(=> (force p) 15)
-(=> count 1)
+(==> count 1)
+(==> (force p) 15)
+(==> count 1)
 
 
 (define (integers-starting-from n)

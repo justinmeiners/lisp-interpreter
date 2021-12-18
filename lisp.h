@@ -892,7 +892,7 @@ Lisp lisp_alist_ref(Lisp l, Lisp key)
         }
         l = lisp_cdr(l);
     }
-    return lisp_make_null();
+    return lisp_false();
 }
 
 static int _vector_len(const Vector* v) { return v->block.d.vector.length; }
@@ -1007,7 +1007,7 @@ Lisp lisp_avector_ref(Lisp v, Lisp key)
         Lisp pair = lisp_vector_ref(v, i);
         if (lisp_is_pair(pair) && lisp_eq(lisp_car(pair), key)) return pair;
     }
-    return lisp_make_null();
+    return lisp_false();
 }
 
 static uint64_t hash_uint64(uint64_t x)
@@ -3374,8 +3374,18 @@ static Lisp sch_read(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
 {
-   Lisp l = lisp_car(args);
-   fputs(lisp_string(l), ctx.p->out_port);
+   if (lisp_is_pair(args))
+   {
+       Lisp l = lisp_car(args);
+       fputs(lisp_string(l), ctx.p->err_port);
+       args = lisp_cdr(args);
+   }
+   while (lisp_is_pair(args))
+   {
+       fputs(" ", ctx.p->err_port);
+       lisp_printf(ctx.p->err_port, lisp_car(args));
+       args = lisp_cdr(args);
+   }
 
    *e = LISP_ERROR_RUNTIME;
    return lisp_make_null();
@@ -3567,6 +3577,7 @@ static Lisp sch_divide(Lisp args, LispError* e, LispContext ctx)
                 case LISP_REAL:
                     return lisp_make_real(lisp_number_to_real(x) / lisp_real(y));
                 case LISP_INT:
+                    // TODO: divide by zero check?
                     return lisp_make_int(lisp_int(x) / lisp_int(y));
                 default:
                     *e = LISP_ERROR_TYPE;
@@ -3653,6 +3664,7 @@ static Lisp sch_symbol_less(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_string_to_symbol(Lisp args, LispError* e, LispContext ctx)
 {
+    ARITY_CHECK(1, 1);
     Lisp val = lisp_car(args);
     if (lisp_type(val) != LISP_STRING)
     {
@@ -4797,42 +4809,57 @@ static const char* lib_code_lang0 = "\
   (if (pred (car l)) #t \
    (some? pred (cdr l))))) \
 \
-(define (map1 proc l result) \
+(define (_map1-helper proc l result) \
  (if (null? l) \
   (reverse! result) \
-  (map1 proc \
+  (_map1-helper proc \
    (cdr l) \
    (cons (proc (car l)) result)))) \
+\
+(define (map1 proc l) (_map1-helper proc l '())) \
 \
 (define (for-each1 proc l) \
  (if (null? l) '() \
   (begin (proc (car l)) (for-each1 proc (cdr l ))))) \
 \
+(define (_make-lambda args body) \
+ (list 'LAMBDA args (if (null? (cdr body)) (car body) (cons 'BEGIN body)))) \
+\
+(define (_check-binding-list bindings) \
+  (for-each1 (lambda (entry) \
+    (if (not (pair? entry)) (syntax-error \"bad let binding\" entry)) \
+    (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) bindings)) \
+\
 (define (_let->combination var bindings body) \
- (for-each1 (lambda (entry) \
-        (if (not (pair? entry)) (syntax-error \"bad let binding\" entry)) \
-        (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) bindings) \
- (define body-func (list 'LAMBDA \
-                    (map1 (lambda (entry) (car entry)) bindings '()) \
-                    (if (null? (cdr body)) (car body) (cons 'BEGIN body)))) \
- (define initial-args (map1 (lambda (entry) (car (cdr entry))) bindings '())) \
+ (_check-binding-list bindings) \
+ (define body-func (_make-lambda (map1 (lambda (entry) (first entry)) bindings) body)) \
+ (define initial-args (map1 (lambda (entry) (second entry)) bindings)) \
  (if (null? var) \
   (cons body-func initial-args) \
-  (list (list 'LAMBDA '() (list 'DEFINE var body-func) (cons var initial-args))))) \
+  (list (_make-lambda '() (list (list 'DEFINE var body-func) (cons var initial-args)))))) \
 \
 (define-macro let (lambda args  \
-(if (pair? (first args)) \
+  (if (pair? (first args)) \
      (_let->combination '() (car args) (cdr args)) \
      (_let->combination (first args) (second args) (cdr (cdr args)))))) \
 \
-(define (_let*-helper def-list body) \
-    (if (null? def-list) (if (null? (cdr body)) (car body) (cons 'BEGIN body)) \
-     (list 'LET (list (car def-list)) (_let*-helper (cdr def-list) body)))) \
-(define-macro let* (lambda (def-list . body) (_let*-helper def-list body))) \
+(define (_let*-helper bindings body) \
+    (if (null? bindings) (if (null? (cdr body)) (car body) (cons 'BEGIN body)) \
+     (list 'LET (list (car bindings)) (_let*-helper (cdr bindings) body)))) \
+\
+(define-macro let* (lambda (bindings . body) \
+  (_check-binding-list bindings) \
+  (_let*-helper bindings body))) \
+\
+(define-macro letrec (lambda (bindings . body) \
+  (_check-binding-list bindings) \
+  (cons (_make-lambda (map1 (lambda (entry) (first entry)) bindings) \
+    (append (map1 (lambda (entry) (list 'SET! (first entry) (second entry))) \
+                          bindings) body)) \
+      (map1 (lambda (entry) '()) bindings)))) \
 \
 (define (_cond-helper clauses) \
- (if (null? clauses) \
-  '() \
+ (if (null? clauses) '() \
   (if (eq? (car (car clauses)) 'ELSE) \
    (cons 'BEGIN (cdr (car clauses))) \
    (list 'IF \
@@ -4847,27 +4874,36 @@ static const char* lib_code_lang0 = "\
                (syntax-error \"(cond (pred expression...)...)\")) \
              ) clauses) \
    (_cond-helper clauses)))) \
-\
-(define (_and-helper preds) \
- (if (null? preds) #t \
-  (cons 'IF \
-   (cons (car preds) \
-    (cons (_and-helper (cdr preds)) (cons #f '())) )))) \
-\
-(define-macro and \
- (lambda preds (_and-helper preds))) \
-\
-(define (_or-helper preds) \
- (if (null? preds) #f \
-  (cons 'IF \
-   (cons (car preds) \
-    (cons #t (cons (_or-helper (cdr preds)) '()) ))))) \
-\
-(define-macro or \
- (lambda preds (_or-helper preds))) \
 ";
 
 static const char* lib_code_lang1 = " \
+(define (_and-helper preds) \
+ (cond ((null? preds) #t) \
+       ((null? (cdr preds)) (car preds)) \
+       (else \
+        `(IF ,(car preds) ,(_and-helper (cdr preds)) #f)))) \
+(define-macro and (lambda preds (_and-helper preds))) \
+\
+(define (_or-helper preds var) \
+  (cond ((null? preds) #f) \
+        ((null? (cdr preds)) (car preds)) \
+        (else \
+        `(BEGIN (SET! ,var ,(car preds)) \
+                (IF ,var ,var ,(_or-helper (cdr preds) var)))))) \
+\
+(define-macro or (lambda preds \
+    (let ((var (gensym))) \
+     `(LET ((,var '())) ,(_or-helper preds var))))) \
+\
+(define-macro case (lambda (key . clauses) \
+   (let ((expr (gensym))) \
+     `(let ((,expr ,key)) \
+         ,(cons 'COND (map1 (lambda (entry) \
+                       (cons (if (pair? (car entry)) \
+                                  `(memv ,expr (quote ,(car entry))) \
+                                 (car entry)) \
+                            (cdr entry))) clauses)))))) \
+\
 (define-macro push \
  (lambda (v l) \
    `(begin (set! ,l (cons ,v ,l)) ,l))) \
@@ -4906,7 +4942,7 @@ static const char* lib_code_lang1 = " \
   (cons 'DEFINE  (cons (list (string->symbol (string-append \"C\" text \"R\")) 'pair) \
         (_expand-mnemonic-body (string->list text))))) \
 \
-(define-macro _mnemonic-accessors (lambda args (cons 'BEGIN (map1 _expand-mnemonic args '())))) \
+(define-macro _mnemonic-accessors (lambda args (cons 'BEGIN (map1 _expand-mnemonic args)))) \
 ";
 
 static const char* lib_code_lists = " \
@@ -4926,8 +4962,8 @@ static const char* lib_code_lists = " \
  (define (helper lists result) \
   (if (some? null? lists) \
    (reverse! result) \
-   (helper (map1 cdr lists '()) \
-    (cons (apply proc (map1 car lists '())) result)))) \
+   (helper (map1 cdr lists) \
+    (cons (apply proc (map1 car lists)) result)))) \
  (helper rest '())) \
 \
 (define (for-each proc . rest) \
@@ -4935,12 +4971,12 @@ static const char* lib_code_lists = " \
   (if (some? null? lists) \
    '() \
    (begin \
-    (apply proc (map1 car lists '())) \
-    (helper (map1 cdr lists '()))))) \
+    (apply proc (map1 car lists)) \
+    (helper (map1 cdr lists))))) \
  (helper rest)) \
 \
 (define (_assoc key list eq?) \
- (if (null? list) '() \
+ (if (null? list) #f \
   (let ((pair (car list))) \
     (if (and (pair? pair) (eq? key (car pair))) \
         pair \
@@ -5061,7 +5097,7 @@ static const char* lib_code_sequence = " \
 (define (vector-binary-search v key< unwrap-key key) \
   (define (helper low high mid) \
     (if (<= (- high low) 1) \
-        (if (key< (unwrap-key (vector-ref v low)) key) '() (vector-ref v low)) \
+        (if (key< (unwrap-key (vector-ref v low)) key) #f (vector-ref v low)) \
         (begin \
           (set! mid (+ low (quotient (- high low) 2))) \
           (if (key< key (unwrap-key (vector-ref v mid))) \
@@ -5096,14 +5132,13 @@ static const char* lib_code_sequence = " \
 \
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp))) \
 \
-(define-macro assert \
- (lambda (body) \
+(define-macro assert (lambda (body) \
   `(if ,body '() \
       (begin \
        (display (quote ,body)) \
        (error \" assert failed\"))))) \
 \
-(define-macro =>  \
+(define-macro ==>  \
  (lambda (test expected) \
   `(assert (equal? ,test (quote ,expected))) )) \
 ";

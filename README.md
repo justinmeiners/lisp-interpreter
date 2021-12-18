@@ -1,25 +1,26 @@
 lisp-interpreter
 ===============
 
+> Any sufficiently complicated C or Fortran program contains an ad hoc, informally-specified, bug-ridden, slow implementation of half of Common Lisp. -- Philip Greenspun
+
 An embeddable lisp/scheme interpreter written in C.
-Includes a small subset of the MIT Scheme library.
-I created this while reading [SICP](https://github.com/justinmeiners/sicp-excercises) to improve my knowledge of lisp and to make an implementation that allows me to easily add scripting to my own programs.
+It includes a subset of R5RS with some extensions from MIT Scheme.
+
+I created this while reading [SICP](https://github.com/justinmeiners/sicp-excercises) to improve my knowledge of lisp
+and to make an implementation that allows me to easily add scripting to my own programs.
 
 ### Philosophy
 
-- **Simple**: Language implementations often are quite complicated and have too many fancy features.
+- **Simple**: Languages can become very complicated and have too many fancy features.
     This project doesn't aim to be an optimal, fully featured, or compliant Scheme implementation.
     It is just a robust foundation for scripting. 
 
-   If you need a more complete implementation try [s7](https://ccrma.stanford.edu/software/snd/snd/s7.html)
-    or [chicken](https://www.call-cc.org)
+    If you need more try [s7](https://ccrma.stanford.edu/software/snd/snd/s7.html) or [chicken](https://www.call-cc.org)
 
-- **Unintrusive**: Just copy in the header file.
-    Turn on and off major features with build macros.
-    It should be portable between major platforms.
+- **Unintrusive**: Just copy in the header file. Turn on and off major features with build macros. It should be portable between major platforms.
 
 - **Unsurprising**: You should be able to read the source code and understand how it works.
-  The header API should work how you expect.
+  The C API should work how you expect.
 
 - **First class data**: Lisp s-expressions are undervalued as an alternative to JSON or XML.
     Preprocessor flags can remove most scheme features if you just want to read s-expressions
@@ -28,25 +29,23 @@ I created this while reading [SICP](https://github.com/justinmeiners/sicp-excerc
 ### Features
 
 - C99 no dependencies. Single header.
-- Core scheme language: if, let, do, lambda, cons, car, eval, symbols, etc.
-- Data structures: lists, vectors, hash tables, integers, real numbers, characters, strings, and integers.
-- Standard library: subset of [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html)
-  with Common Lisp features (like `push`) mixed in.
+- Core lisp language `if`, `let`, `do`, `lambda`, `cons`, `eval`, etc.
+- Subset of scheme R5RS library: lists, vectors, hash tables, integers, real numbers, characters, strings, and integers.
+- Common lisp goodies: unhygenic macros (`define-macro`), `push`, `dotimes`.
+- Easy to integrate C functions.
 - Exact [garbage collection](#garbage-collection) with explicit invocation.
-- Common lisp style unhygenic macros: `define-macro`.
-- Easy integration of C functions.
 - REPL command line tool.
 - Efficient parsing and manipulation of large data files.
 
 ### Non-Features
 
-- compiler
-- full numeric tower: complex and rational numbers.
-- full call/cc (simple stack jump supported)
-- full port IO
-- unix system library
+- Compiler
+- Full numeric tower: complex and rational numbers.
+- Full call/cc. This only supports simple stack jumps.
+- syntax rules.
+- extensive IO or UNIX system libraries.
 
-## Examples
+### Examples
 
 ### Interactive programming with Read, eval, print loop.
 ```bash
@@ -146,7 +145,7 @@ lisp_env_define(env, lisp_make_symbol("INTEGER-RANGE", ctx), func, ctx);
 
 In Lisp
 ```scheme
-(INTEGER-RANGE 5 15)
+(integer-range 5 15)
 ; => #(5 6 7 8 9 10 11 12 13 14)
 ```
 Constants can also be stored in the environment in a similar fashion.
@@ -155,14 +154,14 @@ Constants can also be stored in the environment in a similar fashion.
 Lisp pi = lisp_make_real(3.141592);
 lisp_env_define(env, lisp_make_symbol("PI", ctx), pi, ctx);
 ```
-## Macros
+### Macros
 
 Common Lisp style (`defmacro`) is available with the name `define-macro`.
 
     (define-macro nil! (lambda (x)
       `(set! ,x '()))
 
-## Garbage Collection
+### Garbage Collection
 
 Garbage is only collected if it is explicitly told to.
 You can invoke the garbage collector in C:
@@ -174,14 +173,21 @@ OR in lisp code:
     (gc-flip)
 
 Note that whenever a collect is issued
-ANY `Lisp` value which is not accessible
+ANY `Lisp` value in `C`which is not accessible
 through the global environment may become invalid.
 Be careful what variables you hold onto in C.
 
-Don't call `eval` in a custom defined C function unless
-you know what you are doing.
+Don't call `eval` in a custom defined C function unless you know what you are doing.
 
 See [internals](INTERNALS.md) for more details.
+
+## Documentation
+
+For the language refer to [MIT Scheme](https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_toc.html)
+with the understanding that not everything is missing.
+If we do implement a feature that MIT scheme has, we will try to follow their specificaiton.
+
+For the C API refer to the header and sample programs (`repl.c`, `printer.c`).
 
 ## Project License
 
