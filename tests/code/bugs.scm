@@ -43,14 +43,14 @@
 
 (define (scope-test var)
   (let ((var "dog"))
-    (=> var "dog"))
-  (=> var "cat"))
+    (==> var "dog"))
+  (==> var "cat"))
 (scope-test "cat")
 
 (define (scope-test-named var)
   (let block-name ((var "dog"))
-    (=> var "dog"))
-  (=> var "cat"))
+    (==> var "dog"))
+  (==> var "cat"))
 (scope-test-named "cat")
 
 

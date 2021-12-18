@@ -56,4 +56,4 @@
 (define (edit-distance a b)
   (edit-distance-list (string->list a) (string->list b) char=?))
 
-(=>  (edit-distance "kitten" "sitting") 3) 
+(==>  (edit-distance "kitten" "sitting") 3) 

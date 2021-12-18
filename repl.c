@@ -45,6 +45,14 @@ int main(int argc, const char* argv[])
         ctx
     );
 
+    // Load as a macro is called "include" and can be used to load files containing macros.
+    lisp_table_set(
+            lisp_macro_table(ctx),
+            lisp_make_symbol("INCLUDE", ctx),
+            lisp_make_func(sch_load),
+            ctx
+    );
+
     clock_t start_time, end_time;
         
     if (file_path)
@@ -59,7 +67,7 @@ int main(int argc, const char* argv[])
         
         if (!file)
         {
-            fprintf(stderr, "failed to open: %s", argv[1]);
+            fprintf(stderr, "failed to open: %s", file_path);
             return 2;
         }
      
