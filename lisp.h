@@ -107,25 +107,18 @@ typedef enum
 {
     LISP_ERROR_NONE = 0,
     LISP_ERROR_FILE_OPEN,
-    LISP_ERROR_PAREN_UNEXPECTED,
-    LISP_ERROR_PAREN_EXPECTED,
-    LISP_ERROR_HASH_UNEXPECTED,
-    LISP_ERROR_DOT_UNEXPECTED,
-    LISP_ERROR_BAD_TOKEN,
+    LISP_ERROR_READ_SYNTAX,
     
     LISP_ERROR_FORM_SYNTAX,
     LISP_ERROR_BAD_DEFINE,
-    LISP_ERROR_BAD_MACRO,
     LISP_ERROR_BAD_LAMBDA,
-    LISP_ERROR_MACRO_NO_EVAL,
 
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_UNKNOWN_EVAL,
     LISP_ERROR_OUT_OF_BOUNDS,
 
-    LISP_ERROR_SPLICE,
-    LISP_ERROR_TYPE,
+    LISP_ERROR_ARG_TYPE,
     LISP_ERROR_TOO_MANY_ARGS,
     LISP_ERROR_TOO_FEW_ARGS,
     LISP_ERROR_RUNTIME,
@@ -157,7 +150,6 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 void lisp_print_collect_stats(LispContext ctx);
 const char* lisp_error_string(LispError error);
 
-void lisp_port_set_out(FILE* file, LispContext ctx);
 void lisp_port_set_in(FILE* file, LispContext ctx);
 void lisp_port_set_err(FILE* file, LispContext ctx);
 
@@ -1471,6 +1463,8 @@ typedef struct
     char* buffs[2];
     int buff_number[2];
     size_t buff_size;
+
+    size_t position;
 } Lexer;
 
 static void lexer_shutdown(Lexer* lex)
@@ -1493,6 +1487,7 @@ static void lexer_init(Lexer* lex, const char* program)
     lex->buff_number[1] = -1;
     lex->sc = lex->c = lex->buffs[0];
     lex->scan_length = 0;
+    lex->position = 0;
 }
 
 static void lexer_init_file(Lexer* lex, FILE* file)
@@ -1501,7 +1496,7 @@ static void lexer_init_file(Lexer* lex, FILE* file)
 
     lex->buff_size = LISP_FILE_CHUNK_SIZE;
 
-     // LispReal input buffering
+     // double input buffering
     lex->sc_buff_index = 0;
     lex->c_buff_index = 0;
 
@@ -1520,6 +1515,7 @@ static void lexer_init_file(Lexer* lex, FILE* file)
 
     lex->buff_number[0] = 0;
     lex->buff_number[1] = -1;
+    lex->position = 0;
 }
 
 static void lexer_advance_start(Lexer* lex)
@@ -1540,6 +1536,7 @@ static int lexer_step(Lexer* lex)
 {
     ++lex->c;
     ++lex->scan_length;
+    ++lex->position;
 
     if (*lex->c == '\0')
     { 
@@ -1879,7 +1876,7 @@ static void print_escaped_(const char* c, FILE* file)
     }
 }
 
-static Lisp parse_number(Lexer* lex, LispContext ctx)
+static Lisp parse_number_(Lexer* lex, LispContext ctx)
 {
     char scratch[128];
     size_t length = lexer_copy_token(lex, 0, 128, scratch);
@@ -1893,7 +1890,7 @@ static Lisp parse_number(Lexer* lex, LispContext ctx)
     }
 }
 
-static Lisp parse_string(Lexer* lex, LispContext ctx)
+static Lisp parse_string_(Lexer* lex, LispContext ctx)
 { 
     // -2 length to skip quotes
     size_t size = lex->scan_length - 2;
@@ -1905,7 +1902,7 @@ static Lisp parse_string(Lexer* lex, LispContext ctx)
     return l;
 }
 
-static Lisp parse_symbol(Lexer* lex, LispContext ctx)
+static Lisp parse_symbol_(Lexer* lex, LispContext ctx)
 {
     char scratch[LISP_IDENTIFIER_MAX];
     size_t length = lexer_copy_token(lex, 0, LISP_IDENTIFIER_MAX, scratch);
@@ -1915,8 +1912,9 @@ static Lisp parse_symbol(Lexer* lex, LispContext ctx)
     return symbol_intern_(ctx.p->symbols, scratch, length, ctx);
 }
 
-static const char* ascii_char_name_table[] =
+static const char* ascii_char_name_table_[] =
 {
+    "EOF",
     "NUL", "SOH", "STX", "ETX", "EOT",
     "ENQ", "ACK", "BEL", "backspace", "tab",
     "newline", "VT", "page", "return", "SO",
@@ -1926,7 +1924,7 @@ static const char* ascii_char_name_table[] =
     "backnext", "space", NULL
 };
 
-static int parse_char_token(Lexer* lex)
+static int parse_char_(Lexer* lex)
 {
     char scratch[64];
     size_t length = lexer_copy_token(lex, 2, 64, scratch);  
@@ -1938,17 +1936,17 @@ static int parse_char_token(Lexer* lex)
     }
     else
     {
-        const char** name_it = ascii_char_name_table;
+        const char** name_it = ascii_char_name_table_;
         
-        int c = 0;
+        int i = 0;
         while (*name_it)
         {
             if (strcmp(*name_it, scratch) == 0)
             {
-                return c;
+                return i - 1;
             }
             ++name_it;
-            ++c;
+            ++i;
         }
         return -1;
     }
@@ -1961,9 +1959,11 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
     switch (lex->token)
     {
         case TOKEN_NONE:
-            longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
+            fprintf(ctx.p->err_port, "%lu. expected closing )\n", lex->position);
+            longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_DOT:
-            longjmp(error_jmp, LISP_ERROR_DOT_UNEXPECTED);
+            fprintf(ctx.p->err_port, "%lu. unexpected .\n", lex->position);
+            longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_L_PAREN:
         {
             Lisp front = lisp_make_null();
@@ -1982,7 +1982,11 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             // A dot at the end of a list assigns the cdr
             if (lex->token == TOKEN_DOT)
             {
-                if (lisp_is_null(back)) longjmp(error_jmp, LISP_ERROR_DOT_UNEXPECTED);
+                if (lisp_is_null(back))
+                {
+                    fprintf(ctx.p->err_port, "%lu. unexpected .\n", lex->position);
+                    longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
+                }
 
                 lexer_next_token(lex);
                 if (lex->token != TOKEN_R_PAREN)
@@ -1993,17 +1997,17 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
                 }
             }
 
-            if (lex->token != TOKEN_R_PAREN) longjmp(error_jmp, LISP_ERROR_PAREN_EXPECTED);
-
+            if (lex->token != TOKEN_R_PAREN)
+            {
+                fprintf(ctx.p->err_port, "%lu. expected closing )\n", lex->position);
+                longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
+            }
             // )
             return front;
         }
         case TOKEN_R_PAREN:
-            longjmp(error_jmp, LISP_ERROR_PAREN_UNEXPECTED);
-        case TOKEN_CHAR:
-        {
-            return lisp_make_char(parse_char_token(lex));
-        }
+            fprintf(ctx.p->err_port, "unexpected )\n");
+            longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_BOOL:
         {
             char c;
@@ -2043,11 +2047,21 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
         }
         case TOKEN_FLOAT:
         case TOKEN_INT:
-            return parse_number(lex, ctx);
+            return parse_number_(lex, ctx);
         case TOKEN_STRING:
-            return parse_string(lex, ctx);
+            return parse_string_(lex, ctx);
         case TOKEN_SYMBOL:
-            return parse_symbol(lex, ctx);
+            return parse_symbol_(lex, ctx);
+        case TOKEN_CHAR:
+        {
+            int c = parse_char_(lex);
+            if (c <= 0)
+            {
+                fprintf(ctx.p->err_port, "%lu. unknown character\n", lex->position);
+                longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
+            }
+            return lisp_make_char(c);
+        }
         case TOKEN_COMMA:
             lexer_next_token(lex);
 
@@ -2092,6 +2106,8 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     }
 
     lexer_next_token(lex);
+    if (lex->token == TOKEN_NONE) return lisp_make_char(EOF);
+
     Lisp result = parse_list_r(lex, error_jmp, ctx);
     lexer_next_token(lex);
     
@@ -2148,7 +2164,6 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
     return l;
 }
 
-// TODO:
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx)
 {
     return lisp_cons(table, l, ctx);
@@ -2217,13 +2232,13 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
 
             if (human_readable)
             {
-                fputc(c, file);
+                if (c >= 0) fputc(c, file);
             }
             else
             {
-                if (c >= 0 && c < 33)
+                if (c >= -1 && c < 33)
                 {
-                    fprintf(file, "#\\%s", ascii_char_name_table[c]);
+                    fprintf(file, "#\\%s", ascii_char_name_table_[c + 1]);
                 }
                 else if (isprint(c))
                 {
@@ -2617,7 +2632,8 @@ static Lisp expand_quasi_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     }
     else if (lisp_eq(op, get_sym(SYM_UNQUOTE_SPLICE, ctx)) && op_valid)
     {
-        longjmp(error_jmp, LISP_ERROR_SPLICE);
+        fprintf(ctx.p->err_port, "slicing ,@ must be in a backquoted list.\n");
+        longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
     }
     else
     {
@@ -3139,16 +3155,8 @@ const char* lisp_error_string(LispError error)
             return "none";
         case LISP_ERROR_FILE_OPEN:
             return "file error: could not open file";
-        case LISP_ERROR_PAREN_UNEXPECTED:
-            return "syntax error: unexpected ) paren";
-        case LISP_ERROR_HASH_UNEXPECTED:
-            return "syntax error: sharpsign # error. valid forms are #t, #f, #\\, or #(";
-        case LISP_ERROR_PAREN_EXPECTED:
-            return "syntax error: expected ) paren";
-        case LISP_ERROR_DOT_UNEXPECTED:
-            return "syntax error: dot . was unexpected";
-        case LISP_ERROR_BAD_TOKEN:
-            return "syntax error: bad token";
+        case LISP_ERROR_READ_SYNTAX:
+            return "read/syntax error.";
         case LISP_ERROR_BAD_DEFINE:
             return "expand error: bad define (define var x)";
         case LISP_ERROR_FORM_SYNTAX:
@@ -3161,16 +3169,14 @@ const char* lisp_error_string(LispError error)
             return "eval error: attempt to apply something which was not an operator";
         case LISP_ERROR_UNKNOWN_EVAL:
             return "eval error: got into a bad state";
-        case LISP_ERROR_TYPE:
-            return "eval error: bad argument type";
+        case LISP_ERROR_ARG_TYPE:
+            return "eval error: invalid argument type";
         case LISP_ERROR_TOO_MANY_ARGS:
             return "eval error: too many arguments";
          case LISP_ERROR_TOO_FEW_ARGS:
             return "eval error: missing arguments";
         case LISP_ERROR_OUT_OF_BOUNDS:
             return "eval error: index out of bounds";
-        case LISP_ERROR_SPLICE:
-            return "expand error: slicing ,@ must be in a backquoted list.";
         case LISP_ERROR_RUNTIME:
             return "evaluation called (error) and it was not handled";
         default:
@@ -3340,7 +3346,7 @@ static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_read(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_read_file(stdin, e, ctx);
+    return lisp_read_file(ctx.p->in_port, e, ctx);
 }
 
 static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
@@ -3455,7 +3461,7 @@ static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
                 inexact += lisp_real(x);
                 break;
             default:
-                *e = LISP_ERROR_TYPE;
+                *e = LISP_ERROR_ARG_TYPE;
                 return lisp_make_null();
         }
     }
@@ -3483,7 +3489,7 @@ static Lisp sch_mult(Lisp args, LispError* e, LispContext ctx)
                 inexact *= lisp_real(x);
                 break;
             default:
-                *e = LISP_ERROR_TYPE;
+                *e = LISP_ERROR_ARG_TYPE;
                 return lisp_make_null();
         }
     }
@@ -3521,12 +3527,12 @@ static Lisp sch_sub(Lisp args, LispError* e, LispContext ctx)
                 case LISP_INT:
                     return lisp_make_int(lisp_int(x) - lisp_int(y));
                 default:
-                    *e = LISP_ERROR_TYPE;
+                    *e = LISP_ERROR_ARG_TYPE;
                     return lisp_make_null();
             }
             break;
         default:
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
     }
 }
@@ -3551,12 +3557,12 @@ static Lisp sch_divide(Lisp args, LispError* e, LispContext ctx)
                     // TODO: divide by zero check?
                     return lisp_make_int(lisp_int(x) / lisp_int(y));
                 default:
-                    *e = LISP_ERROR_TYPE;
+                    *e = LISP_ERROR_ARG_TYPE;
                     return lisp_make_null();
             }
             break;
         default:
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
     }
 }
@@ -3580,12 +3586,12 @@ static Lisp sch_less(Lisp args, LispError* e, LispContext ctx)
                 case LISP_INT:
                     return lisp_make_bool(lisp_int(x) < lisp_int(y));
                 default:
-                    *e = LISP_ERROR_TYPE;
+                    *e = LISP_ERROR_ARG_TYPE;
                     return lisp_make_null();
             }
             break;
         default:
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
     }
 }
@@ -3608,7 +3614,7 @@ static Lisp sch_symbol_to_string(Lisp args, LispError* e, LispContext ctx)
     Lisp val = lisp_car(args);
     if (lisp_type(val) != LISP_SYMBOL)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
     else
@@ -3639,7 +3645,7 @@ static Lisp sch_string_to_symbol(Lisp args, LispError* e, LispContext ctx)
     Lisp val = lisp_car(args);
     if (lisp_type(val) != LISP_STRING)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
     else
@@ -3714,7 +3720,7 @@ static Lisp sch_string_ref(Lisp args, LispError* e, LispContext ctx)
     Lisp index = lisp_car(lisp_cdr(args));
     if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
 
@@ -3730,7 +3736,7 @@ static Lisp sch_string_set(Lisp args, LispError* e, LispContext ctx)
     Lisp val = lisp_car(args); 
     if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
 
@@ -3842,7 +3848,7 @@ static Lisp sch_number_to_string(Lisp args, LispError* e, LispContext ctx)
             break;
         default:
         {
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
         }
     }
@@ -4026,7 +4032,7 @@ static Lisp sch_round(Lisp args, LispError* e, LispContext ctx)
         case LISP_REAL:
             return lisp_make_real(round(lisp_real(x)));
         default:
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
     }
 
@@ -4043,7 +4049,7 @@ static Lisp sch_floor(Lisp args, LispError* e, LispContext ctx)
         case LISP_REAL:
             return lisp_make_real(floor(lisp_real(x)));
         default:
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
     }
 
@@ -4060,7 +4066,7 @@ static Lisp sch_ceiling(Lisp args, LispError* e, LispContext ctx)
         case LISP_REAL:
             return lisp_make_real(ceil(lisp_real(x)));
         default:
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
     }
 }
@@ -4104,7 +4110,7 @@ static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
         case LISP_REAL:
             return lisp_make_real(fabs(lisp_real(x)));
         default:
-            *e = LISP_ERROR_TYPE;
+            *e = LISP_ERROR_ARG_TYPE;
             return lisp_make_null();
     }
 }
@@ -4132,7 +4138,7 @@ static Lisp sch_make_vector(Lisp args, LispError* e, LispContext ctx)
 
     if (lisp_type(length) != LISP_INT)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
 
@@ -4158,7 +4164,7 @@ static Lisp sch_vector_grow(Lisp args, LispError* e, LispContext ctx)
 
     if (lisp_type(length) != LISP_INT || lisp_type(v) != LISP_VECTOR)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
 
@@ -4176,7 +4182,7 @@ static Lisp sch_vector_length(Lisp args, LispError* e, LispContext ctx)
     Lisp v = lisp_car(args);
     if (lisp_type(v) != LISP_VECTOR)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
 
@@ -4190,7 +4196,7 @@ static Lisp sch_vector_ref(Lisp args, LispError* e, LispContext ctx)
 
     if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
 
@@ -4211,7 +4217,7 @@ static Lisp sch_vector_set(Lisp args, LispError* e, LispContext ctx)
 
     if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
 
@@ -4235,7 +4241,7 @@ static Lisp sch_vector_swap(Lisp args, LispError* e, LispContext ctx)
 
     if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT || lisp_type(j) != LISP_INT)
     {
-        *e = LISP_ERROR_TYPE;
+        *e = LISP_ERROR_ARG_TYPE;
         return lisp_make_null();
     }
     if (lisp_int(i) >= lisp_vector_length(v) || lisp_int(j) >= lisp_vector_length(v))
@@ -5198,5 +5204,4 @@ void lisp_load_lib(LispContext ctx)
 }
 
 #endif
-
 #endif
