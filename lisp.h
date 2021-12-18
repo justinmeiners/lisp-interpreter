@@ -2411,10 +2411,9 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
                 return 0;
             }
 
- 
             // extend the environment
             *out_env = lisp_env_extend(*out_env, new_table, ctx);
-        
+
             // normally we would eval the body here
             // but while will eval
             *out_result = lisp_lambda_body(operator);
@@ -4438,8 +4437,9 @@ static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
     args = lisp_cdr(args);
     Lisp op_args = lisp_car(args);
 
-    // TODO: wrong env
     // TODO: argument passing is a little more sophisitaed
+    // No environment required. procedures always bring their own enviornment
+    // to the call.
     Lisp x;
     Lisp env;
     int needs_to_eval = apply(operator, op_args, &x, &env, e, ctx);
@@ -4910,7 +4910,7 @@ static const char* lib_code_lang1 = " \
 ";
 
 static const char* lib_code_lists = " \
-(_mnemonic-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"DDDD\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\") \
+(_mnemonic-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\") \
 \
 (define (append-reverse! l tail) \
   (if (null? l) tail \
