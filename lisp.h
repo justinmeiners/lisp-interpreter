@@ -81,8 +81,7 @@ typedef enum
     LISP_BOOL,    // t/f
     LISP_VECTOR,  // heterogenous array but contiguous allocation
     LISP_PROMISE, // lazy value
-    LISP_CONTINUE,// continuation
-    LISP_INTERNAL
+    LISP_CONTINUE // continuation
 } LispType;
 
 typedef double LispReal;
