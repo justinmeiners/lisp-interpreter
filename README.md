@@ -1,7 +1,7 @@
+> Any sufficiently complicated C or Fortran program contains an ad hoc, informally-specified, bug-ridden, slow implementation of half of Common Lisp. -- Philip Greenspun
+
 lisp-interpreter
 ===============
-
-> Any sufficiently complicated C or Fortran program contains an ad hoc, informally-specified, bug-ridden, slow implementation of half of Common Lisp. -- Philip Greenspun
 
 An embeddable lisp/scheme interpreter written in C.
 It includes a subset of R5RS with some extensions from MIT Scheme.
