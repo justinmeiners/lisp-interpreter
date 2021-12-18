@@ -341,7 +341,6 @@ void lisp_promise_store(Lisp p, Lisp x);
 #include <ctype.h>
 #include <memory.h>
 
-#include <stdarg.h>
 #include <stddef.h>
 #include <math.h>
 #include <setjmp.h>
