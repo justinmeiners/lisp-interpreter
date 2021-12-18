@@ -250,12 +250,9 @@ const char* lisp_symbol_string(Lisp x);
 // Lists
 Lisp lisp_list_copy(Lisp x, LispContext ctx);
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
-// convenience function for cons'ing together items. arguments must be terminated with end of list entry.
-Lisp lisp_make_listv(LispContext ctx, Lisp first, ...);
-Lisp lisp_make_terminate(void);
+Lisp lisp_make_list2(Lisp* x, int n, LispContext ctx);
 
-// This operation modifies the list
-Lisp lisp_list_reverse(Lisp l); // O(n)
+Lisp lisp_list_reverse(Lisp l); // O(n). inplace.
 Lisp lisp_list_reverse2(Lisp l, Lisp tail); // O(n)
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
 Lisp lisp_list_advance(Lisp l, int i); // O(n)
@@ -273,9 +270,9 @@ Lisp lisp_make_vector2(int n, Lisp fill, LispContext ctx);
 
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, int i);
-void lisp_vector_set(Lisp v, int i, Lisp x);
-void lisp_vector_swap(Lisp v, int i, int j);
-void lisp_vector_fill(Lisp v, Lisp x);
+void lisp_vector_set(Lisp v, int i, Lisp x); // inplace.
+Lisp lisp_vector_swap(Lisp v, int i, int j); // inplace.
+void lisp_vector_fill(Lisp v, Lisp x); // inplace.
 Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx);
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx);
 
@@ -537,6 +534,7 @@ enum {
     SYM_DEFINE_MACRO,
     SYM_SET,
     SYM_LAMBDA,
+    SYM_CONS,
     SYM_COUNT
 };
 
@@ -801,6 +799,14 @@ Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
     return tail;
 }
 
+Lisp lisp_make_list2(Lisp* x, int n, LispContext ctx)
+{
+    Lisp tail = lisp_make_null();
+    for (int i = n - 1; i >= 0; --i)
+        tail = lisp_cons(x[i], tail, ctx);
+    return tail;
+}
+
 Lisp lisp_list_reverse2(Lisp l, Lisp tail)
 {
     while (lisp_is_pair(l))
@@ -816,37 +822,6 @@ Lisp lisp_list_reverse2(Lisp l, Lisp tail)
 Lisp lisp_list_reverse(Lisp l)
 {
     return lisp_list_reverse2(l, lisp_make_null());
-}
-
-Lisp lisp_make_terminate(void)
-{
-    LispVal val;
-    val.int_val = 0;
-    return (Lisp) { val, LISP_INTERNAL };
-}
-
-static int is_end_of_list_(Lisp l)
-{
-    return lisp_type(l) == LISP_INTERNAL && lisp_int(l) == 0;
-}
-
-Lisp lisp_make_listv(LispContext ctx, Lisp first, ...)
-{
-    Lisp front = lisp_cons(first, lisp_make_null(), ctx);
-    Lisp back = front;
-
-    va_list args;
-    va_start(args, first);
-    Lisp it = lisp_make_null();
-
-    while (1)
-    {
-        it = va_arg(args, Lisp);
-        if (is_end_of_list_(it)) break;
-        lisp_fast_append(&front, &back, it, ctx);
-    }
-    va_end(args);
-    return front;
 }
 
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx)
@@ -949,11 +924,12 @@ void lisp_vector_set(Lisp v, int i, Lisp x)
     _vector_types(vector)[i] = (char)x.type;
 }
 
-void lisp_vector_swap(Lisp v, int i, int j)
+Lisp lisp_vector_swap(Lisp v, int i, int j)
 {
     Lisp tmp = lisp_vector_ref(v, i);
     lisp_vector_set(v, i, lisp_vector_ref(v, j));
     lisp_vector_set(v, j, tmp);
+    return v;
 }
 
 void lisp_vector_fill(Lisp v, Lisp x)
@@ -2629,11 +2605,8 @@ static Lisp expand_quasi_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 {
     if (lisp_type(l) != LISP_PAIR)
     {
-        return lisp_make_listv(
-                ctx,
-                get_sym(SYM_QUOTE, ctx),
-                l,
-                lisp_make_terminate());
+        Lisp terms[] = { get_sym(SYM_QUOTE, ctx), l };
+        return lisp_make_list2(terms, 2, ctx);
     }
 
     Lisp op = lisp_car(l);
@@ -2649,12 +2622,12 @@ static Lisp expand_quasi_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     }
     else
     {
-        return lisp_make_listv(
-                ctx,
-                lisp_make_symbol("CONS", ctx),
-                expand_quasi_r(lisp_car(l), error_jmp, ctx),
-                expand_quasi_r(lisp_cdr(l), error_jmp, ctx),
-                lisp_make_terminate());
+        Lisp terms[] = {
+            get_sym(SYM_CONS, ctx),
+            expand_quasi_r(lisp_car(l), error_jmp, ctx),
+            expand_quasi_r(lisp_cdr(l), error_jmp, ctx),
+        };
+        return lisp_make_list2(terms, 3, ctx);
     }
 }
 
@@ -2734,10 +2707,8 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
                     lambda = lisp_cons(args, lambda, ctx);
                     lambda = lisp_cons(get_sym(SYM_LAMBDA, ctx), lambda, ctx);
 
-                    lisp_set_cdr(l, lisp_make_listv(ctx,
-                                name,
-                                expand_r(lambda, error_jmp, ctx),
-                                lisp_make_terminate()));
+                    Lisp terms[] = { name, expand_r(lambda, error_jmp, ctx) };
+                    lisp_set_cdr(l, lisp_make_list2(terms, 2, ctx));
                     return l;
                 }
             case LISP_SYMBOL:
@@ -3242,6 +3213,7 @@ LispContext lisp_init(void)
     c[SYM_DEFINE_MACRO] = lisp_make_symbol("DEFINE-MACRO", ctx);
     c[SYM_SET] = lisp_make_symbol("SET!", ctx);
     c[SYM_LAMBDA] = lisp_make_symbol("LAMBDA", ctx);
+    c[SYM_CONS] = lisp_make_symbol("CONS", ctx);
     return ctx;
 }
 
@@ -4267,15 +4239,12 @@ static Lisp sch_vector_swap(Lisp args, LispError* e, LispContext ctx)
         *e = LISP_ERROR_TYPE;
         return lisp_make_null();
     }
-
     if (lisp_int(i) >= lisp_vector_length(v) || lisp_int(j) >= lisp_vector_length(v))
     {
         *e = LISP_ERROR_OUT_OF_BOUNDS;
         return lisp_make_null();
     }
-
-    lisp_vector_swap(v, lisp_int(i), lisp_int(j));
-    return v;
+    return lisp_vector_swap(v, lisp_int(i), lisp_int(j));
 }
 
 static Lisp sch_vector_fill(Lisp args, LispError* e, LispContext ctx)
@@ -4556,24 +4525,13 @@ static Lisp sch_call_cc(Lisp args, LispError* e, LispContext ctx)
     {
         Lisp lambda = lisp_car(args);
         Lisp var = lisp_make_symbol("RESULT", ctx);
-        Lisp body = lisp_make_listv(
-                ctx,
-                lisp_make_symbol("_GO-CONTINUE", ctx),
-                cont,
-                var, 
-                lisp_make_terminate()
-                );
+
+        Lisp body_terms[] = { lisp_make_symbol("_GO-CONTINUE", ctx), cont, var };
+        Lisp body = lisp_make_list2(body_terms, 3, ctx);
         Lisp callback = lisp_make_lambda(lisp_cons(var, lisp_make_null(), ctx), body, ctx.p->env, ctx);
-        Lisp result = sch_apply(
-                lisp_make_listv(
-                ctx,
-                lambda,
-                lisp_cons(callback, lisp_make_null(), ctx),
-                lisp_make_terminate()
-                ),
-                e,
-                ctx
-                );
+
+        Lisp terms[] = { lambda, lisp_cons(callback, lisp_make_null(), ctx) };
+        Lisp result = sch_apply(lisp_make_list2(terms, 2, ctx), e, ctx);
         lisp_stack_pop(ctx);
         return result;
     }
