@@ -2106,7 +2106,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     }
 
     lexer_next_token(lex);
-    if (lex->token == TOKEN_NONE) return lisp_make_char(EOF);
+    if (lex->token == TOKEN_NONE) return lisp_make_char(-1);
 
     Lisp result = parse_list_r(lex, error_jmp, ctx);
     lexer_next_token(lex);
