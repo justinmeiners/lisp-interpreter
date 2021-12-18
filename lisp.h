@@ -4808,20 +4808,21 @@ static const char* lib_code_lang0 = "\
  (if (null? l) '() \
   (begin (proc (car l)) (for-each1 proc (cdr l ))))) \
 \
+(define (_make-lambda args body) \
+ (list 'LAMBDA args (if (null? (cdr body)) (car body) (cons 'BEGIN body)))) \
+\
 (define (_let->combination var bindings body) \
  (for-each1 (lambda (entry) \
         (if (not (pair? entry)) (syntax-error \"bad let binding\" entry)) \
         (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) bindings) \
- (define body-func (list 'LAMBDA \
-                    (map1 (lambda (entry) (car entry)) bindings '()) \
-                    (if (null? (cdr body)) (car body) (cons 'BEGIN body)))) \
+ (define body-func (_make-lambda (map1 (lambda (entry) (car entry)) bindings '()) body)) \
  (define initial-args (map1 (lambda (entry) (car (cdr entry))) bindings '())) \
  (if (null? var) \
   (cons body-func initial-args) \
-  (list (list 'LAMBDA '() (list 'DEFINE var body-func) (cons var initial-args))))) \
+  (list (_make-lambda '() (list (list 'DEFINE var body-func) (cons var initial-args)))))) \
 \
 (define-macro let (lambda args  \
-(if (pair? (first args)) \
+  (if (pair? (first args)) \
      (_let->combination '() (car args) (cdr args)) \
      (_let->combination (first args) (second args) (cdr (cdr args)))))) \
 \
@@ -4831,8 +4832,7 @@ static const char* lib_code_lang0 = "\
 (define-macro let* (lambda (def-list . body) (_let*-helper def-list body))) \
 \
 (define (_cond-helper clauses) \
- (if (null? clauses) \
-  '() \
+ (if (null? clauses) '() \
   (if (eq? (car (car clauses)) 'ELSE) \
    (cons 'BEGIN (cdr (car clauses))) \
    (list 'IF \
