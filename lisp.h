@@ -219,10 +219,10 @@ int lisp_is_true(Lisp x);
 // Strings
 Lisp lisp_make_string(const char* c_string, LispContext ctx);
 Lisp lisp_make_string2(int n, int c, LispContext ctx);
+char* lisp_string(Lisp s);
 int lisp_string_ref(Lisp s, int n);
 void lisp_string_set(Lisp s, int n, int c);
 Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx);
-char* lisp_string(Lisp s);
 
 Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
@@ -241,7 +241,7 @@ const char* lisp_symbol_string(Lisp x);
 // Lists
 Lisp lisp_list_copy(Lisp x, LispContext ctx);
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx);
-Lisp lisp_make_list2(Lisp* x, int n, LispContext ctx);
+Lisp lisp_make_list2(Lisp *x, int n, LispContext ctx);
 
 Lisp lisp_list_reverse(Lisp l); // O(n). inplace.
 Lisp lisp_list_reverse2(Lisp l, Lisp tail); // O(n)
@@ -256,8 +256,9 @@ int lisp_list_length(Lisp l); // O(n)
 Lisp lisp_alist_ref(Lisp l, Lisp key); // O(n)
 
 // Vectors (like C arrays, but heterogeneous).
-Lisp lisp_make_vector(int n, LispContext ctx);
-Lisp lisp_make_vector2(int n, Lisp fill, LispContext ctx);
+Lisp lisp_make_vector(Lisp x, int n, LispContext ctx);
+Lisp lisp_make_vector2(Lisp *x, int n, LispContext ctx);
+Lisp lisp_make_vector_uninitialized(int n, LispContext ctx);
 
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, int i);
@@ -755,21 +756,6 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx)
     return p;
 }
 
-static void lisp_fast_append(Lisp* front, Lisp* back, Lisp x, LispContext ctx)
-{
-    Lisp new_l = lisp_cons(x, lisp_make_null(), ctx);
-    if (lisp_is_null(*back))
-    {
-        *back = new_l;
-        *front = *back;
-    }
-    else
-    {
-        lisp_set_cdr(*back, new_l);
-        *back = new_l;
-    }
-}
-
 Lisp lisp_list_copy(Lisp l, LispContext ctx)
 {
     Lisp tail = lisp_make_null();
@@ -789,7 +775,7 @@ Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
     return tail;
 }
 
-Lisp lisp_make_list2(Lisp* x, int n, LispContext ctx)
+Lisp lisp_make_list2(Lisp *x, int n, LispContext ctx)
 {
     Lisp tail = lisp_make_null();
     for (int i = n - 1; i >= 0; --i)
@@ -809,10 +795,7 @@ Lisp lisp_list_reverse2(Lisp l, Lisp tail)
     return tail;
 }
 
-Lisp lisp_list_reverse(Lisp l)
-{
-    return lisp_list_reverse2(l, lisp_make_null());
-}
+Lisp lisp_list_reverse(Lisp l) { return lisp_list_reverse2(l, lisp_make_null()); }
 
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx)
 {
@@ -860,35 +843,16 @@ Lisp lisp_alist_ref(Lisp l, Lisp key)
     return lisp_false();
 }
 
-static int _vector_len(const Vector* v) { return v->block.d.vector.length; }
+static int vector_len_(const Vector* v) { return v->block.d.vector.length; }
 
 // types are stored in an array of bytes at the end of the data.
-static char* _vector_types(Vector* v)
+static char* vector_types_(Vector* v)
 {
     // should be safe with aliasing.
     // https://gist.github.com/jibsen/da6be27cde4d526ee564
     char* base = (char*)v;
-    return base + sizeof(Vector) + sizeof(LispVal) * _vector_len(v);
+    return base + sizeof(Vector) + sizeof(LispVal) * vector_len_(v);
 }
-
-Lisp lisp_make_vector2(int n, Lisp fill, LispContext ctx)
-{
-    size_t size = sizeof(Vector) + sizeof(LispVal) * n + sizeof(char) * n;
-    Vector* vector = gc_alloc(size, LISP_VECTOR, ctx);
-    vector->block.d.vector.length = n;
-    char* entry_types = _vector_types(vector);
-
-    for (int i = 0; i < n; ++i)
-    {
-        vector->entries[i] = fill.val;
-        entry_types[i] = (char)fill.type;
-    }
-    LispVal val;
-    val.ptr_val = vector;
-    return (Lisp) { val, LISP_VECTOR };
-}
-
-Lisp lisp_make_vector(int n, LispContext ctx) { return lisp_make_vector2(n, lisp_make_null(), ctx); }
 
 static Vector* vector_get_(Lisp v)
 {
@@ -896,22 +860,50 @@ static Vector* vector_get_(Lisp v)
     return v.val.ptr_val;
 }
 
-int lisp_vector_length(Lisp v) { return _vector_len(vector_get_(v)); }
+
+Lisp lisp_make_vector_uninitialized(int n, LispContext ctx)
+{
+    size_t size = sizeof(Vector) + sizeof(LispVal) * n + sizeof(char) * n;
+    Vector* vector = gc_alloc(size, LISP_VECTOR, ctx);
+    vector->block.d.vector.length = n;
+
+    LispVal val;
+    val.ptr_val = vector;
+    return (Lisp) { val, LISP_VECTOR };
+}
+
+Lisp lisp_make_vector(Lisp x, int n, LispContext ctx)
+{
+    Lisp v = lisp_make_vector_uninitialized(n, ctx);
+    lisp_vector_fill(v, x);
+    return v;
+}
+
+Lisp lisp_make_vector2(Lisp *x, int n, LispContext ctx)
+{
+    Lisp v = lisp_make_vector_uninitialized(n, ctx);
+    for (int i = 0; i < n; ++i)
+        lisp_vector_set(v, i, x[i]);
+    return v;
+}
+
+
+int lisp_vector_length(Lisp v) { return vector_len_(vector_get_(v)); }
 
 Lisp lisp_vector_ref(Lisp v, int i)
 {
     Vector* vector = vector_get_(v);
-    assert(i < _vector_len(vector));
-    Lisp x = { vector->entries[i], (LispType)(_vector_types(vector)[i]) };
+    assert(i < vector_len_(vector));
+    Lisp x = { vector->entries[i], (LispType)(vector_types_(vector)[i]) };
     return x;
 }
 
 void lisp_vector_set(Lisp v, int i, Lisp x)
 {
     Vector* vector = vector_get_(v);
-    assert(i < _vector_len(vector));
+    assert(i < vector_len_(vector));
     vector->entries[i] = x.val;
-    _vector_types(vector)[i] = (char)x.type;
+    vector_types_(vector)[i] = (char)x.type;
 }
 
 Lisp lisp_vector_swap(Lisp v, int i, int j)
@@ -925,8 +917,14 @@ Lisp lisp_vector_swap(Lisp v, int i, int j)
 void lisp_vector_fill(Lisp v, Lisp x)
 {
     int n = lisp_vector_length(v);
+    Vector* vector = vector_get_(v);
+    char* entry_types = vector_types_(vector);
+
     for (int i = 0; i < n; ++i)
-        lisp_vector_set(v, i, x);
+    {
+        vector->entries[i] = x.val;
+        entry_types[i] = (char)x.type;
+    }
 }
 
 Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx)
@@ -934,21 +932,21 @@ Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx)
     assert(start <= end);
     Vector* src = vector_get_(old);
 
-    int m = _vector_len(src);
+    int m = vector_len_(src);
     if (end > m) end = m;
     
     int n = end - start;
-    Lisp new_v = lisp_make_vector(n, ctx);
+    Lisp new_v = lisp_make_vector_uninitialized(n, ctx);
     Vector* dst = vector_get_(new_v);
     memcpy(dst->entries, src->entries + start, sizeof(LispVal) * n);
-    memcpy(_vector_types(dst), _vector_types(src) + start, sizeof(char) * n);
+    memcpy(vector_types_(dst), vector_types_(src) + start, sizeof(char) * n);
     return new_v;
 }
 
 Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx)
 {
     Vector* src = vector_get_(v);
-    int m = _vector_len(src);
+    int m = vector_len_(src);
     assert(n >= m);
 
     if (n == m)
@@ -957,10 +955,10 @@ Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx)
     }
     else
     {
-        Lisp new_v = lisp_make_vector2(n, lisp_vector_ref(v, 0), ctx);
+        Lisp new_v = lisp_make_vector_uninitialized(n, ctx);
         Vector* dst = vector_get_(new_v);
         memcpy(dst->entries, src->entries, sizeof(LispVal) * m);
-        memcpy(_vector_types(dst), _vector_types(src), sizeof(char) * m);
+        memcpy(vector_types_(dst), vector_types_(src), sizeof(char) * m);
         return new_v;
     }
 }
@@ -1026,8 +1024,8 @@ static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
     Lisp old_vals = { table->vals, LISP_VECTOR };
 
     table->capacity = new_capacity;
-    table->keys = lisp_make_vector(new_capacity, ctx).val;
-    table->vals = lisp_make_vector(new_capacity, ctx).val;
+    table->keys = lisp_make_vector(lisp_make_null(), new_capacity, ctx).val;
+    table->vals = lisp_make_vector(lisp_make_null(), new_capacity, ctx).val;
     table->size = 0;
 
     for (int i = 0; i < old_capacity; ++i)
@@ -1965,23 +1963,20 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_L_PAREN:
         {
-            Lisp front = lisp_make_null();
-            Lisp back = lisp_make_null();
+            Lisp tail = lisp_make_null();
 
             // (
             lexer_next_token(lex);
             while (lex->token != TOKEN_R_PAREN && lex->token != TOKEN_DOT)
             {
-                Lisp x = parse_list_r(lex, error_jmp, ctx);
-                lisp_fast_append(&front, &back, x, ctx);
-
+                tail = lisp_cons(parse_list_r(lex, error_jmp, ctx), tail, ctx);
                 lexer_next_token(lex);
             }
 
             // A dot at the end of a list assigns the cdr
             if (lex->token == TOKEN_DOT)
             {
-                if (lisp_is_null(back))
+                if (lisp_is_null(tail))
                 {
                     fprintf(ctx.p->err_port, "%lu. unexpected .\n", lex->position);
                     longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
@@ -1991,9 +1986,13 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
                 if (lex->token != TOKEN_R_PAREN)
                 {
                     Lisp x = parse_list_r(lex, error_jmp, ctx);
-                    lisp_set_cdr(back, x);
+                    tail = lisp_list_reverse2(tail, x);
                     lexer_next_token(lex);
                 }
+            }
+            else
+            {
+                tail = lisp_list_reverse(tail);
             }
 
             if (lex->token != TOKEN_R_PAREN)
@@ -2002,7 +2001,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
                 longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
             }
             // )
-            return front;
+            return tail;
         }
         case TOKEN_R_PAREN:
             fprintf(ctx.p->err_port, "unexpected )\n");
@@ -2018,31 +2017,29 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             // #(
             lexer_next_token(lex);
 
-            Lisp v = lisp_make_null();
-            int count = 0;
+            Lisp* buffer = NULL;
+            size_t buffer_cap = 0;
+
+            int n = 0;
             while (lex->token != TOKEN_R_PAREN)
             {
                 Lisp x = parse_list_r(lex, error_jmp, ctx);
                 lexer_next_token(lex);
 
-                if (lisp_is_null(v))
+                if (buffer_cap <= n + 1)
                 {
-                    v = lisp_make_vector2(16, x, ctx);
+                    buffer_cap *= 2;
+                    if (buffer_cap < 16) buffer_cap = 16;
+                    buffer = realloc(buffer, buffer_cap * sizeof(Lisp));
                 }
-                else
-                {
-                    int length = lisp_vector_length(v);
-                    if (count + 1 >= length)
-                    {
-                        v = lisp_vector_grow(v, length * 2, ctx);
-                    }
-
-                    lisp_vector_set(v, count, x);
-                }
-                ++count;
+                buffer[n] = x;
+                ++n;
             }
             // )
-            return lisp_subvector(v, 0, count, ctx);
+            
+            Lisp v =  lisp_make_vector2(buffer, n, ctx);
+            if (buffer) free(buffer);
+            return v;
         }
         case TOKEN_FLOAT:
         case TOKEN_INT:
@@ -2112,18 +2109,16 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     
     if (lex->token != TOKEN_NONE)
     {
-        Lisp back = lisp_cons(result, lisp_make_null(), ctx);
-        Lisp front = lisp_cons(get_sym(SYM_BEGIN, ctx), back, ctx);
+        // MULTIPLE FORMS
+        result = lisp_cons(result, lisp_make_null(), ctx);
         
         while (lex->token != TOKEN_NONE)
         {
-            Lisp next_result = parse_list_r(lex, error_jmp, ctx);
+            result = lisp_cons(parse_list_r(lex, error_jmp, ctx), result, ctx);
             lexer_next_token(lex);
-
-            lisp_fast_append(&front, &back, next_result, ctx);
         } 
 
-       result = front;
+        result = lisp_cons(get_sym(SYM_BEGIN, ctx), lisp_list_reverse(result), ctx);
     }
 
     if (out_error) *out_error = error;
@@ -2151,22 +2146,17 @@ Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx)
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
 {
     FILE* file = fopen(path, "r");
-
     if (!file)
     {
         *out_error = LISP_ERROR_FILE_OPEN;
-        return lisp_make_null();
+        return lisp_make_char(-1);
     }
-
     Lisp l = lisp_read_file(file, out_error, ctx);
     fclose(file);
     return l;
 }
 
-Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx)
-{
-    return lisp_cons(table, l, ctx);
-}
+Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx) { return lisp_cons(table, l, ctx); }
 
 Lisp lisp_env_lookup(Lisp l, Lisp key, int* present)
 {
@@ -3022,7 +3012,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         vector.type = LISP_VECTOR;
 
                         Vector* v = (Vector*)block;
-                        int n = _vector_len(v);
+                        int n = vector_len_(v);
                         for (int i = 0; i < n; ++i)
                             v->entries[i] = gc_move(lisp_vector_ref(vector, i), ctx).val;
                         break;
@@ -3396,6 +3386,28 @@ static Lisp sch_equals(Lisp args, LispError* e, LispContext ctx)
 }
 
 static Lisp sch_list(Lisp args, LispError* e, LispContext ctx) { return args; }
+
+static Lisp sch_make_list(Lisp args, LispError* e, LispContext ctx)
+{
+    Lisp length = lisp_car(args);
+    if (lisp_type(length) != LISP_INT)
+    {
+        *e = LISP_ERROR_ARG_TYPE;
+        return lisp_make_null();
+    }
+
+    Lisp next = lisp_cdr(args);
+    Lisp x;
+    if (lisp_is_null(next))
+    {
+        x = lisp_make_null();
+    }
+    else
+    {
+        x = lisp_car(lisp_cdr(args));
+    }
+    return lisp_make_list(x, lisp_int(length), ctx);
+}
 
 static Lisp sch_list_copy(Lisp args, LispError* e, LispContext ctx) {
     return lisp_list_copy(lisp_car(args), ctx);
@@ -4114,18 +4126,6 @@ static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
     }
 }
 
-static Lisp sch_vector(Lisp args, LispError* e, LispContext ctx)
-{
-    int N = lisp_list_length(args);
-    Lisp v = lisp_make_vector(N, ctx);
-    for (int i = 0; i < N; ++i)
-    {
-        lisp_vector_set(v, i, lisp_car(args));
-        args = lisp_cdr(args);
-    }
-    return v;
-}
-
 static Lisp sch_is_vector(Lisp args, LispError* e, LispContext ctx)
 {
     return lisp_make_bool( lisp_type(lisp_car(args)) == LISP_VECTOR );
@@ -4153,7 +4153,7 @@ static Lisp sch_make_vector(Lisp args, LispError* e, LispContext ctx)
         val = lisp_car(lisp_cdr(args));
     }
 
-    return lisp_make_vector2(lisp_int(length), val, ctx);
+    return lisp_make_vector(val, lisp_int(length), ctx);
 }
 
 static Lisp sch_vector_grow(Lisp args, LispError* e, LispContext ctx)
@@ -4282,14 +4282,12 @@ static Lisp sch_list_to_vector(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp l = lisp_car(args);
     int n = lisp_list_length(l);
-    Lisp v = lisp_make_vector(n, ctx);
-    
-    int i = 0;
-    while (!lisp_is_null(l))
+    Lisp v = lisp_make_vector_uninitialized(n, ctx);
+
+    for (int i = 0; i < n; ++i)
     {
         lisp_vector_set(v, i, lisp_car(l));
         l = lisp_cdr(l);
-        ++i;
     }
     return v;
 }
@@ -4574,7 +4572,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "BOOLEAN?", sch_is_boolean },
     { "NOT", sch_not },
 
-    // Lists https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
+    // PAIRS
     { "CONS", sch_cons },
     { "CAR", sch_car },
     { "CDR", sch_cdr },
@@ -4582,7 +4580,10 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SET-CDR!", sch_set_cdr },
     { "NULL?", sch_is_null },
     { "PAIR?", sch_is_pair },
+
+    // Lists https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
     { "LIST", sch_list },
+    { "MAKE-LIST", sch_make_list },
     { "LIST-COPY", sch_list_copy },
     { "LENGTH", sch_length },
     { "APPEND", sch_append },
@@ -4591,7 +4592,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "NTHCDR", sch_list_advance },
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
-    { "VECTOR", sch_vector },
     { "VECTOR?", sch_is_vector },
     { "MAKE-VECTOR", sch_make_vector },
     { "VECTOR-GROW", sch_vector_grow },
@@ -4957,11 +4957,6 @@ static const char* lib_code_lists = " \
 (define (memq x list) (_member x list eq?)) \
 (define (memv x list) (_member x list eqv?)) \
 \
-(define (_make-list k x l) \
-  (if (= k 0) l \
-   (_make-list (- k 1) x (cons x l)))) \
-(define (make-list k x) (reverse! (_make-list k x '()))) \
-\
 (define (list-tail x k) \
  (if (zero? k) x \
   (list-tail (cdr x) (- k 1)))) \
@@ -4980,6 +4975,8 @@ static const char* lib_code_lists = " \
         (reduce op (op acc (car lst)) (cdr lst)))) \
 \
 (define (reverse l) (reverse! (list-copy l))) \
+\
+(define (vector . args) (list->vector args)) \
 ";
 
 static const char* lib_code_math = " \
