@@ -208,6 +208,17 @@ static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
     return l;
 }
 
+static Lisp sch_append_reverse(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(2, 2);
+
+    Lisp l = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp tail = lisp_car(args);
+
+    return lisp_list_reverse2(l, tail);
+}
+
 static Lisp sch_list_ref(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
@@ -223,11 +234,6 @@ static Lisp sch_length(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(lisp_list_length(lisp_car(args)));
 }
 
-static Lisp sch_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_list_reverse(lisp_car(args));
-}
 static Lisp sch_list_advance(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
@@ -1367,8 +1373,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "LIST-COPY", sch_list_copy },
     { "LENGTH", sch_length },
     { "APPEND", sch_append },
+    { "APPEND-REVERSE!", sch_append_reverse },
     { "LIST-REF", sch_list_ref },
-    { "REVERSE!", sch_reverse_inplace },
     { "NTHCDR", sch_list_advance },
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
@@ -1507,12 +1513,15 @@ void lisp_lib_load(LispContext ctx)
     lisp_env_set_global(user_env, ctx);
 
     const char* to_load[] = {
-        lib_0_forms_src_, lib_1_forms_src_,
-        lib_2_lists_src_, lib_3_math_src_,
-        lib_4_sequence_src_, lib_5_streams_src_
+        lib_0_sequences_src_, lib_1_forms_src_,
+        lib_2_forms_src_, lib_3_math_src_,
+        lib_4_sequences_src_, lib_5_streams_src_,
+        lib_6_other_src_, 
     };
 
-    for (int i = 0; i < 6; ++i)
+    int n = sizeof(to_load) / sizeof(const char*);
+
+    for (int i = 0; i < n; ++i)
     {
         LispError error;
         Lisp src = lisp_read(to_load[i], &error, ctx);

@@ -18,7 +18,7 @@ void lisp_lib_load(LispContext ctx);
 
 
 #ifdef LISP_IMPLEMENTATION
-static const char* lib_0_forms_src_ = 
+static const char* lib_0_sequences_src_ = 
 "(define (first x) (car x))  \n\
 (define (second x) (car (cdr x)))  \n\
 (define (third x) (car (cdr (cdr x))))  \n\
@@ -40,15 +40,70 @@ static const char* lib_0_forms_src_ =
 (define (for-each1 proc l)  \n\
   (if (null? l) '()  \n\
       (begin (proc (car l)) (for-each1 proc (cdr l )))))  \n\
+  \n\
+(define (reverse! l) (append-reverse! l '())) \n\
+(define (reverse l) (reverse! (list-copy l)))  \n\
  \n\
-(define (_make-lambda args body)  \n\
+(define (last-pair x)  \n\
+ (if (pair? (cdr x))  \n\
+  (last-pair (cdr x)) x))  \n\
+ \n\
+(define (list-tail x k)  \n\
+ (if (zero? k) x  \n\
+  (list-tail (cdr x) (- k 1))))  \n\
+  \n\
+(define (reduce op acc lst)  \n\
+    (if (null? lst) acc  \n\
+        (reduce op (op acc (car lst)) (cdr lst))))  \n\
+ \n\
+(define (_expand-mnemonic-body path)  \n\
+  (if (null? path) (cons 'pair '())  \n\
+      (list (if (char=? (car path) #\\A)  \n\
+            (cons 'CAR (_expand-mnemonic-body (cdr path)))))))  \n\
+ \n\
+(define (_expand-mnemonic text)  \n\
+  (cons 'DEFINE  (cons (list (string->symbol (string-append \"C\" text \"R\")) 'pair)  \n\
+        (_expand-mnemonic-body (string->list text)))))  \n\
+ \n\
+(define-macro _mnemonic-accessors (lambda args (cons 'BEGIN (map1 _expand-mnemonic args))))  \n\
+ \n\
+(define (vector . args) (list->vector args)) \n\
+ \n\
+(define (vector-copy v) (subvector v 0 (vector-length v))) \n\
+(define (vector-head v end) (subvector v 0 end))  \n\
+(define (vector-tail v start) (subvector v start (vector-length v)))  \n\
+  \n\
+(define (char>=? a b) (not (char<? a b)))  \n\
+(define (char>? a b) (char<? b a))  \n\
+(define (char<=? a b) (not (char<? b a)))  \n\
+ \n\
+(define (string . chars) (list->string chars))  \n\
+ \n\
+(define (string>=? a b) (not (string<? a b)))  \n\
+(define (string>? a b) (string<? b a))  \n\
+(define (string<=? a b) (not (string<? b a)))  \n\
+ \n\
+(define (string-copy s) (substring s 0 (string-length v))) \n\
+(define (string-head s end) (subvector s 0 end))  \n\
+(define (string-tail s start) (subvector s start (string-length v)))";
+
+static const char* lib_1_forms_src_ = 
+"(define (_make-lambda args body)  \n\
   (list 'LAMBDA args (if (null? (cdr body)) (car body) (cons 'BEGIN body))))  \n\
+ \n\
+ \n\
+; (LET <name> ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>) \n\
+;  => ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)             \n\
+;  => named  \n\
+;    ((lambda () \n\
+;        (define <name> (LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>))) \n\
+;        (<name> <expr0> ... <exprN>))) \n\
  \n\
 (define (_check-binding-list bindings)  \n\
   (for-each1 (lambda (entry)  \n\
                (if (not (pair? entry)) (syntax-error \"bad let binding\" entry))  \n\
                (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) bindings))  \n\
- \n\
+  \n\
 (define (_let->combination var bindings body)  \n\
   (_check-binding-list bindings)  \n\
   (define body-func (_make-lambda (map1 (lambda (entry) (first entry)) bindings) body))  \n\
@@ -77,6 +132,17 @@ static const char* lib_0_forms_src_ =
                                                          bindings) body))  \n\
                              (map1 (lambda (entry) '()) bindings))))  \n\
  \n\
+ \n\
+; (COND (<pred0> <expr0>) \n\
+;       (<pred1> <expr1>) \n\
+;        ... \n\
+;        (else <expr-1>))  \n\
+; => \n\
+; (IF <pred0> <expr0> \n\
+;      (if <pred1> <expr1> \n\
+;          .... \n\
+;      (if <predN> <exprN> <expr-1>)) ... ) \n\
+ \n\
 (define (_cond-check-clauses clauses)  \n\
   (for-each1 (lambda (clause)  \n\
                (if (not (pair? clause)) (syntax error \"Invalid cond clause\"))  \n\
@@ -95,21 +161,9 @@ static const char* lib_0_forms_src_ =
 (define-macro cond (lambda clauses  \n\
                      (begin  \n\
                        (_cond-check-clauses clauses)  \n\
-                       (_cond-helper clauses))))  \n\
- \n\
- \n\
-(define (_expand-mnemonic-body path)  \n\
-  (if (null? path) (cons 'pair '())  \n\
-      (list (if (char=? (car path) #\\A)  \n\
-            (cons 'CAR (_expand-mnemonic-body (cdr path)))))))  \n\
- \n\
-(define (_expand-mnemonic text)  \n\
-  (cons 'DEFINE  (cons (list (string->symbol (string-append \"C\" text \"R\")) 'pair)  \n\
-        (_expand-mnemonic-body (string->list text)))))  \n\
- \n\
-(define-macro _mnemonic-accessors (lambda args (cons 'BEGIN (map1 _expand-mnemonic args))))";
+                       (_cond-helper clauses))))";
 
-static const char* lib_1_forms_src_ = 
+static const char* lib_2_forms_src_ = 
 "(_mnemonic-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\")  \n\
  \n\
 (define (_and-helper preds)  \n\
@@ -168,73 +222,6 @@ static const char* lib_1_forms_src_ =
                             ,body)  \n\
                          ) form)))";
 
-static const char* lib_2_lists_src_ = 
-"(define (append-reverse! l tail)  \n\
-  (if (null? l) tail  \n\
-    (let ((next (cdr l)))  \n\
-      (set-cdr! l tail)  \n\
-      (append-reverse! next l))))  \n\
- \n\
-(define (last-pair x)  \n\
- (if (pair? (cdr x))  \n\
-  (last-pair (cdr x)) x))  \n\
- \n\
-(define (map proc . rest)  \n\
- (define (helper lists result)  \n\
-  (if (some? null? lists)  \n\
-   (reverse! result)  \n\
-   (helper (map1 cdr lists)  \n\
-    (cons (apply proc (map1 car lists)) result))))  \n\
- (helper rest '()))  \n\
- \n\
-(define (for-each proc . rest)  \n\
- (define (helper lists)  \n\
-  (if (some? null? lists)  \n\
-   '()  \n\
-   (begin  \n\
-    (apply proc (map1 car lists))  \n\
-    (helper (map1 cdr lists)))))  \n\
- (helper rest))  \n\
- \n\
-(define (_assoc key list eq?)  \n\
- (if (null? list) #f  \n\
-  (let ((pair (car list)))  \n\
-    (if (and (pair? pair) (eq? key (car pair)))  \n\
-        pair  \n\
-        (_assoc key (cdr list) eq?)))))  \n\
- \n\
-(define (assoc key list) (_assoc key list equal?))  \n\
-(define (assq key list) (_assoc key list eq?))  \n\
-(define (assv key list) (_assoc key list eqv?))  \n\
- \n\
-(define (_member x list eq?)  \n\
- (cond ((null? list) #f)  \n\
-  ((eq? (car list) x) list)  \n\
-  (else (_member x (cdr list) eq?))))  \n\
- \n\
-(define (member x list) (_member x list equal?))  \n\
-(define (memq x list) (_member x list eq?))  \n\
-(define (memv x list) (_member x list eqv?))  \n\
- \n\
-(define (list-tail x k)  \n\
- (if (zero? k) x  \n\
-  (list-tail (cdr x) (- k 1))))  \n\
- \n\
-(define (filter pred l)  \n\
- (define (helper l result)  \n\
-  (cond ((null? l) result)  \n\
-   ((pred (car l))  \n\
-    (helper (cdr l) (cons (car l) result)))  \n\
-   (else  \n\
-    (helper (cdr l) result))))  \n\
- (reverse! (helper l '())))  \n\
- \n\
-(define (reduce op acc lst)  \n\
-    (if (null? lst) acc  \n\
-        (reduce op (op acc (car lst)) (cdr lst))))  \n\
- \n\
-(define (reverse l) (reverse! (list-copy l)))";
-
 static const char* lib_3_math_src_ = 
 "(define (number? x) (real? x))  \n\
 (define (odd? x) (not (even? x)))  \n\
@@ -271,24 +258,33 @@ static const char* lib_3_math_src_ =
       (abs (* (/ (car args) (apply gcd args))  \n\
               (apply * (cdr args))))))";
 
-static const char* lib_4_sequence_src_ = 
-"(define (vector . args) (list->vector args)) \n\
+static const char* lib_4_sequences_src_ = 
+"(define (map proc . rest)  \n\
+ (define (helper lists result)  \n\
+  (if (some? null? lists)  \n\
+   (reverse! result)  \n\
+   (helper (map1 cdr lists)  \n\
+    (cons (apply proc (map1 car lists)) result))))  \n\
+ (helper rest '()))  \n\
  \n\
-(define (newline) (write-char #\\newline))  \n\
+(define (for-each proc . rest)  \n\
+ (define (helper lists)  \n\
+  (if (some? null? lists)  \n\
+   '()  \n\
+   (begin  \n\
+    (apply proc (map1 car lists))  \n\
+    (helper (map1 cdr lists)))))  \n\
+ (helper rest))  \n\
  \n\
-(define (char>=? a b) (not (char<? a b)))  \n\
-(define (char>? a b) (char<? b a))  \n\
-(define (char<=? a b) (not (char<? b a)))  \n\
+(define (filter pred l)  \n\
+ (define (helper l result)  \n\
+  (cond ((null? l) result)  \n\
+   ((pred (car l))  \n\
+    (helper (cdr l) (cons (car l) result)))  \n\
+   (else  \n\
+    (helper (cdr l) result))))  \n\
+ (reverse! (helper l '())))  \n\
  \n\
-(define (string . chars) (list->string chars))  \n\
- \n\
-(define (string>=? a b) (not (string<? a b)))  \n\
-(define (string>? a b) (string<? b a))  \n\
-(define (string<=? a b) (not (string<? b a)))  \n\
- \n\
-(define (string-copy s) (substring s 0 (string-length v))) \n\
-(define (string-head s end) (subvector s 0 end))  \n\
-(define (string-tail s start) (subvector s start (string-length v)))  \n\
  \n\
 (define (alist->hash-table alist)  \n\
   (define h (make-hash-table))  \n\
@@ -296,10 +292,26 @@ static const char* lib_4_sequence_src_ =
                (hash-table-set! h (car pair) (cdr pair))) alist)  \n\
   h)  \n\
  \n\
-(define (vector-copy v) (subvector v 0 (vector-length v))) \n\
-(define (vector-head v end) (subvector v 0 end))  \n\
-(define (vector-tail v start) (subvector v start (vector-length v)))  \n\
+(define (_assoc key list eq?)  \n\
+ (if (null? list) #f  \n\
+  (let ((pair (car list)))  \n\
+    (if (and (pair? pair) (eq? key (car pair)))  \n\
+        pair  \n\
+        (_assoc key (cdr list) eq?)))))  \n\
  \n\
+(define (assoc key list) (_assoc key list equal?))  \n\
+(define (assq key list) (_assoc key list eq?))  \n\
+(define (assv key list) (_assoc key list eqv?))  \n\
+ \n\
+(define (_member x list eq?)  \n\
+ (cond ((null? list) #f)  \n\
+  ((eq? (car list) x) list)  \n\
+  (else (_member x (cdr list) eq?))))  \n\
+ \n\
+(define (member x list) (_member x list equal?))  \n\
+(define (memq x list) (_member x list eq?))  \n\
+(define (memv x list) (_member x list eqv?))  \n\
+  \n\
 (define (make-initialized-vector l fn)  \n\
   (let ((v (make-vector l '())))  \n\
     (do ((i 0 (+ i 1)))  \n\
@@ -321,8 +333,6 @@ static const char* lib_4_sequence_src_ =
               (helper low mid 0)  \n\
               (helper mid high 0)))))  \n\
   (helper 0 (vector-length v) 0))  \n\
- \n\
-(define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p)))  \n\
  \n\
 (define (quicksort-partition v lo hi op)  \n\
   (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot)  \n\
@@ -347,16 +357,7 @@ static const char* lib_4_sequence_src_ =
 (define (sort! v op)  \n\
   (quicksort-vector v 0 (- (vector-length v) 1) op) v)  \n\
  \n\
-(define (sort list cmp) (vector->list (sort! (list->vector list) cmp)))  \n\
- \n\
-(define-macro assert (lambda (body)  \n\
-                       `(if ,body '()  \n\
-                            (begin  \n\
-                              (display (quote ,body))  \n\
-                              (error \" assert failed\")))))  \n\
- \n\
-(define-macro ==>  (lambda (test expected)  \n\
-                `(assert (equal? ,test (quote ,expected))) ))";
+(define (sort list cmp) (vector->list (sort! (list->vector list) cmp)))";
 
 static const char* lib_5_streams_src_ = 
 "(define-macro delay (lambda (expr) \n\
@@ -416,6 +417,20 @@ static const char* lib_5_streams_src_ =
                       (stream-filter pred  \n\
                                      (stream-cdr stream))))  \n\
         (else (stream-filter pred (stream-cdr stream)))))";
+
+static const char* lib_6_other_src_ = 
+"(define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p)))  \n\
+  \n\
+(define (newline) (write-char #\\newline))  \n\
+ \n\
+(define-macro assert (lambda (body)  \n\
+                       `(if ,body '()  \n\
+                            (begin  \n\
+                              (display (quote ,body))  \n\
+                              (error \" assert failed\")))))  \n\
+ \n\
+(define-macro ==>  (lambda (test expected)  \n\
+                `(assert (equal? ,test (quote ,expected))) ))";
 
 #include <stdlib.h>
 #include <ctype.h>
@@ -627,6 +642,17 @@ static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
     return l;
 }
 
+static Lisp sch_append_reverse(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(2, 2);
+
+    Lisp l = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp tail = lisp_car(args);
+
+    return lisp_list_reverse2(l, tail);
+}
+
 static Lisp sch_list_ref(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
@@ -642,11 +668,6 @@ static Lisp sch_length(Lisp args, LispError* e, LispContext ctx)
     return lisp_make_int(lisp_list_length(lisp_car(args)));
 }
 
-static Lisp sch_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_list_reverse(lisp_car(args));
-}
 static Lisp sch_list_advance(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(2, 2);
@@ -1786,8 +1807,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "LIST-COPY", sch_list_copy },
     { "LENGTH", sch_length },
     { "APPEND", sch_append },
+    { "APPEND-REVERSE!", sch_append_reverse },
     { "LIST-REF", sch_list_ref },
-    { "REVERSE!", sch_reverse_inplace },
     { "NTHCDR", sch_list_advance },
 
     // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
@@ -1926,12 +1947,15 @@ void lisp_lib_load(LispContext ctx)
     lisp_env_set_global(user_env, ctx);
 
     const char* to_load[] = {
-        lib_0_forms_src_, lib_1_forms_src_,
-        lib_2_lists_src_, lib_3_math_src_,
-        lib_4_sequence_src_, lib_5_streams_src_
+        lib_0_sequences_src_, lib_1_forms_src_,
+        lib_2_forms_src_, lib_3_math_src_,
+        lib_4_sequences_src_, lib_5_streams_src_,
+        lib_6_other_src_, 
     };
 
-    for (int i = 0; i < 6; ++i)
+    int n = sizeof(to_load) / sizeof(const char*);
+
+    for (int i = 0; i < n; ++i)
     {
         LispError error;
         Lisp src = lisp_read(to_load[i], &error, ctx);

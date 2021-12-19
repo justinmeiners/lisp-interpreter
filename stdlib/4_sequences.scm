@@ -1,21 +1,29 @@
+(define (map proc . rest) 
+ (define (helper lists result) 
+  (if (some? null? lists) 
+   (reverse! result) 
+   (helper (map1 cdr lists) 
+    (cons (apply proc (map1 car lists)) result)))) 
+ (helper rest '())) 
 
-(define (vector . args) (list->vector args))
+(define (for-each proc . rest) 
+ (define (helper lists) 
+  (if (some? null? lists) 
+   '() 
+   (begin 
+    (apply proc (map1 car lists)) 
+    (helper (map1 cdr lists))))) 
+ (helper rest)) 
 
-(define (newline) (write-char #\newline)) 
+(define (filter pred l) 
+ (define (helper l result) 
+  (cond ((null? l) result) 
+   ((pred (car l)) 
+    (helper (cdr l) (cons (car l) result))) 
+   (else 
+    (helper (cdr l) result)))) 
+ (reverse! (helper l '()))) 
 
-(define (char>=? a b) (not (char<? a b))) 
-(define (char>? a b) (char<? b a)) 
-(define (char<=? a b) (not (char<? b a))) 
-
-(define (string . chars) (list->string chars)) 
-
-(define (string>=? a b) (not (string<? a b))) 
-(define (string>? a b) (string<? b a)) 
-(define (string<=? a b) (not (string<? b a))) 
-
-(define (string-copy s) (substring s 0 (string-length v)))
-(define (string-head s end) (subvector s 0 end)) 
-(define (string-tail s start) (subvector s start (string-length v))) 
 
 (define (alist->hash-table alist) 
   (define h (make-hash-table)) 
@@ -23,10 +31,26 @@
                (hash-table-set! h (car pair) (cdr pair))) alist) 
   h) 
 
-(define (vector-copy v) (subvector v 0 (vector-length v)))
-(define (vector-head v end) (subvector v 0 end)) 
-(define (vector-tail v start) (subvector v start (vector-length v))) 
+(define (_assoc key list eq?) 
+ (if (null? list) #f 
+  (let ((pair (car list))) 
+    (if (and (pair? pair) (eq? key (car pair))) 
+        pair 
+        (_assoc key (cdr list) eq?))))) 
 
+(define (assoc key list) (_assoc key list equal?)) 
+(define (assq key list) (_assoc key list eq?)) 
+(define (assv key list) (_assoc key list eqv?)) 
+
+(define (_member x list eq?) 
+ (cond ((null? list) #f) 
+  ((eq? (car list) x) list) 
+  (else (_member x (cdr list) eq?)))) 
+
+(define (member x list) (_member x list equal?)) 
+(define (memq x list) (_member x list eq?)) 
+(define (memv x list) (_member x list eqv?)) 
+ 
 (define (make-initialized-vector l fn) 
   (let ((v (make-vector l '()))) 
     (do ((i 0 (+ i 1))) 
@@ -48,8 +72,6 @@
               (helper low mid 0) 
               (helper mid high 0))))) 
   (helper 0 (vector-length v) 0)) 
-
-(define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) 
 
 (define (quicksort-partition v lo hi op) 
   (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot) 
@@ -76,11 +98,5 @@
 
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp))) 
 
-(define-macro assert (lambda (body) 
-                       `(if ,body '() 
-                            (begin 
-                              (display (quote ,body)) 
-                              (error " assert failed"))))) 
 
-(define-macro ==>  (lambda (test expected) 
-                `(assert (equal? ,test (quote ,expected))) )) 
+
