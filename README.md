@@ -126,7 +126,7 @@ Lisp integer_range(Lisp args, LispError* e, LispContext ctx)
     }
 
     LispInt n = end - start;
-    Lisp numbers = lisp_make_vector(n, ctx);
+    Lisp numbers = lisp_make_vector_uninitialized(n, ctx);
 
     for (LispInt i = 0; i < n; ++i)
         lisp_vector_set(numbers, i, lisp_make_int(start + i));

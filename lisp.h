@@ -661,10 +661,7 @@ Lisp lisp_make_int(LispInt n)
     return l;
 }
 
-LispInt lisp_int(Lisp x)
-{
-    return x.val.int_val;
-}
+LispInt lisp_int(Lisp x) { return x.val.int_val; }
 
 Lisp lisp_parse_int(const char* string)
 {
@@ -696,10 +693,7 @@ Lisp lisp_parse_real(const char* string)
     return lisp_make_real(strtod(string, NULL));
 }
 
-LispReal lisp_real(Lisp x)
-{
-    return x.val.real_val;
-}
+LispReal lisp_real(Lisp x) { return x.val.real_val; }
 
 LispReal lisp_number_to_real(Lisp x)
 {
@@ -886,7 +880,6 @@ Lisp lisp_make_vector2(Lisp *x, int n, LispContext ctx)
         lisp_vector_set(v, i, x[i]);
     return v;
 }
-
 
 int lisp_vector_length(Lisp v) { return vector_len_(vector_get_(v)); }
 
@@ -4820,6 +4813,12 @@ static const char* lib_code_lang0 = "\
                           bindings) body)) \
       (map1 (lambda (entry) '()) bindings)))) \
 \
+(define (_cond-check-clauses clauses) \
+  (for-each1 (lambda (clause) \
+    (if (not (pair? clause)) (syntax error \"Invalid cond clause\")) \
+    (if (null? (cdr clause)) (syntax-error \"cond clause missing expression\"))) \
+   clauses)) \
+\
 (define (_cond-helper clauses) \
  (if (null? clauses) '() \
   (if (eq? (car (car clauses)) 'ELSE) \
@@ -4828,14 +4827,11 @@ static const char* lib_code_lang0 = "\
     (car (car clauses)) \
     (cons 'BEGIN (cdr (car clauses))) \
     (_cond-helper (cdr clauses)))))) \
-(define-macro cond \
- (lambda clauses \
+\
+(define-macro cond (lambda clauses \
   (begin \
-   (for-each1 (lambda (clause) \
-              (if (null? (cdr clause)) \
-               (syntax-error \"(cond (pred expression...)...)\")) \
-             ) clauses) \
-   (_cond-helper clauses)))) \
+    (_cond-check-clauses clauses) \
+    (_cond-helper clauses)))) \
 ";
 
 static const char* lib_code_lang1 = " \
