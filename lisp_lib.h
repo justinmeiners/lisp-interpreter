@@ -143,6 +143,7 @@ static const char* lib_1_forms_src_ =
 ;          .... \n\
 ;      (if <predN> <exprN> <expr-1>)) ... ) \n\
  \n\
+ \n\
 (define (_cond-check-clauses clauses)  \n\
   (for-each1 (lambda (clause)  \n\
                (if (not (pair? clause)) (syntax error \"Invalid cond clause\"))  \n\
@@ -197,6 +198,8 @@ static const char* lib_2_forms_src_ =
               (lambda (v l)  \n\
                 `(begin (set! ,l (cons ,v ,l)) ,l)))  \n\
  \n\
+ \n\
+; (DO ((<var0> <init0> <step0>) ...)  (<test> <result>) <body>) \n\
 (define-macro do  \n\
               (lambda (vars loop-check . loops)  \n\
                 (let ( (names '()) (inits '()) (steps '()) (f (gensym)) )  \n\

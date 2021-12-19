@@ -31,6 +31,8 @@
               (lambda (v l) 
                 `(begin (set! ,l (cons ,v ,l)) ,l))) 
 
+
+; (DO ((<var0> <init0> <step0>) ...)  (<test> <result>) <body>)
 (define-macro do 
               (lambda (vars loop-check . loops) 
                 (let ( (names '()) (inits '()) (steps '()) (f (gensym)) ) 

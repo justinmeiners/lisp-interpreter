@@ -54,6 +54,7 @@
 ;          ....
 ;      (if <predN> <exprN> <expr-1>)) ... )
 
+
 (define (_cond-check-clauses clauses) 
   (for-each1 (lambda (clause) 
                (if (not (pair? clause)) (syntax error "Invalid cond clause")) 
