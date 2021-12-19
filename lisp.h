@@ -186,11 +186,11 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 // Numbers
 Lisp lisp_make_int(LispInt n);
 LispInt lisp_int(Lisp x);
-Lisp lisp_parse_int(const char* string);
+Lisp lisp_parse_int(const char *string);
 
 Lisp lisp_make_real(LispReal x);
 LispReal lisp_real(Lisp x);
-Lisp lisp_parse_real(const char* string);
+Lisp lisp_parse_real(const char *string);
 
 LispReal lisp_number_to_real(Lisp x);
 LispInt lisp_number_to_int(Lisp x);
@@ -202,23 +202,32 @@ int lisp_bool(Lisp x);
 #define lisp_false() (lisp_make_bool(0))
 int lisp_is_true(Lisp x);
 
-// Strings
-Lisp lisp_make_string(const char* c_string, LispContext ctx);
-Lisp lisp_make_string2(int n, int c, LispContext ctx);
-char* lisp_string(Lisp s);
-int lisp_string_ref(Lisp s, int n);
-void lisp_string_set(Lisp s, int n, int c);
-Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx);
-
+// Characters
 Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
 
-// Symbols
-// interned
+// Null terminated byte (ASCII) strings
+Lisp lisp_make_string(int n, LispContext ctx);
+Lisp lisp_make_string2(const char *c_string, LispContext ctx);
+Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx);
+
+void lisp_string_fill(Lisp s, Lisp character); // inplace.
+int lisp_string_ref(Lisp s, int i);
+void lisp_string_set(Lisp s, int i, int c);
+int lisp_string_length(Lisp s);
+const char *lisp_string(Lisp s);
+
+// Low level string storage
+Lisp lisp_make_buffer(int cap, LispContext ctx);
+Lisp lisp_buffer_copy(Lisp s, LispContext ctx);
+void lisp_buffer_fill(Lisp s, int start, int end, int x);
+char *lisp_buffer(Lisp s);
+int lisp_buffer_capacity(Lisp s);
+
+// Symbols (interned strings)
 Lisp lisp_make_symbol(const char* string, LispContext ctx);
-// uninterned
-Lisp lisp_gen_symbol(LispContext ctx);
-const char* lisp_symbol_string(Lisp x);
+Lisp lisp_gen_symbol(LispContext ctx); // uninterned
+const char *lisp_symbol_string(Lisp x);
 
 // -----------------------------------------
 // DATA STRUCTURES
@@ -305,6 +314,10 @@ int lisp_promise_forced(Lisp p);
 Lisp lisp_promise_val(Lisp p);
 Lisp lisp_promise_proc(Lisp p);
 void lisp_promise_store(Lisp p, Lisp x);
+
+// Continuations
+
+
 
 #ifdef __cplusplus
 }
@@ -416,6 +429,11 @@ typedef struct Block
             uint8_t body_type;
             uint8_t args_type;
         } lambda;
+
+        struct
+        {
+            int capacity;
+        } string;
     } d;
 
     // 32
@@ -1111,107 +1129,75 @@ void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx)
     }
 }
 
-typedef struct
+static String* string_get_(Lisp s)
 {
-    Block block;
-    LispVal val_or_proc;
-} Promise;
-
-Lisp lisp_make_promise(Lisp proc, LispContext ctx)
-{
-    assert(lisp_type(proc) == LISP_LAMBDA || lisp_type(proc) == LISP_FUNC);
-    Promise* promise = gc_alloc(sizeof(Promise), LISP_PROMISE, ctx);
-    promise->block.d.promise.cached = 0;
-    promise->block.d.promise.type = lisp_type(proc);
-    promise->val_or_proc = proc.val;
-
-    LispVal val;
-    val.ptr_val = promise;
-    return (Lisp) { val, LISP_PROMISE };
+    assert(lisp_type(s) == LISP_STRING);
+    return s.val.ptr_val;
 }
 
-static Promise* promise_get_(Lisp p)
+Lisp lisp_make_buffer(int cap, LispContext ctx)
 {
-    assert(p.type == LISP_PROMISE);
-    return p.val.ptr_val;
-}
-
-void lisp_promise_store(Lisp p, Lisp x)
-{
-    Promise* promise = promise_get_(p); 
-    assert(!promise->block.d.promise.cached);
-    promise->block.d.promise.cached = 1;
-    promise->block.d.promise.type = lisp_type(x);
-    promise->val_or_proc = x.val;
-}
-
-int lisp_promise_forced(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    return (int)promise->block.d.promise.cached;
-}
-
-static Lisp promise_body_or_val_(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    LispType type = (LispType)promise->block.d.promise.type;
-    return (Lisp) { promise->val_or_proc, type }; 
-}
-
-Lisp lisp_promise_proc(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    assert(!promise->block.d.promise.cached);
-    return promise_body_or_val_(p);
-}
-
-Lisp lisp_promise_val(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    assert(promise->block.d.promise.cached);
-    return promise_body_or_val_(p);
-}
-
-Lisp lisp_make_string2(int n, int c, LispContext ctx)
-{
-    assert(n >= 0);
-    String* string = gc_alloc(sizeof(String) + n + 1, LISP_STRING, ctx);
-    string->string[n] = '\0';
-    memset(string->string, c, n);
+    assert(cap >= 0);
+    String* string = gc_alloc(sizeof(String) + cap, LISP_STRING, ctx);
+    string->block.d.string.capacity = cap;
     
     LispVal val;
     val.ptr_val = string;
     return (Lisp){ val, string->block.type };
 }
 
-static String* get_string_(Lisp s)
+Lisp lisp_buffer_copy(Lisp s, LispContext ctx)
 {
-    assert(s.type == LISP_STRING);
-    return s.val.ptr_val;
+    int cap = lisp_buffer_capacity(s);
+    Lisp b = lisp_make_buffer(cap, ctx);
+    memcpy(lisp_buffer(b), lisp_buffer(s), cap);
+    return b;
 }
 
-Lisp lisp_make_string(const char* c_string, LispContext ctx)
+int lisp_buffer_capacity(Lisp s)
+{
+    return string_get_(s)->block.d.string.capacity;
+}
+
+void lisp_buffer_fill(Lisp s, int start, int end, int x)
+{
+    int n = lisp_buffer_capacity(s);
+    if (start > n) start = n;
+    if (end > n) end = n;
+    memset(lisp_buffer(s) + start, x, end - start);
+}
+
+char *lisp_buffer(Lisp s) { return string_get_(s)->string; }
+const char *lisp_string(Lisp s) { return lisp_buffer(s); }
+
+Lisp lisp_make_string(int n, LispContext ctx)
+{
+    Lisp s = lisp_make_buffer(n + 1, ctx);
+    lisp_buffer(s)[n] = '\0';
+    return s;
+}
+
+Lisp lisp_make_string2(const char* c_string, LispContext ctx)
 {
     size_t length = strlen(c_string);
-    Lisp x = lisp_make_string2(length, '\0', ctx);
-    String* string = get_string_(x); 
-    memcpy(string->string, c_string, length);
-    return x; 
+    Lisp s = lisp_make_string(length, ctx);
+    memcpy(lisp_buffer(s), c_string, length);
+    return s; 
 }
 
-char* lisp_string(Lisp s)
-{
-    return get_string_(s)->string;
+int lisp_string_length(Lisp s) { return strlen(lisp_string(s)); }
+
+int lisp_string_ref(Lisp s, int i) {
+    const String* str = string_get_(s);
+    assert(i >= 0 && i < lisp_buffer_capacity(s));
+    return (int)str->string[i]; 
 }
 
-int lisp_string_ref(Lisp s, int n)
+void lisp_string_set(Lisp s, int i, int c)
 {
-    return (int)get_string_(s)->string[n];
-}
-
-void lisp_string_set(Lisp s, int n, int c)
-{
-    get_string_(s)->string[n] = (char)c;
+    assert(c >= 0 && c <= 127);
+    assert(i >= 0 && i < lisp_buffer_capacity(s));
+    string_get_(s)->string[i] = (char)c;
 }
 
 Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx)
@@ -1219,21 +1205,21 @@ Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx)
     assert(start <= end);
 
     int count = start;
-    char *first = lisp_string(s);
+    const char *first = lisp_string(s);
     while (*first && count) {
         --count;
         ++first;
     }
 
     count = (end - start);
-    char *last = first;
+    const char *last = first;
     while (*last && count)
     {
         --count;
         ++last;
     }
-    Lisp result = lisp_make_string2(last - first, '\0', ctx);
-    memcpy(lisp_string(result), first, last - first);
+    Lisp result = lisp_make_string(last - first, ctx);
+    memcpy(lisp_buffer(result), first, last - first);
     return result;
 }
 
@@ -1397,6 +1383,68 @@ Lisp lisp_lambda_env(Lisp l)
     const Lambda* lambda = lambda_get_(l);
     return val_to_list_(lambda->env);
 }
+
+typedef struct
+{
+    Block block;
+    LispVal val_or_proc;
+} Promise;
+
+Lisp lisp_make_promise(Lisp proc, LispContext ctx)
+{
+    assert(lisp_type(proc) == LISP_LAMBDA || lisp_type(proc) == LISP_FUNC);
+    Promise* promise = gc_alloc(sizeof(Promise), LISP_PROMISE, ctx);
+    promise->block.d.promise.cached = 0;
+    promise->block.d.promise.type = lisp_type(proc);
+    promise->val_or_proc = proc.val;
+
+    LispVal val;
+    val.ptr_val = promise;
+    return (Lisp) { val, LISP_PROMISE };
+}
+
+static Promise* promise_get_(Lisp p)
+{
+    assert(p.type == LISP_PROMISE);
+    return p.val.ptr_val;
+}
+
+void lisp_promise_store(Lisp p, Lisp x)
+{
+    Promise* promise = promise_get_(p); 
+    assert(!promise->block.d.promise.cached);
+    promise->block.d.promise.cached = 1;
+    promise->block.d.promise.type = lisp_type(x);
+    promise->val_or_proc = x.val;
+}
+
+int lisp_promise_forced(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    return (int)promise->block.d.promise.cached;
+}
+
+static Lisp promise_body_or_val_(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    LispType type = (LispType)promise->block.d.promise.type;
+    return (Lisp) { promise->val_or_proc, type }; 
+}
+
+Lisp lisp_promise_proc(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    assert(!promise->block.d.promise.cached);
+    return promise_body_or_val_(p);
+}
+
+Lisp lisp_promise_val(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    assert(promise->block.d.promise.cached);
+    return promise_body_or_val_(p);
+}
+
 
 typedef enum
 {
@@ -1868,8 +1916,8 @@ static Lisp parse_string_(Lexer* lex, LispContext ctx)
 { 
     // -2 length to skip quotes
     size_t size = lex->scan_length - 2;
-    Lisp l = lisp_make_string2(size, '\0', ctx);
-    char* str = lisp_string(l);
+    Lisp l = lisp_make_buffer(size + 1, ctx);
+    char* str = lisp_buffer(l);
     lexer_copy_token(lex, 1, size, str);
     char* out = string_unescape_(str, str + size, str);
     *out = '\0';

@@ -433,7 +433,7 @@ static Lisp sch_symbol_to_string(Lisp args, LispError* e, LispContext ctx)
     }
     else
     {
-        return lisp_make_string(lisp_symbol_string(val), ctx);
+        return lisp_make_string2(lisp_symbol_string(val), ctx);
     }
 }
 
@@ -489,14 +489,20 @@ static Lisp sch_string_is_null(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp n = lisp_car(args);
+    Lisp length = lisp_car(args);
+
+    if (lisp_type(length) != LISP_INT)
+    {
+        *e = LISP_ERROR_ARG_TYPE;
+        return lisp_make_null();
+    }
+
+    Lisp s = lisp_make_string(lisp_int(length), ctx);
     args = lisp_cdr(args);
 
-    int c = '_';
-    if (lisp_is_pair(args)) {
-        c = lisp_char(lisp_car(args));
-    }
-    return lisp_make_string2(lisp_int(n), c, ctx);
+    if (!lisp_is_null(args))
+        lisp_buffer_fill(s, 0, lisp_int(length), lisp_char(lisp_car(args)));
+    return s;
 }
 
 static Lisp sch_string_less(Lisp args, LispError* e, LispContext ctx)
@@ -523,8 +529,8 @@ static Lisp sch_substring(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_string_length(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    Lisp x = lisp_car(args);
-    return lisp_make_int((LispInt)strlen(lisp_string(x)));
+    int n = lisp_string_length(lisp_car(args));
+    return lisp_make_int(n);
 }
 
 static Lisp sch_string_ref(Lisp args, LispError* e, LispContext ctx)
@@ -561,10 +567,9 @@ static Lisp sch_string_set(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_string_upcase(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    Lisp s = lisp_car(args);
-    Lisp r = lisp_make_string(lisp_string(s), ctx);
+    Lisp r = lisp_buffer_copy(lisp_car(args), ctx);
     
-    char* c = lisp_string(r);
+    char* c = lisp_buffer(r);
     while (*c) { *c = toupper(*c); ++c; }
     return r;
 }
@@ -572,10 +577,9 @@ static Lisp sch_string_upcase(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_string_downcase(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    Lisp s = lisp_car(args);
-    Lisp r = lisp_make_string(lisp_string(s), ctx);
+    Lisp r = lisp_buffer_copy(lisp_car(args), ctx);
     
-    char* c = lisp_string(r);
+    char* c = lisp_buffer(r);
     while (*c) { *c = tolower(*c); ++c; }
     return r;
 }
@@ -591,8 +595,8 @@ static Lisp sch_string_append(Lisp args, LispError* e, LispContext ctx)
         it = lisp_cdr(it);
     }
 
-    Lisp result = lisp_make_string2(count + 1, '\0', ctx);
-    char* c = lisp_string(result);
+    Lisp result = lisp_make_string(count, ctx);
+    char* c = lisp_buffer(result);
 
     it = args;
     while (lisp_is_pair(it))
@@ -608,7 +612,7 @@ static Lisp sch_string_append(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_string_to_list(Lisp args, LispError* e, LispContext ctx)
 {
-    char* c = lisp_string(lisp_car(args));
+    const char* c = lisp_string(lisp_car(args));
     Lisp tail = lisp_make_null();
     while (*c)
     {
@@ -621,8 +625,8 @@ static Lisp sch_string_to_list(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp l = lisp_car(args);
-    Lisp result = lisp_make_string2(lisp_list_length(l), '\0', ctx);
-    char* s = lisp_string(result);
+    Lisp result = lisp_make_string(lisp_list_length(l), ctx);
+    char* s = lisp_buffer(result);
     
     while (lisp_is_pair(l))
     {
@@ -666,7 +670,7 @@ static Lisp sch_number_to_string(Lisp args, LispError* e, LispContext ctx)
             return lisp_make_null();
         }
     }
-    return lisp_make_string(scratch, ctx);
+    return lisp_make_string2(scratch, ctx);
 }
 
 static Lisp sch_char_less(Lisp args, LispError* e, LispContext ctx)
@@ -945,12 +949,10 @@ static Lisp sch_make_vector(Lisp args, LispError* e, LispContext ctx)
     }
 
     Lisp v = lisp_make_vector(lisp_int(length), ctx);
-
     args = lisp_cdr(args);
 
     if (!lisp_is_null(args))
         lisp_vector_fill(v, lisp_car(args));
-
     return v;
 }
 
@@ -1824,6 +1826,8 @@ static const char* lib_code_sequence = " \
 (define (char>=? a b) (not (char<? a b))) \
 (define (char>? a b) (char<? b a)) \
 (define (char<=? a b) (not (char<? b a))) \
+\
+(define (string . chars) (list->string chars)) \
 \
 (define (string>=? a b) (not (string<? a b))) \
 (define (string>? a b) (string<? b a)) \
