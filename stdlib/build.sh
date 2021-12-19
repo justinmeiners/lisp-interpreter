@@ -2,7 +2,7 @@
 
 SRC=*.scm
 
-cat lisp_lib.h
+cat lib.h
 
 echo "#ifdef LISP_IMPLEMENTATION"
 
@@ -14,6 +14,6 @@ do
     echo ""
 done
 
-cat lisp_lib.c
+cat lib.c
 
 echo "#endif"

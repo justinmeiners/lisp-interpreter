@@ -19,8 +19,8 @@ printer: printer.c lisp.h
 sample: sample.c lisp.h lisp_lib.h
 	${CC} sample.c -o $@ ${CFLAGS} ${LDLIBS}
 
-lisp_lib.h: lib/lisp_lib.h lib/lisp_lib.c
-	cd lib; ./build.sh > ../$@;
+lisp_lib.h: stdlib/lib.h stdlib/lib.c
+	cd stdlib; ./build.sh > ../$@;
 
 
 .PHONY: all clean
