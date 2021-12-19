@@ -126,12 +126,11 @@ typedef struct
 typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 // -----------------------------------------
-// SETUP
+// SETUP AND CONTEXT
 // -----------------------------------------
 
 LispContext lisp_init(void);
 void lisp_shutdown(LispContext ctx);
-
 
 // garbage collection. 
 // this will free all objects which are not reachable from root_to_save or the global env
@@ -141,6 +140,15 @@ const char* lisp_error_string(LispError error);
 
 void lisp_port_set_in(FILE* file, LispContext ctx);
 void lisp_port_set_err(FILE* file, LispContext ctx);
+
+Lisp lisp_env_global(LispContext ctx);
+void lisp_env_set_global(Lisp env, LispContext ctx);
+
+// Macros
+Lisp lisp_macro_table(LispContext ctx);
+// the macro table keeps strong references to its members. 
+// So if you want to delete them you need to make a new table.
+void lisp_macro_table_set(Lisp table, LispContext ctx);
 
 // -----------------------------------------
 // REPL
@@ -294,19 +302,10 @@ typedef struct
 void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx);
 
 // Evaluation environments
-Lisp lisp_env_global(LispContext ctx);
-void lisp_env_set_global(Lisp env, LispContext ctx);
-
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
 Lisp lisp_env_lookup(Lisp l, Lisp key, int* present);
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);
 int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
-
-// Macros
-Lisp lisp_macro_table(LispContext ctx);
-// the macro table keeps strong references to its members. 
-// So if you want to delete them you need to make a new table.
-void lisp_macro_table_set(Lisp table, LispContext ctx);
 
 // Promises
 Lisp lisp_make_promise(Lisp proc, LispContext ctx);
@@ -316,7 +315,6 @@ Lisp lisp_promise_proc(Lisp p);
 void lisp_promise_store(Lisp p, Lisp x);
 
 // Continuations
-
 
 
 #ifdef __cplusplus
