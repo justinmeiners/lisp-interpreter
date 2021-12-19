@@ -4,6 +4,7 @@
 
 #define LISP_IMPLEMENTATION
 #include "lisp.h"
+#include "lisp_lib.h"
 
 Lisp integer_range(Lisp args, LispError* e, LispContext ctx)
 {
@@ -20,7 +21,7 @@ Lisp integer_range(Lisp args, LispError* e, LispContext ctx)
     }
 
     LispInt n = end - start;
-    Lisp numbers = lisp_make_vector_uninitialized(n, ctx);
+    Lisp numbers = lisp_make_vector(n, ctx);
 
     for (LispInt i = 0; i < n; ++i)
         lisp_vector_set(numbers, i, lisp_make_int(start + i));
@@ -31,7 +32,7 @@ Lisp integer_range(Lisp args, LispError* e, LispContext ctx)
 int main(int argc, const char* argv[])
 {
     LispContext ctx = lisp_init();
-    lisp_load_lib(ctx);
+    lisp_lib_load(ctx);
 
     // wrap in Lisp object
     Lisp func = lisp_make_func(integer_range);

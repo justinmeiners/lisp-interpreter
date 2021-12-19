@@ -8,6 +8,7 @@
 //#define LISP_DEBUG
 #define LISP_IMPLEMENTATION
 #include "lisp.h"
+#include "lisp_lib.h"
 
 static Lisp sch_load(Lisp args, LispError* e, LispContext ctx)
 {
@@ -37,7 +38,7 @@ int main(int argc, const char* argv[])
     }
     
     LispContext ctx = lisp_init();
-    lisp_load_lib(ctx);
+    lisp_lib_load(ctx);
     lisp_env_define(
         lisp_cdr(lisp_env_global(ctx)),
         lisp_make_symbol("LOAD", ctx), 
