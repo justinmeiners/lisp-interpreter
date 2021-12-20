@@ -20,17 +20,16 @@
 
 (define-macro case (lambda (key . clauses) 
                      (let ((expr (gensym))) 
-                       `(let ((,expr ,key)) 
+                       `(LET ((,expr ,key)) 
                           ,(cons 'COND (map1 (lambda (entry) 
                                                (cons (if (pair? (car entry)) 
-                                                         `(memv ,expr (quote ,(car entry))) 
+                                                         `(MEMV ,expr (quote ,(car entry))) 
                                                          (car entry)) 
                                                      (cdr entry))) clauses)))))) 
 
 (define-macro push 
               (lambda (v l) 
                 `(begin (set! ,l (cons ,v ,l)) ,l))) 
-
 
 ; (DO ((<var0> <init0> <step0>) ...)  (<test> <result>) <body>)
 (define-macro do 
@@ -42,9 +41,9 @@
                                (push (car var) inits) 
                                (set! var (cdr var)) 
                                (push (car var) steps)) vars) 
-                  `((lambda () 
-                      (define ,f (lambda ,names 
-                                   (if ,(car loop-check) 
+                  `((LAMBDA () 
+                      (DEFINE ,f (LAMBDA ,names 
+                                   (IF ,(car loop-check) 
                                        ,(if (pair? (cdr loop-check)) (car (cdr loop-check)) '()) 
                                        ,(cons 'BEGIN (append loops (list (cons f steps)))) ))) 
                       ,(cons f inits) 
@@ -53,10 +52,24 @@
 (define-macro dotimes 
               (lambda (form body) 
                 (apply (lambda (i n . result) 
-                         `(do ((,i 0 (+ ,i 1))) 
+                         `(DO ((,i 0 (+ ,i 1))) 
                             ((>= ,i ,n) ,(if (null? result) result (car result)) ) 
                             ,body) 
                          ) form))) 
 
+(define-macro swap!
+              (lambda (x y)
+                (let ((temp (gensym)))
+                  `(LET ((,temp ,x))
+                        (SET! ,temp ,x)
+                        (SET! ,x ,y)
+                        (SET! ,y ,temp)))))
 
+(define-macro inc! ; CL incf
+              (lambda (x)
+                `(SET! ,x (+ ,x 1))))
+
+(define-macro dec! ; CL decf
+              (lambda (x)
+                `(SET! ,x (- ,x 1))))
 

@@ -187,17 +187,16 @@ static const char* lib_2_forms_src_ =
  \n\
 (define-macro case (lambda (key . clauses)  \n\
                      (let ((expr (gensym)))  \n\
-                       `(let ((,expr ,key))  \n\
+                       `(LET ((,expr ,key))  \n\
                           ,(cons 'COND (map1 (lambda (entry)  \n\
                                                (cons (if (pair? (car entry))  \n\
-                                                         `(memv ,expr (quote ,(car entry)))  \n\
+                                                         `(MEMV ,expr (quote ,(car entry)))  \n\
                                                          (car entry))  \n\
                                                      (cdr entry))) clauses))))))  \n\
  \n\
 (define-macro push  \n\
               (lambda (v l)  \n\
                 `(begin (set! ,l (cons ,v ,l)) ,l)))  \n\
- \n\
  \n\
 ; (DO ((<var0> <init0> <step0>) ...)  (<test> <result>) <body>) \n\
 (define-macro do  \n\
@@ -209,9 +208,9 @@ static const char* lib_2_forms_src_ =
                                (push (car var) inits)  \n\
                                (set! var (cdr var))  \n\
                                (push (car var) steps)) vars)  \n\
-                  `((lambda ()  \n\
-                      (define ,f (lambda ,names  \n\
-                                   (if ,(car loop-check)  \n\
+                  `((LAMBDA ()  \n\
+                      (DEFINE ,f (LAMBDA ,names  \n\
+                                   (IF ,(car loop-check)  \n\
                                        ,(if (pair? (cdr loop-check)) (car (cdr loop-check)) '())  \n\
                                        ,(cons 'BEGIN (append loops (list (cons f steps)))) )))  \n\
                       ,(cons f inits)  \n\
@@ -220,10 +219,26 @@ static const char* lib_2_forms_src_ =
 (define-macro dotimes  \n\
               (lambda (form body)  \n\
                 (apply (lambda (i n . result)  \n\
-                         `(do ((,i 0 (+ ,i 1)))  \n\
+                         `(DO ((,i 0 (+ ,i 1)))  \n\
                             ((>= ,i ,n) ,(if (null? result) result (car result)) )  \n\
                             ,body)  \n\
-                         ) form)))";
+                         ) form)))  \n\
+ \n\
+(define-macro swap! \n\
+              (lambda (x y) \n\
+                (let ((temp (gensym))) \n\
+                  `(LET ((,temp ,x)) \n\
+                        (SET! ,temp ,x) \n\
+                        (SET! ,x ,y) \n\
+                        (SET! ,y ,temp))))) \n\
+ \n\
+(define-macro inc! \n\
+              (lambda (x) \n\
+                `(SET! ,x (+ ,x 1)))) \n\
+ \n\
+(define-macro dec! \n\
+              (lambda (x) \n\
+                `(SET! ,x (- ,x 1))))";
 
 static const char* lib_3_math_src_ = 
 "(define (number? x) (real? x))  \n\
