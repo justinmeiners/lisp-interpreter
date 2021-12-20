@@ -5,6 +5,7 @@
  Do this:
      #define LISP_IMPLEMENTATION
      #include "lisp.h"
+     #include "lisp_lib.h"
      
  in at least one C or C++ file in order to generate the implementation.
 
@@ -28,26 +29,13 @@
  OPTIONS
  ----------------------
 
- These macros can be defined before inclusion to change options.
+ These macros can be defined before include to configure options.
 
- Build in debug mode with extra checks and logs
+ // Build in debug mode with extra checks and logs:
+ #define LISP_DEBUG
 
-     #define LISP_DEBUG
-
- Do not include the scheme standard library.
- This reduces the amount of code if you want to heavily customize the language.
-  
-     #define LISP_NO_LIB
-
- Do not include any code related to eval including the scheme library.
- This reduces the amount of code if you just care about reading s-expressions.
-  
-     #define LISP_NO_EVAL
-
- Change how much data is read from a file at a time.
-
-    #define LISP_FILE_CHUNK_SIZE 8192
-
+ // Change how much data is read from a file at a time.
+ #define LISP_FILE_CHUNK_SIZE 8192
  */
 
 
@@ -102,16 +90,12 @@ typedef enum
     LISP_ERROR_NONE = 0,
     LISP_ERROR_FILE_OPEN,
     LISP_ERROR_READ_SYNTAX,
-    
     LISP_ERROR_FORM_SYNTAX,
-    LISP_ERROR_BAD_DEFINE,
     LISP_ERROR_BAD_LAMBDA,
-
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_UNKNOWN_EVAL,
     LISP_ERROR_OUT_OF_BOUNDS,
-
     LISP_ERROR_ARG_TYPE,
     LISP_ERROR_TOO_MANY_ARGS,
     LISP_ERROR_TOO_FEW_ARGS,
@@ -178,7 +162,7 @@ void lisp_displayf(FILE* file, Lisp l);
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
 int lisp_equal(Lisp a, Lisp b);
 int lisp_equal_r(Lisp a, Lisp b);
-Lisp lisp_make_null(void);
+#define lisp_null() ((Lisp) { .val = { .ptr_val = NULL }, .type = LISP_NULL })
 
 #define lisp_is_null(x) ((x).type == LISP_NULL)
 
@@ -213,6 +197,7 @@ int lisp_is_true(Lisp x);
 // Characters
 Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
+Lisp lisp_eof(void);
 
 // Null terminated byte (ASCII) strings
 Lisp lisp_make_string(int n, LispContext ctx);
@@ -584,13 +569,6 @@ static Lisp val_to_list_(LispVal x)
     return (Lisp) { x, x.ptr_val == NULL ? LISP_NULL : LISP_PAIR };
 }
 
-Lisp lisp_make_null()
-{
-    LispVal val;
-    val.ptr_val = NULL;
-    return (Lisp) { val, LISP_NULL };
-}
-
 int lisp_equal(Lisp a, Lisp b)
 {
     switch (a.type)
@@ -752,7 +730,7 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx)
 
 Lisp lisp_list_copy(Lisp l, LispContext ctx)
 {
-    Lisp tail = lisp_make_null();
+    Lisp tail = lisp_null();
     while (lisp_is_pair(l))
     {
         tail = lisp_cons(lisp_car(l), tail, ctx);
@@ -763,7 +741,7 @@ Lisp lisp_list_copy(Lisp l, LispContext ctx)
 
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
 {
-    Lisp tail = lisp_make_null();
+    Lisp tail = lisp_null();
     for (int i = 0; i < n; ++i)
         tail = lisp_cons(x, tail, ctx);
     return tail;
@@ -771,7 +749,7 @@ Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
 
 Lisp lisp_make_list2(Lisp *x, int n, LispContext ctx)
 {
-    Lisp tail = lisp_make_null();
+    Lisp tail = lisp_null();
     for (int i = n - 1; i >= 0; --i)
         tail = lisp_cons(x[i], tail, ctx);
     return tail;
@@ -789,7 +767,7 @@ Lisp lisp_list_reverse2(Lisp l, Lisp tail)
     return tail;
 }
 
-Lisp lisp_list_reverse(Lisp l) { return lisp_list_reverse2(l, lisp_make_null()); }
+Lisp lisp_list_reverse(Lisp l) { return lisp_list_reverse2(l, lisp_null()); }
 
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx)
 {
@@ -813,7 +791,7 @@ Lisp lisp_list_ref(Lisp l, int n)
 {
     l = lisp_list_advance(l, n);
     if (lisp_is_pair(l)) return lisp_car(l);
-    return lisp_make_null();
+    return lisp_null();
 }
 
 int lisp_list_length(Lisp l)
@@ -1016,7 +994,7 @@ static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
     // table vals are uninitialized.
     Lisp new_vals = lisp_make_vector(new_capacity, ctx);
     Lisp new_keys = lisp_make_vector(new_capacity, ctx);
-    lisp_vector_fill(new_keys, lisp_make_null());
+    lisp_vector_fill(new_keys, lisp_null());
     table->vals = new_vals.val;
     table->keys = new_keys.val;
 
@@ -1070,7 +1048,7 @@ Lisp lisp_table_get(Lisp t, Lisp key, int* present)
     if (capacity == 0)
     {
        *present = 0;
-       return lisp_make_null();
+       return lisp_null();
     }
 
     Lisp keys = { table->keys, LISP_VECTOR };
@@ -1086,7 +1064,7 @@ Lisp lisp_table_get(Lisp t, Lisp key, int* present)
         if (lisp_is_null(saved_key))
         {
             *present = 0;
-            return lisp_make_null();
+            return lisp_null();
         }
         else if (lisp_eq(saved_key, key))
         {
@@ -1100,7 +1078,7 @@ Lisp lisp_table_get(Lisp t, Lisp key, int* present)
 Lisp lisp_table_to_alist(Lisp t, LispContext ctx)
 {
     const Table *table = table_get_(t);
-    Lisp result = lisp_make_null();
+    Lisp result = lisp_null();
 
     Lisp keys = { table->keys, LISP_VECTOR };
     Lisp vals = { table->vals, LISP_VECTOR };
@@ -1230,6 +1208,7 @@ Lisp lisp_make_char(int c)
 }
 
 int lisp_char(Lisp l) { return l.val.char_val; }
+Lisp lisp_eof(void) { return lisp_make_char(-1); }
 
 static uint64_t hash_bytes(const char *buffer, size_t n)
 {
@@ -1986,7 +1965,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_L_PAREN:
         {
-            Lisp tail = lisp_make_null();
+            Lisp tail = lisp_null();
 
             // (
             lexer_next_token(lex);
@@ -2104,7 +2083,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
         quote:
         {
              // '
-             Lisp l = lisp_cons(parse_list_r(lex, error_jmp, ctx), lisp_make_null(), ctx);
+             Lisp l = lisp_cons(parse_list_r(lex, error_jmp, ctx), lisp_null(), ctx);
              //lexer_next_token(lex);
              return lisp_cons(get_sym(quote_type, ctx), l, ctx);
         }
@@ -2121,11 +2100,11 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     if (error != LISP_ERROR_NONE)
     {
         if (out_error) *out_error = error;
-        return lisp_make_null();
+        return lisp_null();
     }
 
     lexer_next_token(lex);
-    if (lex->token == TOKEN_NONE) return lisp_make_char(-1);
+    if (lex->token == TOKEN_NONE) return lisp_eof();
 
     Lisp result = parse_list_r(lex, error_jmp, ctx);
     lexer_next_token(lex);
@@ -2133,7 +2112,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     if (lex->token != TOKEN_NONE)
     {
         // MULTIPLE FORMS
-        result = lisp_cons(result, lisp_make_null(), ctx);
+        result = lisp_cons(result, lisp_null(), ctx);
         
         while (lex->token != TOKEN_NONE)
         {
@@ -2172,7 +2151,7 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
     if (!file)
     {
         *out_error = LISP_ERROR_FILE_OPEN;
-        return lisp_make_char(-1);
+        return lisp_eof();
     }
     Lisp l = lisp_read_file(file, out_error, ctx);
     fclose(file);
@@ -2190,7 +2169,7 @@ Lisp lisp_env_lookup(Lisp l, Lisp key, int* present)
         l = lisp_cdr(l);
     }
     
-    return lisp_make_null();
+    return lisp_null();
 }
 
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx)
@@ -2328,6 +2307,7 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             break;
         }
         default:
+            // TODO
             fprintf(stderr, "printing unknown lisp type: %d\n", lisp_type(l));
             break;
     }
@@ -2347,7 +2327,7 @@ static void lisp_stack_push(Lisp x, LispContext ctx)
 #ifdef LISP_DEBUG
     if (ctx.p->stack_ptr + 1 >= ctx.p->stack_depth)
     {
-        fprintf(stderr, "stack overflow\n");
+        fprintf(ctx.p->err_port, "stack overflow\n");
     }
 #endif 
 
@@ -2362,7 +2342,7 @@ static Lisp lisp_stack_pop(LispContext ctx)
 #ifdef LISP_DEBUG
     if (ctx.p->stack_ptr < 0)
     {
-        fprintf(stderr, "stack underflow\n");
+        fprintf(ctx.p->err_port, "stack underflow\n");
     }
 #endif
     return ctx.p->stack[ctx.p->stack_ptr];
@@ -2456,7 +2436,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 {
                     fprintf(ctx.p->err_port, "%s is not defined.\n", lisp_symbol_string(*x));
                     longjmp(error_jmp, LISP_ERROR_UNKNOWN_VAR); 
-                    return lisp_make_null();
+                    return lisp_null();
                 }
                 return val;
             }
@@ -2532,7 +2512,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     
                     Lisp symbol = lisp_list_ref(*x, 1);
                     lisp_env_define(*env, symbol, value, ctx);
-                    return lisp_make_null();
+                    return lisp_null();
                 }
                 else if (lisp_eq(op_sym, get_sym(SYM_SET, ctx)) && op_valid)
                 {
@@ -2553,7 +2533,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     { 
                         fprintf(ctx.p->err_port, "error: unknown variable: %s\n", lisp_symbol_string(symbol));
                     }
-                    return lisp_make_null();
+                    return lisp_null();
                 }
                 else if (lisp_eq(op_sym, get_sym(SYM_LAMBDA, ctx)) && op_valid) 
                 {
@@ -2578,7 +2558,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     
                     Lisp arg_expr = lisp_cdr(*x);
                     
-                    Lisp args = lisp_make_null();
+                    Lisp args = lisp_null();
                     
                     while (lisp_is_pair(arg_expr))
                     {
@@ -2706,61 +2686,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
         } 
 
         lisp_table_set(ctx.p->macros, symbol, lambda, ctx);
-        return lisp_make_null();
-    }
-    else if (lisp_eq(op, get_sym(SYM_DEFINE, ctx)) && op_valid)
-    {
-        int length = lisp_list_length(l);
-
-        Lisp rest = lisp_cdr(l);
-        Lisp signature = lisp_car(rest);
-
-        switch (lisp_type(signature))
-        {
-            case LISP_PAIR:
-                {
-                    // (define (<name> <arg0> ... <argn>) <body0> ... <bodyN>)
-                    // -> (define <name> (lambda (<arg0> ... <argn>) <body> ... <bodyN>))
-
-                    if (length < 3) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
-                    Lisp name = lisp_car(signature);
-
-                    if (lisp_type(name) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE); 
-
-                    Lisp args = lisp_cdr(signature);
-                    Lisp lambda = lisp_cdr(rest); // start with body
-                    lambda = lisp_cons(args, lambda, ctx);
-                    lambda = lisp_cons(get_sym(SYM_LAMBDA, ctx), lambda, ctx);
-
-                    Lisp terms[] = { name, expand_r(lambda, error_jmp, ctx) };
-                    lisp_set_cdr(l, lisp_make_list2(terms, 2, ctx));
-                    return l;
-                }
-            case LISP_SYMBOL:
-                {
-                    if (length != 3) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE); 
-                    lisp_set_cdr(rest, expand_r(lisp_cdr(rest), error_jmp, ctx));
-                    return l;
-                }
-            default:
-                longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
-                break;
-        }
-    }
-    else if (lisp_eq(op, get_sym(SYM_SET, ctx)) && op_valid)
-    {
-        if (lisp_list_length(l) != 3) {
-            fprintf(ctx.p->err_port, "(set! symbol x)\n");
-            lisp_printf(stderr, l);
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        }
-
-        Lisp var = lisp_list_ref(l, 1);
-        if (lisp_type(var) != LISP_SYMBOL) {
-            fprintf(ctx.p->err_port, "(set! symbol x) not a symbol\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        }
-        // continue with expansion
+        return lisp_null();
     }
     else if (lisp_eq(op, get_sym(SYM_LAMBDA, ctx)) && op_valid)
     {
@@ -2774,7 +2700,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             Lisp vars = lisp_list_ref(l, 1);
             if (!lisp_is_pair(vars) && !lisp_is_null(vars)) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
 
-            Lisp lambda = lisp_cons(begin, lisp_make_null(), ctx);
+            Lisp lambda = lisp_cons(begin, lisp_null(), ctx);
             lambda = lisp_cons(vars, lambda, ctx);
             lambda = lisp_cons(lisp_car(l), lambda, ctx);
             return lambda;
@@ -2839,7 +2765,7 @@ Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx)
     else
     {
         *out_error = error;
-        return lisp_make_null();
+        return lisp_null();
     }
 }
 
@@ -2851,7 +2777,7 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
     if (error != LISP_ERROR_NONE)
     {
         if (out_error) *out_error = error;
-        return lisp_make_null();
+        return lisp_null();
     }
     
     size_t save_stack = ctx.p->stack_ptr;
@@ -2884,7 +2810,7 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
             *out_error = error;
         }
 
-        return lisp_make_null();
+        return lisp_null();
     }
 }
 
@@ -3150,12 +3076,17 @@ void lisp_env_set_global(Lisp env, LispContext ctx)
     ctx.p->env = env;
 }
 
-void lisp_shutdown(LispContext ctx)
+Lisp lisp_macro_table(LispContext ctx)
 {
-    heap_shutdown(&ctx.p->heap);
-    free(ctx.p->stack);
-    free(ctx.p);
+    return ctx.p->macros;
 }
+
+void lisp_macro_table_set(Lisp table, LispContext ctx)
+{
+    assert(lisp_type(table) == LISP_TABLE);
+    ctx.p->macros = table;
+}
+
 
 const char* lisp_error_string(LispError error)
 {
@@ -3167,8 +3098,6 @@ const char* lisp_error_string(LispError error)
             return "file error: could not open file";
         case LISP_ERROR_READ_SYNTAX:
             return "read/syntax error.";
-        case LISP_ERROR_BAD_DEFINE:
-            return "expand error: bad define (define var x)";
         case LISP_ERROR_FORM_SYNTAX:
             return "expand error: bad special form";
         case LISP_ERROR_BAD_LAMBDA:
@@ -3214,7 +3143,7 @@ LispContext lisp_init(void)
     heap_init(&ctx.p->heap);
 
     ctx.p->symbols = lisp_make_table(ctx);
-    ctx.p->env = lisp_make_null();
+    ctx.p->env = lisp_null();
     ctx.p->macros = lisp_make_table(ctx);
 
     Lisp* c = ctx.p->symbol_cache;
@@ -3224,23 +3153,19 @@ LispContext lisp_init(void)
     c[SYM_QUASI_QUOTE] = lisp_make_symbol("QUASIQUOTE", ctx);
     c[SYM_UNQUOTE] = lisp_make_symbol("UNQUOTE", ctx);
     c[SYM_UNQUOTE_SPLICE] = lisp_make_symbol("UNQUOTESPLICE", ctx);
-    c[SYM_DEFINE] = lisp_make_symbol("DEFINE", ctx);
+    c[SYM_DEFINE] = lisp_make_symbol("_DEF", ctx);
     c[SYM_DEFINE_MACRO] = lisp_make_symbol("DEFINE-MACRO", ctx);
-    c[SYM_SET] = lisp_make_symbol("SET!", ctx);
+    c[SYM_SET] = lisp_make_symbol("_SET!", ctx);
     c[SYM_LAMBDA] = lisp_make_symbol("LAMBDA", ctx);
     c[SYM_CONS] = lisp_make_symbol("CONS", ctx);
     return ctx;
 }
 
-Lisp lisp_macro_table(LispContext ctx)
+void lisp_shutdown(LispContext ctx)
 {
-    return ctx.p->macros;
-}
-
-void lisp_macro_table_set(Lisp table, LispContext ctx)
-{
-    assert(lisp_type(table) == LISP_TABLE);
-    ctx.p->macros = table;
+    heap_shutdown(&ctx.p->heap);
+    free(ctx.p->stack);
+    free(ctx.p);
 }
 
 #endif

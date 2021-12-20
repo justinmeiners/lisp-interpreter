@@ -17,7 +17,7 @@ Lisp integer_range(Lisp args, LispError* e, LispContext ctx)
     if (end < start)
     {
         *e = LISP_ERROR_OUT_OF_BOUNDS;
-        return lisp_make_null();
+        return lisp_null();
     }
 
     LispInt n = end - start;

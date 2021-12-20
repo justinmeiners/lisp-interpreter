@@ -1,3 +1,21 @@
+(define-macro set! (lambda (var x)
+                     (begin
+                       (if (not (symbol? var)) (syntax-error "set! not a variable"))
+                       `(_SET! ,var ,x))))
+
+
+(define-macro define
+              (lambda (var . exprs)
+                (if (symbol? var)
+                    (if (not (null? (cdr exprs)))
+                        (syntax-error "define: (define var x)")
+                        `(_DEF ,var ,(car exprs)))
+                    (if (pair? var)
+                        `(_DEF ,(car var)
+                               (LAMBDA ,(cdr var)
+                                       ,(if (null? (cdr exprs)) (car exprs) (cons 'BEGIN exprs))))
+                        (syntax-error "define: not a symbol") ))))
+ 
 (define (first x) (car x)) 
 (define (second x) (car (cdr x))) 
 (define (third x) (car (cdr (cdr x)))) 

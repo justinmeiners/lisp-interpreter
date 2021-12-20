@@ -1,7 +1,6 @@
-
 (define (_make-lambda args body) 
   (list 'LAMBDA args (if (null? (cdr body)) (car body) (cons 'BEGIN body)))) 
-
+ 
 
 ; (LET <name> ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
 ;  => ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
@@ -57,8 +56,8 @@
 
 (define (_cond-check-clauses clauses) 
   (for-each1 (lambda (clause) 
-               (if (not (pair? clause)) (syntax error "Invalid cond clause")) 
-               (if (null? (cdr clause)) (syntax-error "cond clause missing expression"))) 
+               (if (not (pair? clause)) (syntax-error "cond: invalid clause")) 
+               (if (null? (cdr clause)) (syntax-error "cond: clause missing expression"))) 
              clauses)) 
 
 (define (_cond-helper clauses) 

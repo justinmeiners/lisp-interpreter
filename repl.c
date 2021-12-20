@@ -14,7 +14,7 @@ static Lisp sch_load(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp path = lisp_car(args);
     Lisp result = lisp_read_path(lisp_string(path), e, ctx);
-    if (*e != LISP_ERROR_NONE) return lisp_make_null();
+    if (*e != LISP_ERROR_NONE) return lisp_null();
     return lisp_eval(result, e, ctx);
 }
 
@@ -22,7 +22,12 @@ int main(int argc, const char* argv[])
 {
     const char* file_path = NULL;
     int run_script = 0;
-    int verbose = 0;
+    int verbose;
+#ifdef LISP_DEBUG
+    verbose = 1;
+#else
+    verbose = 0;
+#endif
     
     for (int i = 1; i < argc; ++i)
     {
@@ -114,7 +119,7 @@ int main(int argc, const char* argv[])
             exit(1);
         }
 
-        lisp_collect(lisp_make_null(), ctx);
+        lisp_collect(lisp_null(), ctx);
 
         if (verbose)
             printf("eval (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
@@ -150,7 +155,7 @@ int main(int argc, const char* argv[])
             lisp_print(l);
             printf("\n");
             
-            lisp_collect(lisp_make_null(), ctx);
+            lisp_collect(lisp_null(), ctx);
             
             if (verbose)
                 printf("(us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
