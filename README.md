@@ -122,18 +122,17 @@ Lisp integer_range(Lisp args, LispError* e, LispContext ctx)
     if (end < start)
     {
         *e = LISP_ERROR_OUT_OF_BOUNDS;
-        return lisp_make_null();
+        return lisp_null();
     }
 
     LispInt n = end - start;
-    Lisp numbers = lisp_make_vector_uninitialized(n, ctx);
+    Lisp numbers = lisp_make_vector(n, ctx);
 
     for (LispInt i = 0; i < n; ++i)
         lisp_vector_set(numbers, i, lisp_make_int(start + i));
 
     return numbers;
 }
-
 // ...
 
 // wrap in Lisp object
