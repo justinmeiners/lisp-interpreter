@@ -287,7 +287,7 @@ void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx);
 
 // Evaluation environments
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
-Lisp lisp_env_lookup(Lisp l, Lisp key, int* present);
+Lisp lisp_env_lookup(Lisp l, Lisp key, int *present);
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);
 int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
 int lisp_is_env(Lisp l);
@@ -2143,7 +2143,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     return result;
 }
 
-Lisp lisp_read(const char* program, LispError* out_error, LispContext ctx)
+Lisp lisp_read(const char *program, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
     lexer_init(&lex, program);
@@ -2152,7 +2152,7 @@ Lisp lisp_read(const char* program, LispError* out_error, LispContext ctx)
     return l;
 }
 
-Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx)
+Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
     lexer_init_file(&lex, file);
@@ -2161,9 +2161,9 @@ Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx)
     return l;
 }
 
-Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
+Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
 {
-    FILE* file = fopen(path, "r");
+    FILE *file = fopen(path, "r");
     if (!file)
     {
         *out_error = LISP_ERROR_FILE_OPEN;
@@ -2176,7 +2176,7 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
 
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx) { return lisp_cons(table, l, ctx); }
 
-Lisp lisp_env_lookup(Lisp l, Lisp key, int* present)
+Lisp lisp_env_lookup(Lisp l, Lisp key, int *present)
 {
     while (lisp_is_pair(l))
     {
