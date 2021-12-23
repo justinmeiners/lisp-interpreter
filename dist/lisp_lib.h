@@ -495,7 +495,6 @@ static const char* lib_6_other_src_ =
 
 #include <stddef.h>
 #include <math.h>
-#include <setjmp.h>
 #include <stdint.h>
 #include <assert.h>
 
