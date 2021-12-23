@@ -91,7 +91,6 @@ typedef enum
     LISP_ERROR_FILE_OPEN,
     LISP_ERROR_READ_SYNTAX,
     LISP_ERROR_FORM_SYNTAX,
-    LISP_ERROR_BAD_LAMBDA,
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_UNKNOWN_EVAL,
@@ -173,7 +172,6 @@ void lisp_set_car(Lisp p, Lisp x);
 void lisp_set_cdr(Lisp p, Lisp x);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 #define lisp_is_pair(p) ((p).type == LISP_PAIR)
-#define lisp_is_list(p) ((p).type == LISP_PAIR || (p).type == LISP_NULL)
 
 // Numbers
 Lisp lisp_make_int(LispInt n);
@@ -237,6 +235,7 @@ Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
 Lisp lisp_list_advance(Lisp l, int i); // O(n)
 Lisp lisp_list_ref(Lisp l, int i); // O(n)
 int lisp_list_length(Lisp l); // O(n)
+int lisp_is_list(Lisp l); // O(n)
 
 // Association lists "alists"
 // Given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))
@@ -291,6 +290,7 @@ Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
 Lisp lisp_env_lookup(Lisp l, Lisp key, int* present);
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);
 int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
+int lisp_is_env(Lisp l);
 
 // Promises
 Lisp lisp_make_promise(Lisp proc, LispContext ctx);
@@ -799,6 +799,22 @@ int lisp_list_length(Lisp l)
     int n = 0;
     while (lisp_is_pair(l)) { ++n; l = lisp_cdr(l); }
     return n;
+}
+
+int lisp_is_list(Lisp l)
+{
+    if (lisp_is_null(l))
+    {
+        return 1;
+    }
+    else if (lisp_is_pair(l))
+    {
+        return lisp_is_list(lisp_cdr(l));
+    }
+    else
+    {
+        return 0;
+    }
 }
 
 Lisp lisp_alist_ref(Lisp l, Lisp key)
@@ -1326,7 +1342,7 @@ Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
     lambda->block.d.lambda.body_type = (uint8_t)lisp_type(body);
     lambda->block.d.lambda.args_type = (uint8_t)lisp_type(args);
 
-    assert(lisp_is_list(env));
+    assert(lisp_is_env(env));
 
     lambda->args = args.val;
     lambda->body = body.val;
@@ -2194,6 +2210,8 @@ int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx)
     return 0; 
 }
 
+int lisp_is_env(Lisp l) { return lisp_is_list(l); }
+
 static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
 {
     switch (lisp_type(l))
@@ -2424,8 +2442,6 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
     
     while (1)
     {
-        assert(!lisp_is_null(*env));
-        
         switch (lisp_type(*x))
         {
             case LISP_SYMBOL: // variable reference
@@ -2516,6 +2532,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 }
                 else if (lisp_eq(op_sym, get_sym(SYM_SET, ctx)) && op_valid)
                 {
+                    assert(!lisp_is_null(*env));
                     // mutablity
                     // like def, but requires existence
                     // and will search up the environment chain
@@ -2645,98 +2662,75 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     // 3. check syntax    
 
     Lisp op = lisp_car(l);
-    int op_valid = lisp_type(op) == LISP_SYMBOL;
-
-    if (lisp_eq(op, get_sym(SYM_QUOTE, ctx)) && op_valid)
+    if (lisp_type(op) == LISP_SYMBOL)
     {
-        // don't expand quotes
-        if (lisp_list_length(l) != 2)
+        if (lisp_eq(op, get_sym(SYM_QUOTE, ctx)))
         {
-            fprintf(ctx.p->err_port, "(quote x)\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        }
-        return l;
-    }
-    else if (lisp_eq(op, get_sym(SYM_QUASI_QUOTE, ctx)) && op_valid)
-    {
-        return expand_quasi_r(lisp_car(lisp_cdr(l)), error_jmp, ctx);
-    }
-    else if (lisp_eq(op, get_sym(SYM_DEFINE_MACRO, ctx)) && op_valid)
-    {
-        if (lisp_list_length(l) != 3)
-        {
-            fprintf(ctx.p->err_port, "(define-macro name proc)\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        } 
-
-        Lisp symbol = lisp_list_ref(l, 1);
-        Lisp body = lisp_list_ref(l, 2);
-
-        LispError e;
-        Lisp lambda = lisp_eval(body, &e, ctx);
-
-        if (e != LISP_ERROR_NONE)
-        {
-            longjmp(error_jmp, e);
-        }
-        if (lisp_type(lambda) != LISP_LAMBDA)
-        {
-            fprintf(ctx.p->err_port, "(define-macro name proc) not a procedure\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        } 
-
-        lisp_table_set(ctx.p->macros, symbol, lambda, ctx);
-        return lisp_null();
-    }
-    else if (lisp_eq(op, get_sym(SYM_LAMBDA, ctx)) && op_valid)
-    {
-        // (LAMBDA (<var0> ... <varN>) <expr0> ... <exprN>)
-        // (LAMBDA (<var0> ... <varN>) (BEGIN <expr0> ... <expr1>)) 
-        if (lisp_list_length(l) > 3)
-        {
-            Lisp body_exprs = expand_r(lisp_list_advance(l, 2), error_jmp, ctx); 
-            Lisp begin = lisp_cons(get_sym(SYM_BEGIN, ctx), body_exprs, ctx);
-
-            Lisp vars = lisp_list_ref(l, 1);
-            if (!lisp_is_pair(vars) && !lisp_is_null(vars)) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
-
-            Lisp lambda = lisp_cons(begin, lisp_null(), ctx);
-            lambda = lisp_cons(vars, lambda, ctx);
-            lambda = lisp_cons(lisp_car(l), lambda, ctx);
-            return lambda;
-        }
-        else
-        {
-            Lisp body = lisp_list_advance(l, 2);
-            lisp_set_cdr(lisp_cdr(l), expand_r(body, error_jmp, ctx));
+            // don't expand quotes
+            if (lisp_list_length(l) != 2)
+            {
+                fprintf(ctx.p->err_port, "(quote x)\n");
+                longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+            }
             return l;
         }
-    }
-    else if (op_valid)
-    {
-        int present;
-        Lisp proc = lisp_table_get(ctx.p->macros, op, &present);
-
-        if (present)
+        else if (lisp_eq(op, get_sym(SYM_QUASI_QUOTE, ctx)))
         {
-            // EXPAND MACRO
-
-            // TODO: need to make sure collection is not triggered
-            // while evaling a macro.
-            Lisp result;
-            Lisp calling_env;
-            LispError error = LISP_ERROR_NONE;
-            if (apply(proc, lisp_cdr(l), &result, &calling_env, &error, ctx) == 1)
+            return expand_quasi_r(lisp_car(lisp_cdr(l)), error_jmp, ctx);
+        }
+        else if (lisp_eq(op, get_sym(SYM_DEFINE_MACRO, ctx)))
+        {
+            if (lisp_list_length(l) != 3)
             {
-                result = lisp_eval2(result, calling_env, &error, ctx);
-            }
+                fprintf(ctx.p->err_port, "(define-macro name proc)\n");
+                longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+            } 
 
-            if (error != LISP_ERROR_NONE)
+            Lisp symbol = lisp_list_ref(l, 1);
+            Lisp body = lisp_list_ref(l, 2);
+
+            LispError e;
+            Lisp lambda = lisp_eval(body, &e, ctx);
+
+            if (e != LISP_ERROR_NONE)
             {
-                fprintf(ctx.p->out_port, "macroexpand failed: %s\n", lisp_symbol_string(op));
-                longjmp(error_jmp, error);
+                longjmp(error_jmp, e);
             }
-            return expand_r(result, error_jmp, ctx);
+            if (lisp_type(lambda) != LISP_LAMBDA)
+            {
+                fprintf(ctx.p->err_port, "(define-macro name proc) not a procedure\n");
+                longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+            } 
+
+            lisp_table_set(ctx.p->macros, symbol, lambda, ctx);
+            return lisp_null();
+        }
+        else 
+        {
+            int present;
+            Lisp proc = lisp_table_get(ctx.p->macros, op, &present);
+
+            if (present)
+            {
+                // EXPAND MACRO
+
+                // TODO: need to make sure collection is not triggered
+                // while evaling a macro.
+                Lisp result;
+                Lisp calling_env;
+                LispError error = LISP_ERROR_NONE;
+                if (apply(proc, lisp_cdr(l), &result, &calling_env, &error, ctx) == 1)
+                {
+                    result = lisp_eval2(result, calling_env, &error, ctx);
+                }
+
+                if (error != LISP_ERROR_NONE)
+                {
+                    fprintf(ctx.p->out_port, "macroexpand failed: %s\n", lisp_symbol_string(op));
+                    longjmp(error_jmp, error);
+                }
+                return expand_r(result, error_jmp, ctx);
+            }
         }
     }
 
@@ -3070,7 +3064,7 @@ Lisp lisp_env_global(LispContext ctx) { return ctx.p->env; }
 
 void lisp_env_set_global(Lisp env, LispContext ctx)
 {
-    assert(lisp_type(env) == LISP_PAIR || lisp_type(env) == LISP_NULL);
+    assert(lisp_is_env(env));
     ctx.p->env = env;
 }
 
@@ -3098,8 +3092,6 @@ const char* lisp_error_string(LispError error)
             return "read/syntax error.";
         case LISP_ERROR_FORM_SYNTAX:
             return "expand error: bad special form";
-        case LISP_ERROR_BAD_LAMBDA:
-            return "expand error: bad lambda";
         case LISP_ERROR_UNKNOWN_VAR:
             return "eval error: unknown variable";
         case LISP_ERROR_BAD_OP:
@@ -3154,7 +3146,7 @@ LispContext lisp_init(void)
     c[SYM_DEFINE] = lisp_make_symbol("_DEF", ctx);
     c[SYM_DEFINE_MACRO] = lisp_make_symbol("DEFINE-MACRO", ctx);
     c[SYM_SET] = lisp_make_symbol("_SET!", ctx);
-    c[SYM_LAMBDA] = lisp_make_symbol("LAMBDA", ctx);
+    c[SYM_LAMBDA] = lisp_make_symbol("/\\_", ctx);
     c[SYM_CONS] = lisp_make_symbol("CONS", ctx);
     return ctx;
 }

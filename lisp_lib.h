@@ -19,16 +19,24 @@ void lisp_lib_load(LispContext ctx);
 
 #ifdef LISP_IMPLEMENTATION
 static const char* lib_0_sequences_src_ = 
-"(define-macro set! (lambda (var x) \n\
+"(define-macro lambda (/\\_ args \n\
+           (if (pair? args) \n\
+               (if (pair? (cdr args)) \n\
+                   (if (pair? (cdr (cdr args))) \n\
+                       `(/\\_ ,(car args) ,(cons 'BEGIN (cdr args))) \n\
+                       `(/\\_ ,(car args) ,(car (cdr args)))) \n\
+                   (syntax-error \"lambda missing body expressions: (lambda (args) body)\")) \n\
+               (syntax-error \"lambda missing argument: (lambda (args) body)\")))) \n\
+ \n\
+(define-macro set! (lambda (var x) \n\
                      (begin \n\
                        (if (not (symbol? var)) (syntax-error \"set! not a variable\")) \n\
                        `(_SET! ,var ,x)))) \n\
  \n\
- \n\
 (define-macro define \n\
               (lambda (var . exprs) \n\
                 (if (symbol? var) \n\
-                    (if (not (null? (cdr exprs))) \n\
+                    (if (pair? (cdr exprs)) \n\
                         (syntax-error \"define: (define var x)\") \n\
                         `(_DEF ,var ,(car exprs))) \n\
                     (if (pair? var) \n\
@@ -644,6 +652,12 @@ static Lisp sch_equals(Lisp args, LispError* e, LispContext ctx)
 }
 
 static Lisp sch_list(Lisp args, LispError* e, LispContext ctx) { return args; }
+
+static Lisp sch_is_list(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    return lisp_make_bool(lisp_is_list(lisp_car(args)));
+}
 
 static Lisp sch_make_list(Lisp args, LispError* e, LispContext ctx)
 {
@@ -1845,6 +1859,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
     // Lists https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
     { "LIST", sch_list },
+    { "LIST?", sch_is_list },
     { "MAKE-LIST", sch_make_list },
     { "LIST-COPY", sch_list_copy },
     { "LENGTH", sch_length },

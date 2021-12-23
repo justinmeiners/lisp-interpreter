@@ -175,6 +175,12 @@ static Lisp sch_equals(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_list(Lisp args, LispError* e, LispContext ctx) { return args; }
 
+static Lisp sch_is_list(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    return lisp_make_bool(lisp_is_list(lisp_car(args)));
+}
+
 static Lisp sch_make_list(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp length = lisp_car(args);
@@ -1375,6 +1381,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
     // Lists https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
     { "LIST", sch_list },
+    { "LIST?", sch_is_list },
     { "MAKE-LIST", sch_make_list },
     { "LIST-COPY", sch_list_copy },
     { "LENGTH", sch_length },

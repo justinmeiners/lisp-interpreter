@@ -1,13 +1,21 @@
+(define-macro lambda (/\_ args
+           (if (pair? args)
+               (if (pair? (cdr args))
+                   (if (pair? (cdr (cdr args)))
+                       `(/\_ ,(car args) ,(cons 'BEGIN (cdr args)))
+                       `(/\_ ,(car args) ,(car (cdr args))))
+                   (syntax-error "lambda missing body expressions: (lambda (args) body)"))
+               (syntax-error "lambda missing argument: (lambda (args) body)"))))
+
 (define-macro set! (lambda (var x)
                      (begin
                        (if (not (symbol? var)) (syntax-error "set! not a variable"))
                        `(_SET! ,var ,x))))
 
-
 (define-macro define
               (lambda (var . exprs)
                 (if (symbol? var)
-                    (if (not (null? (cdr exprs)))
+                    (if (pair? (cdr exprs))
                         (syntax-error "define: (define var x)")
                         `(_DEF ,var ,(car exprs)))
                     (if (pair? var)
