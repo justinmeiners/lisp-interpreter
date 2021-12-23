@@ -64,7 +64,7 @@ typedef enum
     LISP_BOOL,    // t/f
     LISP_VECTOR,  // heterogenous array but contiguous allocation
     LISP_PROMISE, // lazy value
-    LISP_CONTINUE // continuation
+    LISP_JUMP     // jump point/non-escaping continuation
 } LispType;
 
 typedef double LispReal;
@@ -144,6 +144,7 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
 Lisp lisp_eval2(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
+Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx);
 // Expands special Lisp forms and checks syntax (called by eval).
 Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
 
@@ -152,6 +153,9 @@ void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 
 void lisp_displayf(FILE* file, Lisp l);
+
+// Jumps 
+Lisp lisp_call_cc(Lisp proc, LispError* out_error, LispContext ctx);
 
 // -----------------------------------------
 // PRIMITIVES
@@ -297,8 +301,6 @@ int lisp_promise_forced(Lisp p);
 Lisp lisp_promise_val(Lisp p);
 Lisp lisp_promise_proc(Lisp p);
 void lisp_promise_store(Lisp p, Lisp x);
-
-// Continuations
 
 
 #ifdef __cplusplus
@@ -1437,6 +1439,27 @@ Lisp lisp_promise_val(Lisp p)
     return promise_body_or_val_(p);
 }
 
+typedef struct
+{
+    Block block;
+    Lisp result;
+    jmp_buf jmp;
+    int stack_ptr;
+} Jump;
+
+static Jump* jump_get_(Lisp x) {
+    assert(x.type == LISP_JUMP);
+    return x.val.ptr_val;
+}
+
+static Lisp make_jump_(LispContext ctx)
+{
+    Jump* j = gc_alloc(sizeof(Jump), LISP_JUMP, ctx);
+    j->result = lisp_false();
+    return (Lisp) { .val = { .ptr_val = j }, .type = LISP_JUMP };
+}
+
+// READER
 typedef enum
 {
     TOKEN_NONE = 0,
@@ -2255,7 +2278,7 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             }
             break;
         }
-        case LISP_CONTINUE: fputs("<continue>", file); break;
+        case LISP_JUMP: fputs("<jump>", file); break;
         case LISP_LAMBDA: fputs("<lambda>", file); break;
         case LISP_PROMISE: fputs("<promise>", file); break;
         case LISP_FUNC: fprintf(file, "<c-func-%p>", l.val.ptr_val); break;
@@ -2366,6 +2389,26 @@ static Lisp* lisp_stack_peek(size_t i, LispContext ctx)
     return ctx.p->stack + (ctx.p->stack_ptr - i);
 }
 
+Lisp lisp_call_cc(Lisp proc, LispError* out_error, LispContext ctx)
+{
+    Lisp j = make_jump_(ctx);
+    Jump* jump = jump_get_(j);
+    jump->stack_ptr = ctx.p->stack_ptr;
+
+    int has_result = setjmp(jump->jmp);
+    if (has_result)
+    {
+        // restore jump from the stack
+        jump = jump_get_(lisp_stack_pop(ctx));
+        ctx.p->stack_ptr = jump->stack_ptr;
+        return jump->result;
+    }
+    else
+    {
+        return lisp_apply(proc, lisp_cons(j, lisp_null(), ctx), out_error, ctx);
+    }
+}
+
 // returns whether the result is final, or needs to be eval'd.
 static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, LispError* error, LispContext ctx)
 {
@@ -2418,6 +2461,14 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
             LispCFunc f = lisp_func(operator);
             *out_result = f(args, error, ctx);
             return 0;
+        }
+        case LISP_JUMP:
+        {
+            Jump* jump = jump_get_(operator);
+            jump->result = lisp_car(args);
+            // put jump on the stack
+            lisp_stack_push(operator, ctx);
+            longjmp(jump->jmp, 1);
         }
         default:
         {
@@ -2806,6 +2857,18 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
 {
     return lisp_eval2(expr, lisp_env_global(ctx), out_error, ctx);
+}
+
+Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx)
+{
+    // TODO: argument passing is a little more sophisitaed
+    // No environment required. procedures always bring their own enviornment
+    // to the call.
+    Lisp x;
+    Lisp env;
+    int needs_to_eval = apply(operator, args, &x, &env, out_error, ctx);
+    if (*out_error != LISP_ERROR_NONE) return lisp_false();
+    return needs_to_eval ? lisp_eval2(x, env, out_error, ctx) : x;
 }
 
 static Lisp gc_move(Lisp x, LispContext ctx)
