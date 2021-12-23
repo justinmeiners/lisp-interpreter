@@ -1,4 +1,4 @@
-(_mnemonic-accessors "AA" "DD" "AD" "DA" "AAA" "AAD" "ADA" "DAA" "ADD" "DAD" "DDA" "DDD") 
+(_shorthand-accessors "AA" "DD" "AD" "DA" "AAA" "AAD" "ADA" "DAA" "ADD" "DAD" "DDA" "DDD") 
 
 (define (_and-helper preds) 
   (cond ((null? preds) #t) 
