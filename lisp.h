@@ -93,7 +93,6 @@ typedef enum
     LISP_ERROR_FORM_SYNTAX,
     LISP_ERROR_UNKNOWN_VAR,
     LISP_ERROR_BAD_OP,
-    LISP_ERROR_UNKNOWN_EVAL,
     LISP_ERROR_OUT_OF_BOUNDS,
     LISP_ERROR_ARG_TYPE,
     LISP_ERROR_TOO_MANY_ARGS,
@@ -1438,7 +1437,6 @@ Lisp lisp_promise_val(Lisp p)
     return promise_body_or_val_(p);
 }
 
-
 typedef enum
 {
     TOKEN_NONE = 0,
@@ -1956,10 +1954,7 @@ static int parse_char_(Lexer* lex)
         int i = 0;
         while (*name_it)
         {
-            if (strcmp(*name_it, scratch) == 0)
-            {
-                return i - 1;
-            }
+            if (strcmp(*name_it, scratch) == 0) return i - 1;
             ++name_it;
             ++i;
         }
@@ -2856,9 +2851,7 @@ static LispVal gc_move_val(LispVal val, LispType type, LispContext ctx)
 
 static void gc_move_v(Lisp* start, int n, LispContext ctx)
 {
-    int i;
-    for (i = 0; i < n; ++i)
-        start[i] = gc_move(start[i], ctx);
+    for (int i = 0; i < n; ++i) start[i] = gc_move(start[i], ctx);
 }
 
 static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
@@ -3079,7 +3072,6 @@ void lisp_macro_table_set(Lisp table, LispContext ctx)
     ctx.p->macros = table;
 }
 
-
 const char* lisp_error_string(LispError error)
 {
     switch (error)
@@ -3096,8 +3088,6 @@ const char* lisp_error_string(LispError error)
             return "eval error: unknown variable";
         case LISP_ERROR_BAD_OP:
             return "eval error: attempt to apply something which was not an operator";
-        case LISP_ERROR_UNKNOWN_EVAL:
-            return "eval error: got into a bad state";
         case LISP_ERROR_ARG_TYPE:
             return "eval error: invalid argument type";
         case LISP_ERROR_TOO_MANY_ARGS:
