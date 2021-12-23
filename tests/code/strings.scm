@@ -46,3 +46,6 @@
 
 (==> (string-ref "abc" 0) #\a)
 (==> (string-ref "abc" 2) #\c)
+
+(==> (string #\a #\b) "ab")
+(==> (string) "")

@@ -53,4 +53,7 @@
 (assert (= (cdr (assq 'john list-map)) 2))
 (assert (= (cdr (assq 'alice list-map)) 4))
 (assert (not (assq 'bad-key list-map)))
+
+(assert (list? '(1 2)))
+(assert (not (list? (cons 1 2))))
  

@@ -3,7 +3,6 @@
 #include <string.h>
 
 #define LISP_IMPLEMENTATION
-#define LISP_NO_EVAL
 #include "lisp.h"
 
 int main(int argc, const char* argv[])

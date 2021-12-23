@@ -1,10 +1,12 @@
 /*
- Copyright 2021 Justin Meiners (https://justinmeiners.github.io)
- License: MIT
+ Created by: Justin Meiners 
+ Repo; https://github.com/justinmeiners/lisp-interpreter
+ License: MIT (See end if file)
 
  Do this:
      #define LISP_IMPLEMENTATION
      #include "lisp.h"
+     #include "lisp_lib.h"
      
  in at least one C or C++ file in order to generate the implementation.
 
@@ -28,26 +30,13 @@
  OPTIONS
  ----------------------
 
- These macros can be defined before inclusion to change options.
+ These macros can be defined before include to configure options.
 
- Build in debug mode with extra checks and logs
+ // Build in debug mode with extra checks and logs:
+ #define LISP_DEBUG
 
-     #define LISP_DEBUG
-
- Do not include the scheme standard library.
- This reduces the amount of code if you want to heavily customize the language.
-  
-     #define LISP_NO_LIB
-
- Do not include any code related to eval including the scheme library.
- This reduces the amount of code if you just care about reading s-expressions.
-  
-     #define LISP_NO_EVAL
-
- Change how much data is read from a file at a time.
-
-    #define LISP_FILE_CHUNK_SIZE 8192
-
+ // Change how much data is read from a file at a time.
+ #define LISP_FILE_CHUNK_SIZE 8192
  */
 
 
@@ -58,13 +47,8 @@
 extern "C" {
 #endif
 
-
 #include <stdio.h>
 #include <stdint.h>
-
-#ifdef LISP_NO_EVAL
-#define LISP_NO_LIB
-#endif
 
 typedef enum
 {
@@ -81,7 +65,7 @@ typedef enum
     LISP_BOOL,    // t/f
     LISP_VECTOR,  // heterogenous array but contiguous allocation
     LISP_PROMISE, // lazy value
-    LISP_CONTINUE // continuation
+    LISP_JUMP     // jump point/non-escaping continuation
 } LispType;
 
 typedef double LispReal;
@@ -107,16 +91,10 @@ typedef enum
     LISP_ERROR_NONE = 0,
     LISP_ERROR_FILE_OPEN,
     LISP_ERROR_READ_SYNTAX,
-    
     LISP_ERROR_FORM_SYNTAX,
-    LISP_ERROR_BAD_DEFINE,
-    LISP_ERROR_BAD_LAMBDA,
-
-    LISP_ERROR_UNKNOWN_VAR,
+    LISP_ERROR_UNDEFINED_VAR,
     LISP_ERROR_BAD_OP,
-    LISP_ERROR_UNKNOWN_EVAL,
     LISP_ERROR_OUT_OF_BOUNDS,
-
     LISP_ERROR_ARG_TYPE,
     LISP_ERROR_TOO_MANY_ARGS,
     LISP_ERROR_TOO_FEW_ARGS,
@@ -131,17 +109,11 @@ typedef struct
 typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 // -----------------------------------------
-// SETUP
+// CONTEXT
 // -----------------------------------------
 
 LispContext lisp_init(void);
 void lisp_shutdown(LispContext ctx);
-
-#ifndef LISP_NO_LIB
-
-void lisp_load_lib(LispContext ctx);
-
-#endif
 
 // garbage collection. 
 // this will free all objects which are not reachable from root_to_save or the global env
@@ -149,8 +121,22 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 void lisp_print_collect_stats(LispContext ctx);
 const char* lisp_error_string(LispError error);
 
-void lisp_port_set_in(FILE* file, LispContext ctx);
-void lisp_port_set_err(FILE* file, LispContext ctx);
+void lisp_set_env(Lisp env, LispContext ctx);
+Lisp lisp_env(LispContext ctx);
+
+void lisp_set_stdin(FILE* file, LispContext ctx);
+void lisp_set_stderr(FILE* file, LispContext ctx);
+void lisp_set_stdout(FILE* file, LispContext ctx);
+
+FILE *lisp_stdin(LispContext ctx);
+FILE *lisp_stderr(LispContext ctx);
+FILE *lisp_stdout(LispContext ctx);
+
+// Macros
+Lisp lisp_macro_table(LispContext ctx);
+// the macro table keeps strong references to its members. 
+// So if you want to delete them you need to make a new table.
+void lisp_set_macro_table(Lisp table, LispContext ctx);
 
 // -----------------------------------------
 // REPL
@@ -161,21 +147,21 @@ Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
 Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
-#ifndef LISP_NO_EVAL
-
 // evaluate a lisp expression
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
 Lisp lisp_eval2(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
+Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx);
 // Expands special Lisp forms and checks syntax (called by eval).
 Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
-
-#endif
 
 // print out a lisp structure in 
 void lisp_print(Lisp l);
 void lisp_printf(FILE* file, Lisp l);
 
 void lisp_displayf(FILE* file, Lisp l);
+
+// Calls proc with an argument containing the current continuation.
+Lisp lisp_call_cc(Lisp proc, LispError* out_error, LispContext ctx);
 
 // -----------------------------------------
 // PRIMITIVES
@@ -184,7 +170,7 @@ void lisp_displayf(FILE* file, Lisp l);
 #define lisp_eq(a, b) ((a).val.ptr_val == (b).val.ptr_val)
 int lisp_equal(Lisp a, Lisp b);
 int lisp_equal_r(Lisp a, Lisp b);
-Lisp lisp_make_null(void);
+#define lisp_null() ((Lisp) { .val = { .ptr_val = NULL }, .type = LISP_NULL })
 
 #define lisp_is_null(x) ((x).type == LISP_NULL)
 
@@ -195,16 +181,15 @@ void lisp_set_car(Lisp p, Lisp x);
 void lisp_set_cdr(Lisp p, Lisp x);
 Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx);
 #define lisp_is_pair(p) ((p).type == LISP_PAIR)
-#define lisp_is_list(p) ((p).type == LISP_PAIR || (p).type == LISP_NULL)
 
 // Numbers
 Lisp lisp_make_int(LispInt n);
 LispInt lisp_int(Lisp x);
-Lisp lisp_parse_int(const char* string);
+Lisp lisp_parse_int(const char *string);
 
 Lisp lisp_make_real(LispReal x);
 LispReal lisp_real(Lisp x);
-Lisp lisp_parse_real(const char* string);
+Lisp lisp_parse_real(const char *string);
 
 LispReal lisp_number_to_real(Lisp x);
 LispInt lisp_number_to_int(Lisp x);
@@ -216,23 +201,33 @@ int lisp_bool(Lisp x);
 #define lisp_false() (lisp_make_bool(0))
 int lisp_is_true(Lisp x);
 
-// Strings
-Lisp lisp_make_string(const char* c_string, LispContext ctx);
-Lisp lisp_make_string2(int n, int c, LispContext ctx);
-char* lisp_string(Lisp s);
-int lisp_string_ref(Lisp s, int n);
-void lisp_string_set(Lisp s, int n, int c);
-Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx);
-
+// Characters
 Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
+Lisp lisp_eof(void);
 
-// Symbols
-// interned
+// Null terminated byte (ASCII) strings
+Lisp lisp_make_string(int n, LispContext ctx);
+Lisp lisp_make_string2(const char *c_string, LispContext ctx);
+Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx);
+
+void lisp_string_fill(Lisp s, Lisp character); // inplace.
+int lisp_string_ref(Lisp s, int i);
+void lisp_string_set(Lisp s, int i, int c);
+int lisp_string_length(Lisp s);
+const char *lisp_string(Lisp s);
+
+// Low level string storage
+Lisp lisp_make_buffer(int cap, LispContext ctx);
+Lisp lisp_buffer_copy(Lisp s, LispContext ctx);
+void lisp_buffer_fill(Lisp s, int start, int end, int x);
+char *lisp_buffer(Lisp s);
+int lisp_buffer_capacity(Lisp s);
+
+// Symbols (interned strings)
 Lisp lisp_make_symbol(const char* string, LispContext ctx);
-// uninterned
-Lisp lisp_gen_symbol(LispContext ctx);
-const char* lisp_symbol_string(Lisp x);
+Lisp lisp_gen_symbol(LispContext ctx); // uninterned
+const char *lisp_symbol_string(Lisp x);
 
 // -----------------------------------------
 // DATA STRUCTURES
@@ -249,6 +244,7 @@ Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx); // O(n)
 Lisp lisp_list_advance(Lisp l, int i); // O(n)
 Lisp lisp_list_ref(Lisp l, int i); // O(n)
 int lisp_list_length(Lisp l); // O(n)
+int lisp_is_list(Lisp l); // O(n)
 
 // Association lists "alists"
 // Given a list of pairs ((key1 val1) (key2 val2) ... (keyN valN))
@@ -256,9 +252,8 @@ int lisp_list_length(Lisp l); // O(n)
 Lisp lisp_alist_ref(Lisp l, Lisp key); // O(n)
 
 // Vectors (like C arrays, but heterogeneous).
-Lisp lisp_make_vector(Lisp x, int n, LispContext ctx);
+Lisp lisp_make_vector(int n, LispContext ctx); // Contents are uninitialized. Be careful.
 Lisp lisp_make_vector2(Lisp *x, int n, LispContext ctx);
-Lisp lisp_make_vector_uninitialized(int n, LispContext ctx);
 
 int lisp_vector_length(Lisp v);
 Lisp lisp_vector_ref(Lisp v, int i);
@@ -300,19 +295,11 @@ typedef struct
 void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx);
 
 // Evaluation environments
-Lisp lisp_env_global(LispContext ctx);
-void lisp_env_set_global(Lisp env, LispContext ctx);
-
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx);
-Lisp lisp_env_lookup(Lisp l, Lisp key, int* present);
+Lisp lisp_env_lookup(Lisp l, Lisp key, int *present);
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx);
 int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx);
-
-// Macros
-Lisp lisp_macro_table(LispContext ctx);
-// the macro table keeps strong references to its members. 
-// So if you want to delete them you need to make a new table.
-void lisp_macro_table_set(Lisp table, LispContext ctx);
+int lisp_is_env(Lisp l);
 
 // Promises
 Lisp lisp_make_promise(Lisp proc, LispContext ctx);
@@ -320,25 +307,6 @@ int lisp_promise_forced(Lisp p);
 Lisp lisp_promise_val(Lisp p);
 Lisp lisp_promise_proc(Lisp p);
 void lisp_promise_store(Lisp p, Lisp x);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
-
-#ifdef LISP_IMPLEMENTATION
-
-#include <stdlib.h>
-#include <ctype.h>
-#include <memory.h>
-
-#include <stddef.h>
-#include <math.h>
-#include <setjmp.h>
-#include <stdint.h>
-#include <time.h>
-#include <assert.h>
 
 #ifndef LISP_FILE_CHUNK_SIZE
 #define LISP_FILE_CHUNK_SIZE 8192
@@ -355,6 +323,24 @@ void lisp_promise_store(Lisp p, Lisp x);
 #ifndef LISP_IDENTIFIER_MAX
 #define LISP_IDENTIFIER_MAX 1024
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+#ifdef LISP_IMPLEMENTATION
+
+#include <stdlib.h>
+#include <ctype.h>
+#include <memory.h>
+
+#include <stddef.h>
+#include <setjmp.h>
+#include <stdint.h>
+#include <time.h>
+#include <assert.h>
 
 #define IS_POW2(x) (((x) != 0) && ((x) & ((x)-1)) == 0)
 
@@ -432,6 +418,11 @@ typedef struct Block
             uint8_t body_type;
             uint8_t args_type;
         } lambda;
+
+        struct
+        {
+            int capacity;
+        } string;
     } d;
 
     // 32
@@ -582,13 +573,6 @@ typedef struct
 static Lisp val_to_list_(LispVal x)
 {
     return (Lisp) { x, x.ptr_val == NULL ? LISP_NULL : LISP_PAIR };
-}
-
-Lisp lisp_make_null()
-{
-    LispVal val;
-    val.ptr_val = NULL;
-    return (Lisp) { val, LISP_NULL };
 }
 
 int lisp_equal(Lisp a, Lisp b)
@@ -752,7 +736,7 @@ Lisp lisp_cons(Lisp car, Lisp cdr, LispContext ctx)
 
 Lisp lisp_list_copy(Lisp l, LispContext ctx)
 {
-    Lisp tail = lisp_make_null();
+    Lisp tail = lisp_null();
     while (lisp_is_pair(l))
     {
         tail = lisp_cons(lisp_car(l), tail, ctx);
@@ -763,7 +747,7 @@ Lisp lisp_list_copy(Lisp l, LispContext ctx)
 
 Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
 {
-    Lisp tail = lisp_make_null();
+    Lisp tail = lisp_null();
     for (int i = 0; i < n; ++i)
         tail = lisp_cons(x, tail, ctx);
     return tail;
@@ -771,7 +755,7 @@ Lisp lisp_make_list(Lisp x, int n, LispContext ctx)
 
 Lisp lisp_make_list2(Lisp *x, int n, LispContext ctx)
 {
-    Lisp tail = lisp_make_null();
+    Lisp tail = lisp_null();
     for (int i = n - 1; i >= 0; --i)
         tail = lisp_cons(x[i], tail, ctx);
     return tail;
@@ -789,7 +773,7 @@ Lisp lisp_list_reverse2(Lisp l, Lisp tail)
     return tail;
 }
 
-Lisp lisp_list_reverse(Lisp l) { return lisp_list_reverse2(l, lisp_make_null()); }
+Lisp lisp_list_reverse(Lisp l) { return lisp_list_reverse2(l, lisp_null()); }
 
 Lisp lisp_list_append(Lisp l, Lisp tail, LispContext ctx)
 {
@@ -813,7 +797,7 @@ Lisp lisp_list_ref(Lisp l, int n)
 {
     l = lisp_list_advance(l, n);
     if (lisp_is_pair(l)) return lisp_car(l);
-    return lisp_make_null();
+    return lisp_null();
 }
 
 int lisp_list_length(Lisp l)
@@ -821,6 +805,22 @@ int lisp_list_length(Lisp l)
     int n = 0;
     while (lisp_is_pair(l)) { ++n; l = lisp_cdr(l); }
     return n;
+}
+
+int lisp_is_list(Lisp l)
+{
+    if (lisp_is_null(l))
+    {
+        return 1;
+    }
+    else if (lisp_is_pair(l))
+    {
+        return lisp_is_list(lisp_cdr(l));
+    }
+    else
+    {
+        return 0;
+    }
 }
 
 Lisp lisp_alist_ref(Lisp l, Lisp key)
@@ -854,8 +854,7 @@ static Vector* vector_get_(Lisp v)
     return v.val.ptr_val;
 }
 
-
-Lisp lisp_make_vector_uninitialized(int n, LispContext ctx)
+Lisp lisp_make_vector(int n, LispContext ctx)
 {
     size_t size = sizeof(Vector) + sizeof(LispVal) * n + sizeof(char) * n;
     Vector* vector = gc_alloc(size, LISP_VECTOR, ctx);
@@ -866,16 +865,9 @@ Lisp lisp_make_vector_uninitialized(int n, LispContext ctx)
     return (Lisp) { val, LISP_VECTOR };
 }
 
-Lisp lisp_make_vector(Lisp x, int n, LispContext ctx)
-{
-    Lisp v = lisp_make_vector_uninitialized(n, ctx);
-    lisp_vector_fill(v, x);
-    return v;
-}
-
 Lisp lisp_make_vector2(Lisp *x, int n, LispContext ctx)
 {
-    Lisp v = lisp_make_vector_uninitialized(n, ctx);
+    Lisp v = lisp_make_vector(n, ctx);
     for (int i = 0; i < n; ++i)
         lisp_vector_set(v, i, x[i]);
     return v;
@@ -929,7 +921,7 @@ Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx)
     if (end > m) end = m;
     
     int n = end - start;
-    Lisp new_v = lisp_make_vector_uninitialized(n, ctx);
+    Lisp new_v = lisp_make_vector(n, ctx);
     Vector* dst = vector_get_(new_v);
     memcpy(dst->entries, src->entries + start, sizeof(LispVal) * n);
     memcpy(vector_types_(dst), vector_types_(src) + start, sizeof(char) * n);
@@ -948,7 +940,7 @@ Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx)
     }
     else
     {
-        Lisp new_v = lisp_make_vector_uninitialized(n, ctx);
+        Lisp new_v = lisp_make_vector(n, ctx);
         Vector* dst = vector_get_(new_v);
         memcpy(dst->entries, src->entries, sizeof(LispVal) * m);
         memcpy(vector_types_(dst), vector_types_(src), sizeof(char) * m);
@@ -984,12 +976,13 @@ typedef struct
     int size;
     int capacity;
 
-    // vectors
+    // vectors. uninitialized if capacity == 0.
+    // entries of vals may be unitialized if the correspding key entry is.
     LispVal keys;
     LispVal vals;
 } Table;
 
-static Table* table_get_(Lisp t)
+static Table *table_get_(Lisp t)
 {
     assert(lisp_type(t) == LISP_TABLE);
     return t.val.ptr_val;
@@ -997,7 +990,7 @@ static Table* table_get_(Lisp t)
 
 Lisp lisp_make_table(LispContext ctx)
 {
-    Table* table = gc_alloc(sizeof(Table), LISP_TABLE, ctx);
+    Table *table = gc_alloc(sizeof(Table), LISP_TABLE, ctx);
     table->size = 0;
     table->capacity = 0;
 
@@ -1008,7 +1001,7 @@ Lisp lisp_make_table(LispContext ctx)
 
 static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
 {
-    Table* table = table_get_(t);
+    Table *table = table_get_(t);
     if (new_capacity < 16) new_capacity = 16;
     assert(IS_POW2(new_capacity));
 
@@ -1017,9 +1010,15 @@ static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
     Lisp old_vals = { table->vals, LISP_VECTOR };
 
     table->capacity = new_capacity;
-    table->keys = lisp_make_vector(lisp_make_null(), new_capacity, ctx).val;
-    table->vals = lisp_make_vector(lisp_make_null(), new_capacity, ctx).val;
+    int n = table->size;
     table->size = 0;
+
+    // table vals are uninitialized.
+    Lisp new_vals = lisp_make_vector(new_capacity, ctx);
+    Lisp new_keys = lisp_make_vector(new_capacity, ctx);
+    lisp_vector_fill(new_keys, lisp_null());
+    table->vals = new_vals.val;
+    table->keys = new_keys.val;
 
     for (int i = 0; i < old_capacity; ++i)
     {
@@ -1027,16 +1026,17 @@ static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
         if (!lisp_is_null(key))
             lisp_table_set(t, key, lisp_vector_ref(old_vals, i), ctx);
     }
+    assert(n == table->size);
 }
 
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
 { 
-    Table* table = table_get_(t);
+    Table *table = table_get_(t);
     if (2 * table->size >= table->capacity)
     {
         table_grow_(t, table->capacity * 2, ctx);
     }
-    assert(2*table->size < table->capacity);
+    assert(2 * table->size < table->capacity);
 
     Lisp keys = { table->keys, LISP_VECTOR };
     Lisp vals = { table->vals, LISP_VECTOR };
@@ -1065,12 +1065,12 @@ void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
 
 Lisp lisp_table_get(Lisp t, Lisp key, int* present)
 {
-    Table* table = table_get_(t);
+    Table *table = table_get_(t);
     int capacity = table->capacity;
     if (capacity == 0)
     {
        *present = 0;
-       return lisp_make_null();
+       return lisp_null();
     }
 
     Lisp keys = { table->keys, LISP_VECTOR };
@@ -1086,7 +1086,7 @@ Lisp lisp_table_get(Lisp t, Lisp key, int* present)
         if (lisp_is_null(saved_key))
         {
             *present = 0;
-            return lisp_make_null();
+            return lisp_null();
         }
         else if (lisp_eq(saved_key, key))
         {
@@ -1099,8 +1099,8 @@ Lisp lisp_table_get(Lisp t, Lisp key, int* present)
 
 Lisp lisp_table_to_alist(Lisp t, LispContext ctx)
 {
-    const Table* table = table_get_(t);
-    Lisp result = lisp_make_null();
+    const Table *table = table_get_(t);
+    Lisp result = lisp_null();
 
     Lisp keys = { table->keys, LISP_VECTOR };
     Lisp vals = { table->vals, LISP_VECTOR };
@@ -1127,107 +1127,75 @@ void lisp_table_define_funcs(Lisp t, const LispFuncDef* defs, LispContext ctx)
     }
 }
 
-typedef struct
+static String* string_get_(Lisp s)
 {
-    Block block;
-    LispVal val_or_proc;
-} Promise;
-
-Lisp lisp_make_promise(Lisp proc, LispContext ctx)
-{
-    assert(lisp_type(proc) == LISP_LAMBDA || lisp_type(proc) == LISP_FUNC);
-    Promise* promise = gc_alloc(sizeof(Promise), LISP_PROMISE, ctx);
-    promise->block.d.promise.cached = 0;
-    promise->block.d.promise.type = lisp_type(proc);
-    promise->val_or_proc = proc.val;
-
-    LispVal val;
-    val.ptr_val = promise;
-    return (Lisp) { val, LISP_PROMISE };
+    assert(lisp_type(s) == LISP_STRING);
+    return s.val.ptr_val;
 }
 
-static Promise* promise_get_(Lisp p)
+Lisp lisp_make_buffer(int cap, LispContext ctx)
 {
-    assert(p.type == LISP_PROMISE);
-    return p.val.ptr_val;
-}
-
-void lisp_promise_store(Lisp p, Lisp x)
-{
-    Promise* promise = promise_get_(p); 
-    assert(!promise->block.d.promise.cached);
-    promise->block.d.promise.cached = 1;
-    promise->block.d.promise.type = lisp_type(x);
-    promise->val_or_proc = x.val;
-}
-
-int lisp_promise_forced(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    return (int)promise->block.d.promise.cached;
-}
-
-static Lisp promise_body_or_val_(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    LispType type = (LispType)promise->block.d.promise.type;
-    return (Lisp) { promise->val_or_proc, type }; 
-}
-
-Lisp lisp_promise_proc(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    assert(!promise->block.d.promise.cached);
-    return promise_body_or_val_(p);
-}
-
-Lisp lisp_promise_val(Lisp p)
-{
-    const Promise* promise = promise_get_(p); 
-    assert(promise->block.d.promise.cached);
-    return promise_body_or_val_(p);
-}
-
-Lisp lisp_make_string2(int n, int c, LispContext ctx)
-{
-    assert(n >= 0);
-    String* string = gc_alloc(sizeof(String) + n + 1, LISP_STRING, ctx);
-    string->string[n] = '\0';
-    memset(string->string, c, n);
+    assert(cap >= 0);
+    String* string = gc_alloc(sizeof(String) + cap, LISP_STRING, ctx);
+    string->block.d.string.capacity = cap;
     
     LispVal val;
     val.ptr_val = string;
     return (Lisp){ val, string->block.type };
 }
 
-static String* get_string_(Lisp s)
+Lisp lisp_buffer_copy(Lisp s, LispContext ctx)
 {
-    assert(s.type == LISP_STRING);
-    return s.val.ptr_val;
+    int cap = lisp_buffer_capacity(s);
+    Lisp b = lisp_make_buffer(cap, ctx);
+    memcpy(lisp_buffer(b), lisp_buffer(s), cap);
+    return b;
 }
 
-Lisp lisp_make_string(const char* c_string, LispContext ctx)
+int lisp_buffer_capacity(Lisp s)
+{
+    return string_get_(s)->block.d.string.capacity;
+}
+
+void lisp_buffer_fill(Lisp s, int start, int end, int x)
+{
+    int n = lisp_buffer_capacity(s);
+    if (start > n) start = n;
+    if (end > n) end = n;
+    memset(lisp_buffer(s) + start, x, end - start);
+}
+
+char *lisp_buffer(Lisp s) { return string_get_(s)->string; }
+const char *lisp_string(Lisp s) { return lisp_buffer(s); }
+
+Lisp lisp_make_string(int n, LispContext ctx)
+{
+    Lisp s = lisp_make_buffer(n + 1, ctx);
+    lisp_buffer(s)[n] = '\0';
+    return s;
+}
+
+Lisp lisp_make_string2(const char* c_string, LispContext ctx)
 {
     size_t length = strlen(c_string);
-    Lisp x = lisp_make_string2(length, '\0', ctx);
-    String* string = get_string_(x); 
-    memcpy(string->string, c_string, length);
-    return x; 
+    Lisp s = lisp_make_string(length, ctx);
+    memcpy(lisp_buffer(s), c_string, length);
+    return s; 
 }
 
-char* lisp_string(Lisp s)
-{
-    return get_string_(s)->string;
+int lisp_string_length(Lisp s) { return strlen(lisp_string(s)); }
+
+int lisp_string_ref(Lisp s, int i) {
+    const String* str = string_get_(s);
+    assert(i >= 0 && i < lisp_buffer_capacity(s));
+    return (int)str->string[i]; 
 }
 
-int lisp_string_ref(Lisp s, int n)
+void lisp_string_set(Lisp s, int i, int c)
 {
-    return (int)get_string_(s)->string[n];
-}
-
-void lisp_string_set(Lisp s, int n, int c)
-{
-    get_string_(s)->string[n] = (char)c;
+    assert(c >= 0 && c <= 127);
+    assert(i >= 0 && i < lisp_buffer_capacity(s));
+    string_get_(s)->string[i] = (char)c;
 }
 
 Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx)
@@ -1235,21 +1203,21 @@ Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx)
     assert(start <= end);
 
     int count = start;
-    char *first = lisp_string(s);
+    const char *first = lisp_string(s);
     while (*first && count) {
         --count;
         ++first;
     }
 
     count = (end - start);
-    char *last = first;
+    const char *last = first;
     while (*last && count)
     {
         --count;
         ++last;
     }
-    Lisp result = lisp_make_string2(last - first, '\0', ctx);
-    memcpy(lisp_string(result), first, last - first);
+    Lisp result = lisp_make_string(last - first, ctx);
+    memcpy(lisp_buffer(result), first, last - first);
     return result;
 }
 
@@ -1262,6 +1230,7 @@ Lisp lisp_make_char(int c)
 }
 
 int lisp_char(Lisp l) { return l.val.char_val; }
+Lisp lisp_eof(void) { return lisp_make_char(-1); }
 
 static uint64_t hash_bytes(const char *buffer, size_t n)
 {
@@ -1379,7 +1348,7 @@ Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
     lambda->block.d.lambda.body_type = (uint8_t)lisp_type(body);
     lambda->block.d.lambda.args_type = (uint8_t)lisp_type(args);
 
-    assert(lisp_is_list(env));
+    assert(lisp_is_env(env));
 
     lambda->args = args.val;
     lambda->body = body.val;
@@ -1414,6 +1383,88 @@ Lisp lisp_lambda_env(Lisp l)
     return val_to_list_(lambda->env);
 }
 
+typedef struct
+{
+    Block block;
+    LispVal val_or_proc;
+} Promise;
+
+Lisp lisp_make_promise(Lisp proc, LispContext ctx)
+{
+    assert(lisp_type(proc) == LISP_LAMBDA || lisp_type(proc) == LISP_FUNC);
+    Promise* promise = gc_alloc(sizeof(Promise), LISP_PROMISE, ctx);
+    promise->block.d.promise.cached = 0;
+    promise->block.d.promise.type = lisp_type(proc);
+    promise->val_or_proc = proc.val;
+
+    LispVal val;
+    val.ptr_val = promise;
+    return (Lisp) { val, LISP_PROMISE };
+}
+
+static Promise* promise_get_(Lisp p)
+{
+    assert(p.type == LISP_PROMISE);
+    return p.val.ptr_val;
+}
+
+void lisp_promise_store(Lisp p, Lisp x)
+{
+    Promise* promise = promise_get_(p); 
+    assert(!promise->block.d.promise.cached);
+    promise->block.d.promise.cached = 1;
+    promise->block.d.promise.type = lisp_type(x);
+    promise->val_or_proc = x.val;
+}
+
+int lisp_promise_forced(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    return (int)promise->block.d.promise.cached;
+}
+
+static Lisp promise_body_or_val_(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    LispType type = (LispType)promise->block.d.promise.type;
+    return (Lisp) { promise->val_or_proc, type }; 
+}
+
+Lisp lisp_promise_proc(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    assert(!promise->block.d.promise.cached);
+    return promise_body_or_val_(p);
+}
+
+Lisp lisp_promise_val(Lisp p)
+{
+    const Promise* promise = promise_get_(p); 
+    assert(promise->block.d.promise.cached);
+    return promise_body_or_val_(p);
+}
+
+typedef struct
+{
+    Block block;
+    Lisp result;
+    jmp_buf jmp;
+    int stack_ptr;
+} Jump;
+
+static Jump* jump_get_(Lisp x) {
+    assert(x.type == LISP_JUMP);
+    return x.val.ptr_val;
+}
+
+static Lisp make_jump_(LispContext ctx)
+{
+    Jump* j = gc_alloc(sizeof(Jump), LISP_JUMP, ctx);
+    j->result = lisp_false();
+    return (Lisp) { .val = { .ptr_val = j }, .type = LISP_JUMP };
+}
+
+// READER
 typedef enum
 {
     TOKEN_NONE = 0,
@@ -1884,8 +1935,8 @@ static Lisp parse_string_(Lexer* lex, LispContext ctx)
 { 
     // -2 length to skip quotes
     size_t size = lex->scan_length - 2;
-    Lisp l = lisp_make_string2(size, '\0', ctx);
-    char* str = lisp_string(l);
+    Lisp l = lisp_make_buffer(size + 1, ctx);
+    char* str = lisp_buffer(l);
     lexer_copy_token(lex, 1, size, str);
     char* out = string_unescape_(str, str + size, str);
     *out = '\0';
@@ -1931,10 +1982,7 @@ static int parse_char_(Lexer* lex)
         int i = 0;
         while (*name_it)
         {
-            if (strcmp(*name_it, scratch) == 0)
-            {
-                return i - 1;
-            }
+            if (strcmp(*name_it, scratch) == 0) return i - 1;
             ++name_it;
             ++i;
         }
@@ -1956,7 +2004,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_L_PAREN:
         {
-            Lisp tail = lisp_make_null();
+            Lisp tail = lisp_null();
 
             // (
             lexer_next_token(lex);
@@ -2074,7 +2122,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
         quote:
         {
              // '
-             Lisp l = lisp_cons(parse_list_r(lex, error_jmp, ctx), lisp_make_null(), ctx);
+             Lisp l = lisp_cons(parse_list_r(lex, error_jmp, ctx), lisp_null(), ctx);
              //lexer_next_token(lex);
              return lisp_cons(get_sym(quote_type, ctx), l, ctx);
         }
@@ -2091,11 +2139,11 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     if (error != LISP_ERROR_NONE)
     {
         if (out_error) *out_error = error;
-        return lisp_make_null();
+        return lisp_null();
     }
 
     lexer_next_token(lex);
-    if (lex->token == TOKEN_NONE) return lisp_make_char(-1);
+    if (lex->token == TOKEN_NONE) return lisp_eof();
 
     Lisp result = parse_list_r(lex, error_jmp, ctx);
     lexer_next_token(lex);
@@ -2103,7 +2151,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     if (lex->token != TOKEN_NONE)
     {
         // MULTIPLE FORMS
-        result = lisp_cons(result, lisp_make_null(), ctx);
+        result = lisp_cons(result, lisp_null(), ctx);
         
         while (lex->token != TOKEN_NONE)
         {
@@ -2118,7 +2166,7 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
     return result;
 }
 
-Lisp lisp_read(const char* program, LispError* out_error, LispContext ctx)
+Lisp lisp_read(const char *program, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
     lexer_init(&lex, program);
@@ -2127,7 +2175,7 @@ Lisp lisp_read(const char* program, LispError* out_error, LispContext ctx)
     return l;
 }
 
-Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx)
+Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
     lexer_init_file(&lex, file);
@@ -2136,13 +2184,13 @@ Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx)
     return l;
 }
 
-Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
+Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
 {
-    FILE* file = fopen(path, "r");
+    FILE *file = fopen(path, "r");
     if (!file)
     {
         *out_error = LISP_ERROR_FILE_OPEN;
-        return lisp_make_char(-1);
+        return lisp_eof();
     }
     Lisp l = lisp_read_file(file, out_error, ctx);
     fclose(file);
@@ -2151,7 +2199,7 @@ Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx)
 
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx) { return lisp_cons(table, l, ctx); }
 
-Lisp lisp_env_lookup(Lisp l, Lisp key, int* present)
+Lisp lisp_env_lookup(Lisp l, Lisp key, int *present)
 {
     while (lisp_is_pair(l))
     {
@@ -2160,7 +2208,7 @@ Lisp lisp_env_lookup(Lisp l, Lisp key, int* present)
         l = lisp_cdr(l);
     }
     
-    return lisp_make_null();
+    return lisp_null();
 }
 
 void lisp_env_define(Lisp l, Lisp key, Lisp x, LispContext ctx)
@@ -2184,6 +2232,8 @@ int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx)
 
     return 0; 
 }
+
+int lisp_is_env(Lisp l) { return lisp_is_list(l); }
 
 static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
 {
@@ -2233,7 +2283,7 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             }
             break;
         }
-        case LISP_CONTINUE: fputs("<continue>", file); break;
+        case LISP_JUMP: fputs("<jump>", file); break;
         case LISP_LAMBDA: fputs("<lambda>", file); break;
         case LISP_PROMISE: fputs("<promise>", file); break;
         case LISP_FUNC: fprintf(file, "<c-func-%p>", l.val.ptr_val); break;
@@ -2298,6 +2348,7 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             break;
         }
         default:
+            // TODO
             fprintf(stderr, "printing unknown lisp type: %d\n", lisp_type(l));
             break;
     }
@@ -2308,18 +2359,20 @@ void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
 void lisp_displayf(FILE* file, Lisp l) { lisp_print_r(file, l, 1, 0); }
 
-void lisp_port_set_out(FILE* file, LispContext ctx) { ctx.p->out_port = file; }
-void lisp_port_set_in(FILE* file, LispContext ctx) { ctx.p->in_port = file; }
-void lisp_port_set_err(FILE* file, LispContext ctx) { ctx.p->err_port = file; }
+void lisp_set_stdout(FILE* file, LispContext ctx) { ctx.p->out_port = file; }
+void lisp_set_stdin(FILE* file, LispContext ctx) { ctx.p->in_port = file; }
+void lisp_set_stderr(FILE* file, LispContext ctx) { ctx.p->err_port = file; }
 
-#ifndef LISP_NO_EVAL
+FILE *lisp_stdin(LispContext ctx) { return ctx.p->in_port; }
+FILE *lisp_stderr(LispContext ctx) { return ctx.p->err_port; }
+FILE *lisp_stdout(LispContext ctx) { return ctx.p->out_port; }
 
 static void lisp_stack_push(Lisp x, LispContext ctx)
 {
 #ifdef LISP_DEBUG
     if (ctx.p->stack_ptr + 1 >= ctx.p->stack_depth)
     {
-        fprintf(stderr, "stack overflow\n");
+        fprintf(ctx.p->err_port, "stack overflow\n");
     }
 #endif 
 
@@ -2334,7 +2387,7 @@ static Lisp lisp_stack_pop(LispContext ctx)
 #ifdef LISP_DEBUG
     if (ctx.p->stack_ptr < 0)
     {
-        fprintf(stderr, "stack underflow\n");
+        fprintf(ctx.p->err_port, "stack underflow\n");
     }
 #endif
     return ctx.p->stack[ctx.p->stack_ptr];
@@ -2343,6 +2396,26 @@ static Lisp lisp_stack_pop(LispContext ctx)
 static Lisp* lisp_stack_peek(size_t i, LispContext ctx)
 {
     return ctx.p->stack + (ctx.p->stack_ptr - i);
+}
+
+Lisp lisp_call_cc(Lisp proc, LispError* out_error, LispContext ctx)
+{
+    Lisp j = make_jump_(ctx);
+    Jump* jump = jump_get_(j);
+    jump->stack_ptr = ctx.p->stack_ptr;
+
+    int has_result = setjmp(jump->jmp);
+    if (has_result)
+    {
+        // restore jump from the stack
+        jump = jump_get_(lisp_stack_pop(ctx));
+        ctx.p->stack_ptr = jump->stack_ptr;
+        return jump->result;
+    }
+    else
+    {
+        return lisp_apply(proc, lisp_cons(j, lisp_null(), ctx), out_error, ctx);
+    }
 }
 
 // returns whether the result is final, or needs to be eval'd.
@@ -2398,6 +2471,14 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
             *out_result = f(args, error, ctx);
             return 0;
         }
+        case LISP_JUMP:
+        {
+            Jump* jump = jump_get_(operator);
+            jump->result = lisp_car(args);
+            // put jump on the stack
+            lisp_stack_push(operator, ctx);
+            longjmp(jump->jmp, 1);
+        }
         default:
         {
             lisp_printf(ctx.p->err_port, operator);
@@ -2416,8 +2497,6 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
     
     while (1)
     {
-        assert(!lisp_is_null(*env));
-        
         switch (lisp_type(*x))
         {
             case LISP_SYMBOL: // variable reference
@@ -2427,8 +2506,8 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 if (!present)
                 {
                     fprintf(ctx.p->err_port, "%s is not defined.\n", lisp_symbol_string(*x));
-                    longjmp(error_jmp, LISP_ERROR_UNKNOWN_VAR); 
-                    return lisp_make_null();
+                    longjmp(error_jmp, LISP_ERROR_UNDEFINED_VAR); 
+                    return lisp_null();
                 }
                 return val;
             }
@@ -2504,10 +2583,11 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     
                     Lisp symbol = lisp_list_ref(*x, 1);
                     lisp_env_define(*env, symbol, value, ctx);
-                    return lisp_make_null();
+                    return lisp_null();
                 }
                 else if (lisp_eq(op_sym, get_sym(SYM_SET, ctx)) && op_valid)
                 {
+                    assert(!lisp_is_null(*env));
                     // mutablity
                     // like def, but requires existence
                     // and will search up the environment chain
@@ -2525,7 +2605,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     { 
                         fprintf(ctx.p->err_port, "error: unknown variable: %s\n", lisp_symbol_string(symbol));
                     }
-                    return lisp_make_null();
+                    return lisp_null();
                 }
                 else if (lisp_eq(op_sym, get_sym(SYM_LAMBDA, ctx)) && op_valid) 
                 {
@@ -2550,7 +2630,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     
                     Lisp arg_expr = lisp_cdr(*x);
                     
-                    Lisp args = lisp_make_null();
+                    Lisp args = lisp_null();
                     
                     while (lisp_is_pair(arg_expr))
                     {
@@ -2637,152 +2717,75 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
     // 3. check syntax    
 
     Lisp op = lisp_car(l);
-    int op_valid = lisp_type(op) == LISP_SYMBOL;
-
-    if (lisp_eq(op, get_sym(SYM_QUOTE, ctx)) && op_valid)
+    if (lisp_type(op) == LISP_SYMBOL)
     {
-        // don't expand quotes
-        if (lisp_list_length(l) != 2)
+        if (lisp_eq(op, get_sym(SYM_QUOTE, ctx)))
         {
-            fprintf(ctx.p->err_port, "(quote x)\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        }
-        return l;
-    }
-    else if (lisp_eq(op, get_sym(SYM_QUASI_QUOTE, ctx)) && op_valid)
-    {
-        return expand_quasi_r(lisp_car(lisp_cdr(l)), error_jmp, ctx);
-    }
-    else if (lisp_eq(op, get_sym(SYM_DEFINE_MACRO, ctx)) && op_valid)
-    {
-        if (lisp_list_length(l) != 3)
-        {
-            fprintf(ctx.p->err_port, "(define-macro name proc)\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        } 
-
-        Lisp symbol = lisp_list_ref(l, 1);
-        Lisp body = lisp_list_ref(l, 2);
-
-        LispError e;
-        Lisp lambda = lisp_eval(body, &e, ctx);
-
-        if (e != LISP_ERROR_NONE)
-        {
-            longjmp(error_jmp, e);
-        }
-        if (lisp_type(lambda) != LISP_LAMBDA)
-        {
-            fprintf(ctx.p->err_port, "(define-macro name proc) not a procedure\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        } 
-
-        lisp_table_set(ctx.p->macros, symbol, lambda, ctx);
-        return lisp_make_null();
-    }
-    else if (lisp_eq(op, get_sym(SYM_DEFINE, ctx)) && op_valid)
-    {
-        int length = lisp_list_length(l);
-
-        Lisp rest = lisp_cdr(l);
-        Lisp signature = lisp_car(rest);
-
-        switch (lisp_type(signature))
-        {
-            case LISP_PAIR:
-                {
-                    // (define (<name> <arg0> ... <argn>) <body0> ... <bodyN>)
-                    // -> (define <name> (lambda (<arg0> ... <argn>) <body> ... <bodyN>))
-
-                    if (length < 3) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
-                    Lisp name = lisp_car(signature);
-
-                    if (lisp_type(name) != LISP_SYMBOL) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE); 
-
-                    Lisp args = lisp_cdr(signature);
-                    Lisp lambda = lisp_cdr(rest); // start with body
-                    lambda = lisp_cons(args, lambda, ctx);
-                    lambda = lisp_cons(get_sym(SYM_LAMBDA, ctx), lambda, ctx);
-
-                    Lisp terms[] = { name, expand_r(lambda, error_jmp, ctx) };
-                    lisp_set_cdr(l, lisp_make_list2(terms, 2, ctx));
-                    return l;
-                }
-            case LISP_SYMBOL:
-                {
-                    if (length != 3) longjmp(error_jmp, LISP_ERROR_BAD_DEFINE); 
-                    lisp_set_cdr(rest, expand_r(lisp_cdr(rest), error_jmp, ctx));
-                    return l;
-                }
-            default:
-                longjmp(error_jmp, LISP_ERROR_BAD_DEFINE);
-                break;
-        }
-    }
-    else if (lisp_eq(op, get_sym(SYM_SET, ctx)) && op_valid)
-    {
-        if (lisp_list_length(l) != 3) {
-            fprintf(ctx.p->err_port, "(set! symbol x)\n");
-            lisp_printf(stderr, l);
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        }
-
-        Lisp var = lisp_list_ref(l, 1);
-        if (lisp_type(var) != LISP_SYMBOL) {
-            fprintf(ctx.p->err_port, "(set! symbol x) not a symbol\n");
-            longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-        }
-        // continue with expansion
-    }
-    else if (lisp_eq(op, get_sym(SYM_LAMBDA, ctx)) && op_valid)
-    {
-        // (LAMBDA (<var0> ... <varN>) <expr0> ... <exprN>)
-        // (LAMBDA (<var0> ... <varN>) (BEGIN <expr0> ... <expr1>)) 
-        if (lisp_list_length(l) > 3)
-        {
-            Lisp body_exprs = expand_r(lisp_list_advance(l, 2), error_jmp, ctx); 
-            Lisp begin = lisp_cons(get_sym(SYM_BEGIN, ctx), body_exprs, ctx);
-
-            Lisp vars = lisp_list_ref(l, 1);
-            if (!lisp_is_pair(vars) && !lisp_is_null(vars)) longjmp(error_jmp, LISP_ERROR_BAD_LAMBDA);
-
-            Lisp lambda = lisp_cons(begin, lisp_make_null(), ctx);
-            lambda = lisp_cons(vars, lambda, ctx);
-            lambda = lisp_cons(lisp_car(l), lambda, ctx);
-            return lambda;
-        }
-        else
-        {
-            Lisp body = lisp_list_advance(l, 2);
-            lisp_set_cdr(lisp_cdr(l), expand_r(body, error_jmp, ctx));
+            // don't expand quotes
+            if (lisp_list_length(l) != 2)
+            {
+                fprintf(ctx.p->err_port, "(quote x)\n");
+                longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+            }
             return l;
         }
-    }
-    else if (op_valid)
-    {
-        int present;
-        Lisp proc = lisp_table_get(ctx.p->macros, op, &present);
-
-        if (present)
+        else if (lisp_eq(op, get_sym(SYM_QUASI_QUOTE, ctx)))
         {
-            // EXPAND MACRO
-
-            // TODO: need to make sure collection is not triggered
-            // while evaling a macro.
-            Lisp result;
-            Lisp calling_env;
-            LispError error = LISP_ERROR_NONE;
-            if (apply(proc, lisp_cdr(l), &result, &calling_env, &error, ctx) == 1)
+            return expand_quasi_r(lisp_car(lisp_cdr(l)), error_jmp, ctx);
+        }
+        else if (lisp_eq(op, get_sym(SYM_DEFINE_MACRO, ctx)))
+        {
+            if (lisp_list_length(l) != 3)
             {
-                result = lisp_eval2(result, calling_env, &error, ctx);
-            }
+                fprintf(ctx.p->err_port, "(define-macro name proc)\n");
+                longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+            } 
 
-            if (error != LISP_ERROR_NONE)
+            Lisp symbol = lisp_list_ref(l, 1);
+            Lisp body = lisp_list_ref(l, 2);
+
+            LispError e;
+            Lisp lambda = lisp_eval(body, &e, ctx);
+
+            if (e != LISP_ERROR_NONE)
             {
-                fprintf(ctx.p->out_port, "macroexpand failed: %s\n", lisp_symbol_string(op));
-                longjmp(error_jmp, error);
+                longjmp(error_jmp, e);
             }
-            return expand_r(result, error_jmp, ctx);
+            if (lisp_type(lambda) != LISP_LAMBDA)
+            {
+                fprintf(ctx.p->err_port, "(define-macro name proc) not a procedure\n");
+                longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
+            } 
+
+            lisp_table_set(ctx.p->macros, symbol, lambda, ctx);
+            return lisp_null();
+        }
+        else 
+        {
+            int present;
+            Lisp proc = lisp_table_get(ctx.p->macros, op, &present);
+
+            if (present)
+            {
+                // EXPAND MACRO
+
+                // TODO: need to make sure collection is not triggered
+                // while evaling a macro.
+                Lisp result;
+                Lisp calling_env;
+                LispError error = LISP_ERROR_NONE;
+                if (apply(proc, lisp_cdr(l), &result, &calling_env, &error, ctx) == 1)
+                {
+                    result = lisp_eval2(result, calling_env, &error, ctx);
+                }
+
+                if (error != LISP_ERROR_NONE)
+                {
+                    fprintf(ctx.p->out_port, "macroexpand failed: %s\n", lisp_symbol_string(op));
+                    longjmp(error_jmp, error);
+                }
+                return expand_r(result, error_jmp, ctx);
+            }
         }
     }
 
@@ -2811,7 +2814,7 @@ Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx)
     else
     {
         *out_error = error;
-        return lisp_make_null();
+        return lisp_null();
     }
 }
 
@@ -2823,7 +2826,7 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
     if (error != LISP_ERROR_NONE)
     {
         if (out_error) *out_error = error;
-        return lisp_make_null();
+        return lisp_null();
     }
     
     size_t save_stack = ctx.p->stack_ptr;
@@ -2856,16 +2859,26 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
             *out_error = error;
         }
 
-        return lisp_make_null();
+        return lisp_null();
     }
 }
 
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
 {
-    return lisp_eval2(expr, lisp_env_global(ctx), out_error, ctx);
+    return lisp_eval2(expr, lisp_env(ctx), out_error, ctx);
 }
 
-#endif
+Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx)
+{
+    // TODO: argument passing is a little more sophisitaed
+    // No environment required. procedures always bring their own enviornment
+    // to the call.
+    Lisp x;
+    Lisp env;
+    int needs_to_eval = apply(operator, args, &x, &env, out_error, ctx);
+    if (*out_error != LISP_ERROR_NONE) return lisp_false();
+    return needs_to_eval ? lisp_eval2(x, env, out_error, ctx) : x;
+}
 
 static Lisp gc_move(Lisp x, LispContext ctx)
 {
@@ -2910,9 +2923,7 @@ static LispVal gc_move_val(LispVal val, LispType type, LispContext ctx)
 
 static void gc_move_v(Lisp* start, int n, LispContext ctx)
 {
-    int i;
-    for (i = 0; i < n; ++i)
-        start[i] = gc_move(start[i], ctx);
+    for (int i = 0; i < n; ++i) start[i] = gc_move(start[i], ctx);
 }
 
 static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
@@ -2920,16 +2931,17 @@ static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
     // move symbol table (weak references)
     Table* from = table_get_(old_table);
     Lisp to_table = lisp_make_table(ctx);
-    table_grow_(to_table, from->capacity, ctx);
+    // preallocate
+    int cap = from->capacity;
+    table_grow_(to_table, cap, ctx);
 
-    int n = from->capacity;
     Lisp hashes = { from->keys, LISP_VECTOR };
     Lisp symbols = { from->vals, LISP_VECTOR };
 
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < cap; ++i)
     {
         Lisp hash = lisp_vector_ref(hashes, i); 
-        if (!lisp_is_null(hashes))
+        if (!lisp_is_null(hash))
         {
             Lisp old_symbol = lisp_vector_ref(symbols, i);
             while (old_symbol.val.ptr_val != NULL)
@@ -2939,7 +2951,6 @@ static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
                     Lisp to_insert = gc_move(old_symbol, ctx);
                     int present;
                     Lisp existing = lisp_table_get(to_table, hash, &present);
-
                     symbol_get_(to_insert)->next = existing.val;
                     lisp_table_set(to_table, hash, to_insert, ctx);
                 }
@@ -3044,6 +3055,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 
                         for (int i = 0; i < n; ++i)
                         {
+                            // move all the values, but borrow the old table for now.
                             Lisp key = lisp_vector_ref(keys, i); 
                             if (!lisp_is_null(key))
                             {
@@ -3051,6 +3063,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                                 lisp_vector_set(vals, i, gc_move(lisp_vector_ref(vals, i), ctx));
                             }
                         }
+                        // create new table and move the values in place.
                         table_grow_(table, n, ctx);
                         break;
                      }
@@ -3112,21 +3125,20 @@ void lisp_print_collect_stats(LispContext ctx)
     fprintf(ctx.p->out_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbols));
 }
 
-Lisp lisp_env_global(LispContext ctx)
-{
-    return ctx.p->env;
-}
+Lisp lisp_env(LispContext ctx) { return ctx.p->env; }
 
-void lisp_env_set_global(Lisp env, LispContext ctx)
+void lisp_set_env(Lisp env, LispContext ctx)
 {
+    assert(lisp_is_env(env));
     ctx.p->env = env;
 }
 
-void lisp_shutdown(LispContext ctx)
+Lisp lisp_macro_table(LispContext ctx) { return ctx.p->macros; }
+
+void lisp_set_macro_table(Lisp table, LispContext ctx)
 {
-    heap_shutdown(&ctx.p->heap);
-    free(ctx.p->stack);
-    free(ctx.p);
+    assert(lisp_type(table) == LISP_TABLE);
+    ctx.p->macros = table;
 }
 
 const char* lisp_error_string(LispError error)
@@ -3139,18 +3151,12 @@ const char* lisp_error_string(LispError error)
             return "file error: could not open file";
         case LISP_ERROR_READ_SYNTAX:
             return "read/syntax error.";
-        case LISP_ERROR_BAD_DEFINE:
-            return "expand error: bad define (define var x)";
         case LISP_ERROR_FORM_SYNTAX:
             return "expand error: bad special form";
-        case LISP_ERROR_BAD_LAMBDA:
-            return "expand error: bad lambda";
-        case LISP_ERROR_UNKNOWN_VAR:
-            return "eval error: unknown variable";
+        case LISP_ERROR_UNDEFINED_VAR:
+            return "eval error: undefined variable";
         case LISP_ERROR_BAD_OP:
             return "eval error: attempt to apply something which was not an operator";
-        case LISP_ERROR_UNKNOWN_EVAL:
-            return "eval error: got into a bad state";
         case LISP_ERROR_ARG_TYPE:
             return "eval error: invalid argument type";
         case LISP_ERROR_TOO_MANY_ARGS:
@@ -3186,7 +3192,7 @@ LispContext lisp_init(void)
     heap_init(&ctx.p->heap);
 
     ctx.p->symbols = lisp_make_table(ctx);
-    ctx.p->env = lisp_make_null();
+    ctx.p->env = lisp_null();
     ctx.p->macros = lisp_make_table(ctx);
 
     Lisp* c = ctx.p->symbol_cache;
@@ -3196,2004 +3202,27 @@ LispContext lisp_init(void)
     c[SYM_QUASI_QUOTE] = lisp_make_symbol("QUASIQUOTE", ctx);
     c[SYM_UNQUOTE] = lisp_make_symbol("UNQUOTE", ctx);
     c[SYM_UNQUOTE_SPLICE] = lisp_make_symbol("UNQUOTESPLICE", ctx);
-    c[SYM_DEFINE] = lisp_make_symbol("DEFINE", ctx);
+    c[SYM_DEFINE] = lisp_make_symbol("_DEF", ctx);
     c[SYM_DEFINE_MACRO] = lisp_make_symbol("DEFINE-MACRO", ctx);
-    c[SYM_SET] = lisp_make_symbol("SET!", ctx);
-    c[SYM_LAMBDA] = lisp_make_symbol("LAMBDA", ctx);
+    c[SYM_SET] = lisp_make_symbol("_SET!", ctx);
+    c[SYM_LAMBDA] = lisp_make_symbol("/\\_", ctx);
     c[SYM_CONS] = lisp_make_symbol("CONS", ctx);
     return ctx;
 }
 
-Lisp lisp_macro_table(LispContext ctx)
-{
-    return ctx.p->macros;
-}
-
-void lisp_macro_table_set(Lisp table, LispContext ctx)
-{
-    assert(lisp_type(table) == LISP_TABLE);
-    ctx.p->macros = table;
-}
-
-
-#ifndef LISP_NO_LIB
-
-#define ARITY_CHECK(min_, max_) do { \
-  int args_length_ = lisp_list_length(args); \
-  if (args_length_ < min_) { *e = LISP_ERROR_TOO_FEW_ARGS; return lisp_make_null(); } \
-  if (args_length_ > max_) { *e = LISP_ERROR_TOO_MANY_ARGS; return lisp_make_null(); } \
-} while (0);
-
-static Lisp sch_cons(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp x = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp y = lisp_car(args);
-    return lisp_cons(x, y, ctx);
-}
-
-static Lisp sch_car(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_car(lisp_car(args));
-}
-
-static Lisp sch_cdr(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_cdr(lisp_car(args));
-}
-
-static Lisp sch_set_car(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    lisp_set_car(a, b);
-    return lisp_make_null();
-}
-
-static Lisp sch_set_cdr(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    lisp_set_cdr(a, b);
-    return lisp_make_null();
-}
-
-static Lisp sch_exact_eq(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    return lisp_make_bool(lisp_eq(a, b));
-}
-
-static Lisp sch_equal(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    return lisp_make_bool(lisp_equal(a, b));
-}
-
-static Lisp sch_equal_r(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    return lisp_make_bool(lisp_equal_r(a, b));
-}
-
-static Lisp sch_is_null(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_bool(lisp_is_null(lisp_car(args)));
-}
-
-static Lisp sch_is_pair(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_PAIR);
-}
-
-static Lisp sch_write(Lisp args, LispError* e, LispContext ctx)
-{
-    lisp_printf(ctx.p->out_port, lisp_car(args));
-    return lisp_make_null();
-}
-
-static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp x = lisp_car(args);
-    lisp_displayf(ctx.p->out_port, x);
-    return x;
-}
-
-static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    fputc(lisp_char(lisp_car(args)), ctx.p->out_port);
-    return lisp_make_null();
-}
-
-static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
-{
-    fflush(ctx.p->out_port); return lisp_make_null();
-}
-
-static Lisp sch_read(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_read_file(ctx.p->in_port, e, ctx);
-}
-
-static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
-{
-   if (lisp_is_pair(args))
-   {
-       Lisp l = lisp_car(args);
-       fputs(lisp_string(l), ctx.p->err_port);
-       args = lisp_cdr(args);
-   }
-   while (lisp_is_pair(args))
-   {
-       fputs(" ", ctx.p->err_port);
-       lisp_printf(ctx.p->err_port, lisp_car(args));
-       args = lisp_cdr(args);
-   }
-
-   *e = LISP_ERROR_RUNTIME;
-   return lisp_make_null();
-}
-
-static Lisp sch_syntax_error(Lisp args, LispError* e, LispContext ctx)
-{
-    fprintf(ctx.p->err_port, "expand error: %s ", lisp_string(lisp_car(args)));
-    args = lisp_cdr(args);
-    if (!lisp_is_null(args))
-    {
-        lisp_printf(stderr, lisp_car(args));
-    }
-    fprintf(ctx.p->err_port, "\n");
-
-    *e = LISP_ERROR_FORM_SYNTAX;
-    return lisp_make_null();
-}
-
-static Lisp sch_equals(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp to_check  = lisp_car(args);
-    if (lisp_is_null(to_check)) return lisp_true();
-    args = lisp_cdr(args);
-
-    while (lisp_is_pair(args))
-    {
-        if (lisp_bool(lisp_car(args)) != lisp_bool(to_check)) return lisp_false();
-        args = lisp_cdr(args);
-    }
-    return lisp_true();
-}
-
-static Lisp sch_list(Lisp args, LispError* e, LispContext ctx) { return args; }
-
-static Lisp sch_make_list(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp length = lisp_car(args);
-    if (lisp_type(length) != LISP_INT)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    Lisp next = lisp_cdr(args);
-    Lisp x;
-    if (lisp_is_null(next))
-    {
-        x = lisp_make_null();
-    }
-    else
-    {
-        x = lisp_car(lisp_cdr(args));
-    }
-    return lisp_make_list(x, lisp_int(length), ctx);
-}
-
-static Lisp sch_list_copy(Lisp args, LispError* e, LispContext ctx) {
-    return lisp_list_copy(lisp_car(args), ctx);
-}
-
-static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp l = lisp_make_null();  
-
-    while (lisp_is_pair(args))
-    {
-        l = lisp_list_append(l, lisp_car(args), ctx);
-        args = lisp_cdr(args);
-    }
-    return l;
-}
-
-static Lisp sch_list_ref(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp list = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp index = lisp_car(args);
-    return lisp_list_ref(list, lisp_int(index));
-}
-
-static Lisp sch_length(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_int(lisp_list_length(lisp_car(args)));
-}
-
-static Lisp sch_reverse_inplace(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_list_reverse(lisp_car(args));
-}
-static Lisp sch_list_advance(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp x = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp count = lisp_car(args);
-    return lisp_list_advance(x, lisp_int(count));
-}
-
-static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
-{
-    LispInt exact = 0;
-    LispReal inexact = 0; 
-
-    while (lisp_is_pair(args))
-    {
-        Lisp x = lisp_car(args);
-        args = lisp_cdr(args);
-        switch (lisp_type(x))
-        {
-            case LISP_INT:
-                exact += lisp_int(x);
-                break;
-            case LISP_REAL:
-                inexact += lisp_real(x);
-                break;
-            default:
-                *e = LISP_ERROR_ARG_TYPE;
-                return lisp_make_null();
-        }
-    }
-    
-    return inexact == 0
-        ? lisp_make_int(exact)
-        : lisp_make_real(inexact + (LispReal)exact);
-}
-
-static Lisp sch_mult(Lisp args, LispError* e, LispContext ctx)
-{
-    LispInt exact = 1;
-    LispReal inexact = 1; 
-
-    while (lisp_is_pair(args))
-    {
-        Lisp x = lisp_car(args);
-        args = lisp_cdr(args);
-        switch (lisp_type(x))
-        {
-            case LISP_INT:
-                exact *= lisp_int(x);
-                break;
-            case LISP_REAL:
-                inexact *= lisp_real(x);
-                break;
-            default:
-                *e = LISP_ERROR_ARG_TYPE;
-                return lisp_make_null();
-        }
-    }
-    
-    return inexact == 1
-        ? lisp_make_int(exact)
-        : lisp_make_real(inexact * (LispReal)exact);
-}
-
-static Lisp sch_sub(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 2);
-    Lisp x = lisp_car(args);
-    args = lisp_cdr(args);
-
-    Lisp y;
-    if (lisp_is_null(args))
-    {
-        y = x;
-        x = lisp_make_int(0);
-    }
-    else
-    {
-        y = lisp_car(args);
-    }
-    switch (lisp_type(x))
-    {
-        case LISP_REAL:
-            return lisp_make_real(lisp_real(x) - lisp_number_to_real(y));
-        case LISP_INT:
-            switch (lisp_type(y))
-            {
-                case LISP_REAL:
-                    return lisp_make_real(lisp_number_to_real(x) - lisp_real(y));
-                case LISP_INT:
-                    return lisp_make_int(lisp_int(x) - lisp_int(y));
-                default:
-                    *e = LISP_ERROR_ARG_TYPE;
-                    return lisp_make_null();
-            }
-            break;
-        default:
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-    }
-}
-
-static Lisp sch_divide(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp x = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp y = lisp_car(args);
-
-    switch (lisp_type(x))
-    {
-        case LISP_REAL:
-            return lisp_make_real(lisp_real(x) / lisp_number_to_real(y));
-        case LISP_INT:
-            switch (lisp_type(y))
-            {
-                case LISP_REAL:
-                    return lisp_make_real(lisp_number_to_real(x) / lisp_real(y));
-                case LISP_INT:
-                    // TODO: divide by zero check?
-                    return lisp_make_int(lisp_int(x) / lisp_int(y));
-                default:
-                    *e = LISP_ERROR_ARG_TYPE;
-                    return lisp_make_null();
-            }
-            break;
-        default:
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-    }
-}
-
-static Lisp sch_less(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp x = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp y = lisp_car(args);
-
-    switch (lisp_type(x))
-    {
-        case LISP_REAL:
-            return lisp_make_bool(lisp_real(x) < lisp_number_to_real(y));
-        case LISP_INT:
-            switch (lisp_type(y))
-            {
-                case LISP_REAL:
-                    return lisp_make_bool(lisp_number_to_real(x) < lisp_real(y));
-                case LISP_INT:
-                    return lisp_make_bool(lisp_int(x) < lisp_int(y));
-                default:
-                    *e = LISP_ERROR_ARG_TYPE;
-                    return lisp_make_null();
-            }
-            break;
-        default:
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-    }
-}
-
-static Lisp sch_to_exact(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_int(lisp_number_to_int(lisp_car(args)));
-}
-
-static Lisp sch_to_inexact(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_real(lisp_number_to_real(lisp_car(args)));
-}
-
-static Lisp sch_symbol_to_string(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp val = lisp_car(args);
-    if (lisp_type(val) != LISP_SYMBOL)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-    else
-    {
-        return lisp_make_string(lisp_symbol_string(val), ctx);
-    }
-}
-
-static Lisp sch_is_symbol(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_SYMBOL);
-}
-
-static Lisp sch_symbol_less(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    int result = strncmp(lisp_symbol_string(a), lisp_symbol_string(b), LISP_IDENTIFIER_MAX) < 0;
-    return lisp_make_bool(result);
-}
-
-static Lisp sch_string_to_symbol(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp val = lisp_car(args);
-    if (lisp_type(val) != LISP_STRING)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-    else
-    {
-        return lisp_make_symbol(lisp_string(val), ctx);
-    }
-}
-
-static Lisp sch_gensym(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(0, 0);
-    return lisp_gen_symbol(ctx);
-}
-
-static Lisp sch_is_string(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_STRING);
-}
-
-static Lisp sch_string_is_null(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp a = lisp_car(args);
-    return lisp_make_bool(lisp_string(a)[0] == '\0');
-}
-
-static Lisp sch_make_string(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp n = lisp_car(args);
-    args = lisp_cdr(args);
-
-    int c = '_';
-    if (lisp_is_pair(args)) {
-        c = lisp_char(lisp_car(args));
-    }
-    return lisp_make_string2(lisp_int(n), c, ctx);
-}
-
-static Lisp sch_string_less(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    int result = strcmp(lisp_string(a), lisp_string(b)) < 0;
-    return lisp_make_bool(result);
-}
-
-static Lisp sch_substring(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(3, 3);
-    Lisp s = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp start = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp end = lisp_car(args);
-    return lisp_substring(s, lisp_int(start), lisp_int(end), ctx);
-}
-
-static Lisp sch_string_length(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp x = lisp_car(args);
-    return lisp_make_int((LispInt)strlen(lisp_string(x)));
-}
-
-static Lisp sch_string_ref(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    Lisp str = lisp_car(args);
-    Lisp index = lisp_car(lisp_cdr(args));
-    if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    return lisp_make_char((int)lisp_string_ref(str, lisp_int(index)));
-}
-
-static Lisp sch_string_set(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp str = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp index = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp val = lisp_car(args); 
-    if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    lisp_string_set(str, lisp_int(index), (char)lisp_int(val));
-    return lisp_make_null();
-}
-
-static Lisp sch_string_upcase(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp s = lisp_car(args);
-    Lisp r = lisp_make_string(lisp_string(s), ctx);
-    
-    char* c = lisp_string(r);
-    while (*c) { *c = toupper(*c); ++c; }
-    return r;
-}
-
-static Lisp sch_string_downcase(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp s = lisp_car(args);
-    Lisp r = lisp_make_string(lisp_string(s), ctx);
-    
-    char* c = lisp_string(r);
-    while (*c) { *c = tolower(*c); ++c; }
-    return r;
-}
-
-static Lisp sch_string_append(Lisp args, LispError* e, LispContext ctx)
-{
-    int count = 0;
-    Lisp it = args;
-    while (lisp_is_pair(it))
-    {
-        Lisp x = lisp_car(it);
-        count += strlen(lisp_string(x));
-        it = lisp_cdr(it);
-    }
-
-    Lisp result = lisp_make_string2(count + 1, '\0', ctx);
-    char* c = lisp_string(result);
-
-    it = args;
-    while (lisp_is_pair(it))
-    {
-        Lisp x = lisp_car(it);
-        int n = (LispInt)strlen(lisp_string(x));
-        memcpy(c, lisp_string(x), n);
-        c += n;
-        it = lisp_cdr(it);
-    }
-    return result;
-}
-
-static Lisp sch_string_to_list(Lisp args, LispError* e, LispContext ctx)
-{
-    char* c = lisp_string(lisp_car(args));
-    Lisp tail = lisp_make_null();
-    while (*c)
-    {
-        tail = lisp_cons(lisp_make_char(*c), tail, ctx);
-        ++c;
-    }
-    return lisp_list_reverse(tail);
-}
-
-static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp l = lisp_car(args);
-    Lisp result = lisp_make_string2(lisp_list_length(l), '\0', ctx);
-    char* s = lisp_string(result);
-    
-    while (lisp_is_pair(l))
-    {
-        *s = (char)lisp_char(lisp_car(l));
-        ++s;
-        l = lisp_cdr(l);
-    }
-    return result;
-}
-
-static Lisp sch_string_to_number(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    const char* string = lisp_string(lisp_car(args));
-    if (strchr(string, '.'))
-    {
-        return lisp_parse_real(string);
-    }
-    else
-    {
-        return lisp_parse_int(string);
-    }
-}
-
-static Lisp sch_number_to_string(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    char scratch[64];
-    Lisp val = lisp_car(args);
-    switch (lisp_type(val))
-    {
-        case LISP_REAL:
-            snprintf(scratch, 64, "%f", lisp_real(val));
-            break;
-        case LISP_INT:
-            snprintf(scratch, 64, "%lli", lisp_int(val));
-            break;
-        default:
-        {
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-        }
-    }
-    return lisp_make_string(scratch, ctx);
-}
-
-static Lisp sch_char_less(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp a = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp b = lisp_car(args);
-    return lisp_make_bool(lisp_char(a) < lisp_char(b));
-}
-
-static Lisp sch_is_char(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_CHAR);
-}
-
-static Lisp sch_char_upcase(Lisp args, LispError* e, LispContext ctx)
-{
-    int c = lisp_char(lisp_car(args));
-    return lisp_make_char(toupper(c));
-}
-
-static Lisp sch_char_downcase(Lisp args, LispError* e, LispContext ctx)
-{
-    int c = lisp_char(lisp_car(args));
-    return lisp_make_char(tolower(c));
-}
-
-static Lisp sch_char_is_alphanum(Lisp args, LispError* e, LispContext ctx)
-{
-    int c = lisp_char(lisp_car(args));
-    return lisp_make_bool(isalnum(c));
-}
-
-static Lisp sch_char_is_alpha(Lisp args, LispError* e, LispContext ctx)
-{
-    int c = lisp_char(lisp_car(args));
-    return lisp_make_bool(isalpha(c));
-}
-
-static Lisp sch_char_is_number(Lisp args, LispError* e, LispContext ctx)
-{
-    int c = lisp_char(lisp_car(args));
-    return lisp_make_bool(isdigit(c));
-}
-
-static Lisp sch_char_is_white(Lisp args, LispError* e, LispContext ctx)
-{
-    int c = lisp_char(lisp_car(args));
-    return lisp_make_bool(isblank(c));
-}
-
-static Lisp sch_char_to_int(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_int(lisp_char(lisp_car(args)));
-}
-
-static Lisp sch_is_int(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_INT);
-}
-
-static Lisp sch_is_real(Lisp args, LispError* e, LispContext ctx)
-{
-    LispType t = lisp_type(lisp_car(args));
-    return lisp_make_bool(t == LISP_INT || t == LISP_REAL);
-}
-
-static Lisp sch_is_boolean(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_BOOL);
-}
-
-static Lisp sch_not(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_bool(!lisp_is_true(lisp_car(args)));
-}
-
-static Lisp sch_is_even(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_bool( (lisp_int(lisp_car(args)) & 1) == 0);
-}
-
-static Lisp sch_exp(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_real( exp(lisp_number_to_real(lisp_car(args))) );
-}
-
-static int ipow(int base, int exp)
-{
-    int result = 1;
-    for (;;)
-    {
-        if (exp & 1)
-            result *= base;
-        exp >>= 1;
-        if (!exp)
-            break;
-        base *= base;
-    }
-
-    return result;
-}
-
-static Lisp sch_power(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp base = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp power = lisp_car(args);
-
-    if (lisp_type(base) == LISP_INT && lisp_type(power) == LISP_INT)
-    {
-        return lisp_make_int( ipow(lisp_int(base), lisp_int(power)) );
-    }
-    else
-    {
-        return lisp_make_real( pow(lisp_number_to_real(base), lisp_number_to_real(power)) );
-    }
-}
-
-static Lisp sch_log(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_real( log(lisp_number_to_real(lisp_car(args))) );
-}
-
-static Lisp sch_sin(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_real( sin(lisp_number_to_real(lisp_car(args))) );
-}
-
-static Lisp sch_cos(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_real( cos(lisp_number_to_real(lisp_car(args))) );
-}
-
-static Lisp sch_tan(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_real( tan(lisp_number_to_real(lisp_car(args))) );
-}
-
-static Lisp sch_sqrt(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_real( sqrt(lisp_number_to_real(lisp_car(args))) );
-}
-
-static Lisp sch_atan(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 2);
-    LispReal y = lisp_number_to_real(lisp_car(args));
-    args = lisp_cdr(args);
-
-    if (lisp_is_null(args))
-    {
-        return lisp_make_real( atan(y) );
-    }
-    else
-    {
-        LispReal x = lisp_number_to_real(lisp_car(args));
-        return lisp_make_real( atan2(y, x) );
-    }
-}
-
-static Lisp sch_round(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp x = lisp_car(args);
-    switch (lisp_type(x))
-    {
-        case LISP_INT:
-            return lisp_make_int((LispInt)round(lisp_int(x)));
-        case LISP_REAL:
-            return lisp_make_real(round(lisp_real(x)));
-        default:
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-    }
-
-}
-
-static Lisp sch_floor(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp x = lisp_car(args);
-    switch (lisp_type(x))
-    {
-        case LISP_INT:
-            return lisp_make_int((LispInt)floor(lisp_int(x)));
-        case LISP_REAL:
-            return lisp_make_real(floor(lisp_real(x)));
-        default:
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-    }
-
-}
-
-static Lisp sch_ceiling(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp x = lisp_car(args);
-    switch (lisp_type(x))
-    {
-        case LISP_INT:
-            return lisp_make_int((LispInt)ceil(lisp_int(x)));
-        case LISP_REAL:
-            return lisp_make_real(ceil(lisp_real(x)));
-        default:
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-    }
-}
-
-static Lisp sch_quotient(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    LispInt a = lisp_int(lisp_car(args));
-    args = lisp_cdr(args);
-    LispInt b = lisp_int(lisp_car(args));
-    return lisp_make_int(a / b);
-}
-
-static Lisp sch_remainder(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    int a = lisp_int(lisp_car(args));
-    args = lisp_cdr(args);
-    int b = lisp_int(lisp_car(args));
-    return lisp_make_int(a % b);
-}
-
-static Lisp sch_modulo(Lisp args, LispError* e, LispContext ctx)
-{
-    int m = lisp_int(sch_remainder(args, e, ctx));
-    if (m < 0) {
-        int b = lisp_int(lisp_car(lisp_cdr(args)));
-        m = (b < 0) ? m - b : m + b;
-    }
-    return lisp_make_int(m);
-}
-
-static Lisp sch_abs(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    Lisp x = lisp_car(args);
-    switch (lisp_type(x))
-    {
-        case LISP_INT:
-            return lisp_make_int(llabs(lisp_int(x)));
-        case LISP_REAL:
-            return lisp_make_real(fabs(lisp_real(x)));
-        default:
-            *e = LISP_ERROR_ARG_TYPE;
-            return lisp_make_null();
-    }
-}
-
-static Lisp sch_is_vector(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_bool( lisp_type(lisp_car(args)) == LISP_VECTOR );
-}
-
-static Lisp sch_make_vector(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp length = lisp_car(args);
-
-    if (lisp_type(length) != LISP_INT)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    Lisp next = lisp_cdr(args);
-
-    Lisp val;
-    if (lisp_is_null(next))
-    {
-        val = lisp_make_null();
-    }
-    else
-    {
-        val = lisp_car(lisp_cdr(args));
-    }
-
-    return lisp_make_vector(val, lisp_int(length), ctx);
-}
-
-static Lisp sch_vector_grow(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    Lisp length = lisp_car(lisp_cdr(args));
-
-    if (lisp_type(length) != LISP_INT || lisp_type(v) != LISP_VECTOR)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    if (lisp_int(length) < lisp_vector_length(v))
-    {
-        *e = LISP_ERROR_OUT_OF_BOUNDS;
-        return lisp_make_null();
-    }
-
-    return lisp_vector_grow(v, lisp_int(length), ctx);
-}
-
-static Lisp sch_vector_length(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    if (lisp_type(v) != LISP_VECTOR)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    return lisp_make_int(lisp_vector_length(v));
-}
-
-static Lisp sch_vector_ref(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    Lisp i = lisp_car(lisp_cdr(args));
-
-    if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    if (lisp_int(i) >= lisp_vector_length(v))
-    {
-        *e = LISP_ERROR_OUT_OF_BOUNDS;
-        return lisp_make_null();
-    }
-
-    return lisp_vector_ref(v, lisp_int(i));
-}
-
-static Lisp sch_vector_set(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_list_ref(args, 0);
-    Lisp i = lisp_list_ref(args, 1);
-    Lisp x = lisp_list_ref(args, 2);
-
-    if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-
-    if (lisp_int(i) >= lisp_vector_length(v))
-    {
-        *e = LISP_ERROR_OUT_OF_BOUNDS;
-        return lisp_make_null();
-    }
-
-    lisp_vector_set(v, lisp_int(i), x);
-    return lisp_make_null();
-}
-
-static Lisp sch_vector_swap(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp i = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp j = lisp_car(args);
-
-    if (lisp_type(v) != LISP_VECTOR || lisp_type(i) != LISP_INT || lisp_type(j) != LISP_INT)
-    {
-        *e = LISP_ERROR_ARG_TYPE;
-        return lisp_make_null();
-    }
-    if (lisp_int(i) >= lisp_vector_length(v) || lisp_int(j) >= lisp_vector_length(v))
-    {
-        *e = LISP_ERROR_OUT_OF_BOUNDS;
-        return lisp_make_null();
-    }
-    return lisp_vector_swap(v, lisp_int(i), lisp_int(j));
-}
-
-static Lisp sch_vector_fill(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    args = lisp_cdr(args);
-    lisp_vector_fill(v, lisp_car(args));
-    return lisp_make_null();
-}
-
-static Lisp sch_vector_assq(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp k = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp v = lisp_car(args);
-    return lisp_avector_ref(v, k); 
-}
-
-static Lisp sch_subvector(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(3, 3);
-    Lisp v = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp start = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp end = lisp_car(args);
-    return lisp_subvector(v, lisp_int(start), lisp_int(end), ctx);
-}
-
-static Lisp sch_list_to_vector(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp l = lisp_car(args);
-    int n = lisp_list_length(l);
-    Lisp v = lisp_make_vector_uninitialized(n, ctx);
-
-    for (int i = 0; i < n; ++i)
-    {
-        lisp_vector_set(v, i, lisp_car(l));
-        l = lisp_cdr(l);
-    }
-    return v;
-}
-
-static Lisp sch_vector_to_list(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp v = lisp_car(args);
-    int n = lisp_vector_length(v);
-
-    Lisp tail = lisp_make_null();
-    for (int i = 0; i < n; ++i)
-        tail = lisp_cons(lisp_vector_ref(v, i), tail, ctx);
-    return lisp_list_reverse(tail);
-}
-
-static Lisp sch_pseudo_seed(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp seed = lisp_car(args);
-    srand((unsigned int)lisp_int(seed));
-    return lisp_make_null();
-}
-
-static Lisp sch_pseudo_rand(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp n = lisp_car(args);
-    return lisp_make_int(rand() % lisp_int(n));
-}
-
-static Lisp sch_univeral_time(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_int((LispInt)time(NULL));
-}
-
-static Lisp sch_is_table(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_TABLE);
-}
-
-static Lisp sch_table_make(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_table(ctx);
-}
-
-static Lisp sch_table_get(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 3);
-    Lisp table = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp key = lisp_car(args);
-    args = lisp_cdr(args);
-
-    Lisp def;
-    if (lisp_is_pair(args))
-    {
-        def = lisp_car(args);
-    }
-    else
-    {
-        def = lisp_make_null();
-    }
-
-    int present;
-    Lisp result = lisp_table_get(table, key, &present);
-    return present ? result : def;
-}
-
-static Lisp sch_table_set(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(3, 3);
-    Lisp table = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp key = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp x = lisp_car(args);
-    lisp_table_set(table, key, x, ctx);
-    return lisp_make_null();
-}
-
-static Lisp sch_table_size(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp table = lisp_car(args);
-    return lisp_make_int(lisp_table_size(table));
-}
-
-static Lisp sch_table_to_alist(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp table = lisp_car(args);
-    return lisp_table_to_alist(table, ctx);
-}
-
-static Lisp sch_is_promise(Lisp args, LispError* e, LispContext ctx)
-{
-  return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_PROMISE);
-}
-
-static Lisp sch_make_promise(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp proc = lisp_car(args);
-    return lisp_make_promise(proc, ctx);
-}
-
-static Lisp sch_promise_store(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp promise = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp val = lisp_car(args);
-    lisp_promise_store(promise, val);
-    return lisp_make_null();
-}
-
-static Lisp sch_promise_proc(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_promise_proc(lisp_car(args));
-}
-
-static Lisp sch_promise_val(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_promise_val(lisp_car(args));
-}
-
-static Lisp sch_promise_forced(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_make_bool(lisp_promise_forced(lisp_car(args)));
-}
-
-static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp operator = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp op_args = lisp_car(args);
-
-    // TODO: argument passing is a little more sophisitaed
-    // No environment required. procedures always bring their own enviornment
-    // to the call.
-    Lisp x;
-    Lisp env;
-    int needs_to_eval = apply(operator, op_args, &x, &env, e, ctx);
-    return needs_to_eval ? lisp_eval2(x, env, e, ctx) : x;
-}
-
-static Lisp sch_is_lambda(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_LAMBDA);
-}
-
-static Lisp sch_lambda_env(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_lambda_env(lisp_car(args));
-}
-
-static Lisp sch_is_func(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    int type = lisp_type(lisp_car(args));
-    return lisp_make_bool(type == LISP_FUNC);
-}
-
-static Lisp sch_lambda_body(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_lambda_body(lisp_car(args));
-}
-
-static Lisp sch_macroexpand(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(1, 1);
-    return lisp_macroexpand(lisp_car(args), e, ctx);
-}
-
-static Lisp sch_eval(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(2, 2);
-    return lisp_eval2(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
-}
-
-static Lisp sch_system_env(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_cdr(lisp_env_global(ctx));
-}
-
-static Lisp sch_user_env(Lisp args, LispError* e, LispContext ctx)
-{
-    return lisp_env_global(ctx);
-}
-
-static Lisp sch_gc_flip(Lisp args, LispError* e, LispContext ctx)
-{
-    ARITY_CHECK(0, 0);
-    lisp_collect(lisp_make_null(), ctx);
-    return lisp_make_null();
-}
-
-static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
-{
-    lisp_print_collect_stats(ctx);
-    return lisp_make_null();
-}
-
-typedef struct
-{
-    Block block;
-    jmp_buf jmp;
-    int stack_ptr;
-} Continue;
-
-static Lisp lisp_make_continue(LispContext ctx)
-{
-    Continue* c = gc_alloc(sizeof(Continue), LISP_CONTINUE, ctx);
-    return (Lisp) { .val = { .ptr_val = c }, .type = LISP_CONTINUE };
-}
-
-static Continue* continue_get_(Lisp x) { return x.val.ptr_val; }
-
-static Lisp sch_go_continue(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp cont = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp result = lisp_car(args);
-
-    Continue* c = continue_get_(cont);
-    ctx.p->stack_ptr = c->stack_ptr;
-    ctx.p->stack[c->stack_ptr - 1] = result;
-    longjmp(c->jmp, 1);
-}
-
-static Lisp sch_call_cc(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp cont = lisp_make_continue(ctx);
-    Continue* c = continue_get_(cont);
-
-    lisp_stack_push(cont, ctx);
-    c->stack_ptr = ctx.p->stack_ptr;
-
-    int has_result = setjmp(c->jmp);
-    if (has_result == 0)
-    {
-        Lisp lambda = lisp_car(args);
-        Lisp var = lisp_make_symbol("RESULT", ctx);
-
-        Lisp body_terms[] = { lisp_make_symbol("_GO-CONTINUE", ctx), cont, var };
-        Lisp body = lisp_make_list2(body_terms, 3, ctx);
-        Lisp callback = lisp_make_lambda(lisp_cons(var, lisp_make_null(), ctx), body, ctx.p->env, ctx);
-
-        Lisp terms[] = { lambda, lisp_cons(callback, lisp_make_null(), ctx) };
-        Lisp result = sch_apply(lisp_make_list2(terms, 2, ctx), e, ctx);
-        lisp_stack_pop(ctx);
-        return result;
-    }
-    else
-    {
-        return lisp_stack_pop(ctx);
-    }
-}
-
-#undef ARITY_CHECK
-
-static const LispFuncDef lib_cfunc_defs[] = {
-    
-    { "ERROR", sch_error },
-    { "SYNTAX-ERROR", sch_syntax_error },
-
-    // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
-    { "WRITE", sch_write },
-    { "DISPLAY", sch_display },
-    { "WRITE-CHAR", sch_write_char },
-    { "FLUSH-OUTPUT-PORT", sch_flush },
-    { "READ", sch_read },
-    
-    // Universal Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
-    { "GET-UNIVERSAL-TIME", sch_univeral_time },
-    { "PRINT-GC-STATISTICS", sch_print_gc_stats },
-    
-    { "MACROEXPAND", sch_macroexpand },
-    
-    // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
-    { "EQ?", sch_exact_eq },
-    { "EQV?", sch_equal },
-    { "EQUAL?", sch_equal_r },
-    
-    // Booleans https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Booleans.html
-    { "BOOLEAN?", sch_is_boolean },
-    { "NOT", sch_not },
-
-    // PAIRS
-    { "CONS", sch_cons },
-    { "CAR", sch_car },
-    { "CDR", sch_cdr },
-    { "SET-CAR!", sch_set_car },
-    { "SET-CDR!", sch_set_cdr },
-    { "NULL?", sch_is_null },
-    { "PAIR?", sch_is_pair },
-
-    // Lists https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_8.html
-    { "LIST", sch_list },
-    { "MAKE-LIST", sch_make_list },
-    { "LIST-COPY", sch_list_copy },
-    { "LENGTH", sch_length },
-    { "APPEND", sch_append },
-    { "LIST-REF", sch_list_ref },
-    { "REVERSE!", sch_reverse_inplace },
-    { "NTHCDR", sch_list_advance },
-
-    // Vectors https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_9.html#SEC82
-    { "VECTOR?", sch_is_vector },
-    { "MAKE-VECTOR", sch_make_vector },
-    { "VECTOR-GROW", sch_vector_grow },
-    { "VECTOR-LENGTH", sch_vector_length },
-    { "VECTOR-SET!", sch_vector_set },
-    { "VECTOR-SWAP!", sch_vector_swap },
-    { "VECTOR-REF", sch_vector_ref },
-    { "VECTOR-FILL!", sch_vector_fill },
-    { "VECTOR-ASSQ", sch_vector_assq },
-    { "SUBVECTOR", sch_subvector },
-    { "LIST->VECTOR", sch_list_to_vector },
-    { "VECTOR->LIST", sch_vector_to_list },
-
-    // Strings https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_7.html#SEC61
-    { "STRING?", sch_is_string },
-    { "MAKE-STRING", sch_make_string },
-    { "STRING=?", sch_equal_r },
-    { "STRING<?", sch_string_less },
-    { "SUBSTRING", sch_substring },
-    { "STRING-NULL?", sch_string_is_null },
-    { "STRING-LENGTH", sch_string_length },
-    { "STRING-REF", sch_string_ref },
-    { "STRING-SET!", sch_string_set },
-    { "STRING-UPCASE", sch_string_upcase },
-    { "STRING-DOWNCASE", sch_string_downcase },
-    { "STRING-APPEND", sch_string_append },
-    { "STRING->LIST", sch_string_to_list },
-    { "LIST->STRING", sch_list_to_string },
-    { "STRING->NUMBER", sch_string_to_number },
-    { "NUMBER->STRING", sch_number_to_string },
-
-    // Characters https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Characters.html#Characters
-    { "CHAR?", sch_is_char },
-    { "CHAR=?", sch_equals },
-    { "CHAR<?", sch_char_less },
-    { "CHAR-UPCASE", sch_char_upcase },
-    { "CHAR-DOWNCASE", sch_char_downcase },
-    { "CHAR-WHITESPACE?", sch_char_is_white },
-    { "CHAR-ALPHANUMERIC?", sch_char_is_alphanum },
-    { "CHAR-ALPHABETIC?", sch_char_is_alpha },
-    { "CHAR-NUMERIC?", sch_char_is_number },
-    { "CHAR->INTEGER", sch_char_to_int },
-
-    // Association Lists https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Association-Lists.html
-    // Numerical operations https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Numerical-operations.html
-    { "=", sch_equals },
-    { "+", sch_add },
-    { "-", sch_sub },
-    { "*", sch_mult },
-    { "/", sch_divide },
-    { "<", sch_less },
-    { "INTEGER?", sch_is_int },
-    { "EVEN?", sch_is_even },
-    { "REAL?", sch_is_real },
-    { "EXP", sch_exp },
-    { "EXPT", sch_power },
-    { "LOG", sch_log },
-    { "SIN", sch_sin },
-    { "COS", sch_cos },
-    { "TAN", sch_tan },
-    { "ATAN", sch_atan },
-    { "SQRT", sch_sqrt },
-    { "ROUND", sch_round },
-    { "FLOOR", sch_floor },
-    { "CEILING", sch_ceiling },
-    { "QUOTIENT", sch_quotient },
-    { "REMAINDER", sch_remainder },
-    { "MODULO", sch_modulo },
-    { "ABS", sch_abs },
-    { "MAGNITUDE", sch_abs },
-
-    
-    { "EXACT?", sch_is_int },
-    { "EXACT->INEXACT", sch_to_inexact },
-    { "INEXACT->EXACT", sch_to_exact },
-    
-    // Symbols https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Symbols.html
-    { "SYMBOL?", sch_is_symbol },
-    { "SYMBOL<?", sch_symbol_less },
-    { "STRING->SYMBOL", sch_string_to_symbol },
-    { "SYMBOL->STRING", sch_symbol_to_string },
-    { "GENERATE-UNINTERNED-SYMBOL", sch_gensym },
-    { "GENSYM", sch_gensym },
-
-    // Environments https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_14.html
-    { "EVAL", sch_eval },
-    { "SYSTEM-GLOBAL-ENVIRONMENT", sch_system_env },
-    { "USER-INITIAL-ENVIRONMENT", sch_user_env },
-    // { "THE-ENVIRONMENT", sch_current_env },
-    
-    // Hash Tables https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Basic-Hash-Table-Operations.html#Basic-Hash-Table-Operations
-    { "HASH-TABLE?", sch_is_table },
-    { "MAKE-HASH-TABLE", sch_table_make },
-    { "HASH-TABLE-SET!", sch_table_set },
-    { "HASH-TABLE-REF", sch_table_get },
-    { "HASH-TABLE-SIZE", sch_table_size },
-    { "HASH-TABLE->ALIST", sch_table_to_alist },
-
-    { "PROMISE?", sch_is_promise },
-    { "MAKE-PROMISE", sch_make_promise },
-    { "_PROMISE-PROCEDURE", sch_promise_proc },
-    { "_PROMISE-STORE!", sch_promise_store },
-    { "PROMISE-VALUE", sch_promise_val },
-    { "PROMISE-FORCED?", sch_promise_forced },
-    
-    // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
-    { "APPLY", sch_apply },
-    { "COMPILED-PROCEDURE?", sch_is_func },
-    { "COMPOUND-PROCEDURE?", sch_is_lambda },
-    { "PROCEDURE-ENVIRONMENT", sch_lambda_env },
-    // TOOD: Almost standard
-    { "PROCEDURE-BODY", sch_lambda_body },
-    { "CALL/CC", sch_call_cc },
-    { "_GO-CONTINUE", sch_go_continue },
-
-    // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
-    { "RANDOM", sch_pseudo_rand },
-    { "RANDOM-SEED!", sch_pseudo_seed },
-   
-    // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
-    { "GC-FLIP", sch_gc_flip },
-    
-    { NULL, NULL }
-    
-};
-
-// We have several batches of code as some macros
-// Need to be prepared before other code to eval.
-
-// MACRO GUIDE
-
-// (LET <name> ((<var0> <expr0>) ... (<varN> <expr1>)) <body0> ... <bodyN>)
-//  => ((LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)) <expr0> ... <expr1>)            
-//  => named 
-//    ((lambda ()
-//        (define <name> (LAMBDA (<var0> ... <varN>) (BEGIN <body0> ... <bodyN>)))
-//        (<name> <expr0> ... <exprN>)))
-
-// (COND (<pred0> <expr0>)
-//       (<pred1> <expr1>)
-//        ...
-//        (else <expr-1>)) 
-// =>
-// (IF <pred0> <expr0>
-//      (if <pred1> <expr1>
-//          ....
-//      (if <predN> <exprN> <expr-1>)) ... )
-
-// (DO ((<var0> <init0> <step0>) ...) (<test> <result>) <body>)
-// -> ((lambda ()
-//          (define (f <var0> ... <varN>)
-//                   (if <test>
-//                       <result>
-//                       (begin
-//                          <body>
-//                          (f <step0> ... <stepN>))))
-//          (f <init0> ... <initN>))))
-
-// (AND <pred0> <pred1> ... <predN>) 
-// -> (IF <pred0> 
-//      IF <pred1> ...
-//          (IF <predN> t f)
-
-
-// (OR <pred0> <pred1> ... <predN>)
-// -> (IF (<pred0>) t
-//      (IF <pred1> t ...
-//          (if <predN> t f))
-
-static const char* lib_code_lang0 = "\
-(define (first x) (car x)) \
-(define (second x) (car (cdr x))) \
-(define (third x) (car (cdr (cdr x)))) \
-\
-(define (some? pred l) \
- (if (null? l) #f \
-  (if (pred (car l)) #t \
-   (some? pred (cdr l))))) \
-\
-(define (_map1-helper proc l result) \
- (if (null? l) \
-  (reverse! result) \
-  (_map1-helper proc \
-   (cdr l) \
-   (cons (proc (car l)) result)))) \
-\
-(define (map1 proc l) (_map1-helper proc l '())) \
-\
-(define (for-each1 proc l) \
- (if (null? l) '() \
-  (begin (proc (car l)) (for-each1 proc (cdr l ))))) \
-\
-(define (_make-lambda args body) \
- (list 'LAMBDA args (if (null? (cdr body)) (car body) (cons 'BEGIN body)))) \
-\
-(define (_check-binding-list bindings) \
-  (for-each1 (lambda (entry) \
-    (if (not (pair? entry)) (syntax-error \"bad let binding\" entry)) \
-    (if (not (symbol? (first entry))) (syntax-error \"let entry missing symbol\" entry))) bindings)) \
-\
-(define (_let->combination var bindings body) \
- (_check-binding-list bindings) \
- (define body-func (_make-lambda (map1 (lambda (entry) (first entry)) bindings) body)) \
- (define initial-args (map1 (lambda (entry) (second entry)) bindings)) \
- (if (null? var) \
-  (cons body-func initial-args) \
-  (list (_make-lambda '() (list (list 'DEFINE var body-func) (cons var initial-args)))))) \
-\
-(define-macro let (lambda args  \
-  (if (pair? (first args)) \
-     (_let->combination '() (car args) (cdr args)) \
-     (_let->combination (first args) (second args) (cdr (cdr args)))))) \
-\
-(define (_let*-helper bindings body) \
-    (if (null? bindings) (if (null? (cdr body)) (car body) (cons 'BEGIN body)) \
-     (list 'LET (list (car bindings)) (_let*-helper (cdr bindings) body)))) \
-\
-(define-macro let* (lambda (bindings . body) \
-  (_check-binding-list bindings) \
-  (_let*-helper bindings body))) \
-\
-(define-macro letrec (lambda (bindings . body) \
-  (_check-binding-list bindings) \
-  (cons (_make-lambda (map1 (lambda (entry) (first entry)) bindings) \
-    (append (map1 (lambda (entry) (list 'SET! (first entry) (second entry))) \
-                          bindings) body)) \
-      (map1 (lambda (entry) '()) bindings)))) \
-\
-(define (_cond-check-clauses clauses) \
-  (for-each1 (lambda (clause) \
-    (if (not (pair? clause)) (syntax error \"Invalid cond clause\")) \
-    (if (null? (cdr clause)) (syntax-error \"cond clause missing expression\"))) \
-   clauses)) \
-\
-(define (_cond-helper clauses) \
- (if (null? clauses) '() \
-  (if (eq? (car (car clauses)) 'ELSE) \
-   (cons 'BEGIN (cdr (car clauses))) \
-   (list 'IF \
-    (car (car clauses)) \
-    (cons 'BEGIN (cdr (car clauses))) \
-    (_cond-helper (cdr clauses)))))) \
-\
-(define-macro cond (lambda clauses \
-  (begin \
-    (_cond-check-clauses clauses) \
-    (_cond-helper clauses)))) \
-";
-
-static const char* lib_code_lang1 = " \
-(define (_and-helper preds) \
- (cond ((null? preds) #t) \
-       ((null? (cdr preds)) (car preds)) \
-       (else \
-        `(IF ,(car preds) ,(_and-helper (cdr preds)) #f)))) \
-(define-macro and (lambda preds (_and-helper preds))) \
-\
-(define (_or-helper preds var) \
-  (cond ((null? preds) #f) \
-        ((null? (cdr preds)) (car preds)) \
-        (else \
-        `(BEGIN (SET! ,var ,(car preds)) \
-                (IF ,var ,var ,(_or-helper (cdr preds) var)))))) \
-\
-(define-macro or (lambda preds \
-    (let ((var (gensym))) \
-     `(LET ((,var '())) ,(_or-helper preds var))))) \
-\
-(define-macro case (lambda (key . clauses) \
-   (let ((expr (gensym))) \
-     `(let ((,expr ,key)) \
-         ,(cons 'COND (map1 (lambda (entry) \
-                       (cons (if (pair? (car entry)) \
-                                  `(memv ,expr (quote ,(car entry))) \
-                                 (car entry)) \
-                            (cdr entry))) clauses)))))) \
-\
-(define-macro push \
- (lambda (v l) \
-   `(begin (set! ,l (cons ,v ,l)) ,l))) \
-\
-(define-macro do \
- (lambda (vars loop-check . loops) \
-  (let ( (names '()) (inits '()) (steps '()) (f (gensym)) ) \
-   (for-each1 (lambda (var) \
-               (push (car var) names) \
-               (set! var (cdr var)) \
-               (push (car var) inits) \
-               (set! var (cdr var)) \
-               (push (car var) steps)) vars) \
-   `((lambda () \
-            (define ,f (lambda ,names \
-                      (if ,(car loop-check) \
-                       ,(if (pair? (cdr loop-check)) (car (cdr loop-check)) '()) \
-                       ,(cons 'BEGIN (append loops (list (cons f steps)))) ))) \
-            ,(cons f inits) \
-           )) ))) \
-\
-(define-macro dotimes \
- (lambda (form body) \
-  (apply (lambda (i n . result) \
-    `(do ((,i 0 (+ ,i 1))) \
-        ((>= ,i ,n) ,(if (null? result) result (car result)) ) \
-        ,body) \
-   ) form))) \
-\
-(define (_expand-mnemonic-body path) \
-  (if (null? path) (cons 'pair '()) \
-      (list (if (char=? (car path) #\\A) \
-            (cons 'CAR (_expand-mnemonic-body (cdr path))))))) \
-\
-(define (_expand-mnemonic text) \
-  (cons 'DEFINE  (cons (list (string->symbol (string-append \"C\" text \"R\")) 'pair) \
-        (_expand-mnemonic-body (string->list text))))) \
-\
-(define-macro _mnemonic-accessors (lambda args (cons 'BEGIN (map1 _expand-mnemonic args)))) \
-";
-
-static const char* lib_code_lists = " \
-(_mnemonic-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\") \
-\
-(define (append-reverse! l tail) \
-  (if (null? l) tail \
-    (let ((next (cdr l))) \
-      (set-cdr! l tail) \
-      (append-reverse! next l)))) \
-\
-(define (last-pair x) \
- (if (pair? (cdr x)) \
-  (last-pair (cdr x)) x)) \
-\
-(define (map proc . rest) \
- (define (helper lists result) \
-  (if (some? null? lists) \
-   (reverse! result) \
-   (helper (map1 cdr lists) \
-    (cons (apply proc (map1 car lists)) result)))) \
- (helper rest '())) \
-\
-(define (for-each proc . rest) \
- (define (helper lists) \
-  (if (some? null? lists) \
-   '() \
-   (begin \
-    (apply proc (map1 car lists)) \
-    (helper (map1 cdr lists))))) \
- (helper rest)) \
-\
-(define (_assoc key list eq?) \
- (if (null? list) #f \
-  (let ((pair (car list))) \
-    (if (and (pair? pair) (eq? key (car pair))) \
-        pair \
-        (_assoc key (cdr list) eq?))))) \
-\
-(define (assoc key list) (_assoc key list equal?)) \
-(define (assq key list) (_assoc key list eq?)) \
-(define (assv key list) (_assoc key list eqv?)) \
-\
-(define (_member x list eq?) \
- (cond ((null? list) #f) \
-  ((eq? (car list) x) list) \
-  (else (_member x (cdr list) eq?)))) \
-\
-(define (member x list) (_member x list equal?)) \
-(define (memq x list) (_member x list eq?)) \
-(define (memv x list) (_member x list eqv?)) \
-\
-(define (list-tail x k) \
- (if (zero? k) x \
-  (list-tail (cdr x) (- k 1)))) \
-\
-(define (filter pred l) \
- (define (helper l result) \
-  (cond ((null? l) result) \
-   ((pred (car l)) \
-    (helper (cdr l) (cons (car l) result))) \
-   (else \
-    (helper (cdr l) result)))) \
- (reverse! (helper l '()))) \
-\
-(define (reduce op acc lst) \
-    (if (null? lst) acc \
-        (reduce op (op acc (car lst)) (cdr lst)))) \
-\
-(define (reverse l) (reverse! (list-copy l))) \
-\
-(define (vector . args) (list->vector args)) \
-";
-
-static const char* lib_code_math = " \
-(define (number? x) (real? x)) \
-(define (odd? x) (not (even? x))) \
-(define (inexact? x) (not (exact? x))) \
-(define (zero? x) (= x 0)) \
-(define (positive? x) (>= x 0)) \
-(define (negative? x) (< x 0)) \
- \
-(define (>= a b) (not (< a b))) \
-(define (> a b) (< b a)) \
-(define (<= a b) (not (< b a))) \
-\
-(define (max . ls) \
-  (reduce (lambda (m x) \
-            (if (> x m) \
-              x \
-              m)) (car ls) (cdr ls))) \
-\
-(define (min . ls) \
-  (reduce (lambda (m x) \
-            (if (< x m) \
-              x \
-              m)) (car ls) (cdr ls))) \
-\
-(define (_gcd-helper a b) \
-  (if (= b 0) a (_gcd-helper b (modulo a b)))) \
-\
-(define (gcd . args) \
- (if (null? args) 0 \
-  (_gcd-helper (car args) (car (cdr args))))) \
-\
-(define (lcm . args) \
-   (if (null? args) 1 \
-      (abs (* (/ (car args) (apply gcd args)) \
-            (apply * (cdr args))))))  \
-";
-
-
-static const char* lib_code_sequence = " \
-(define (newline) (write-char #\\newline)) \
- \
-(define (char>=? a b) (not (char<? a b))) \
-(define (char>? a b) (char<? b a)) \
-(define (char<=? a b) (not (char<? b a))) \
-\
-(define (string>=? a b) (not (string<? a b))) \
-(define (string>? a b) (string<? b a)) \
-(define (string<=? a b) (not (string<? b a))) \
-\
-(define (string-copy s) (substring s 0 (string-length v)))\
-(define (string-head s end) (subvector s 0 end)) \
-(define (string-tail s start) (subvector s start (string-length v))) \
-\
-(define (alist->hash-table alist) \
- (define h (make-hash-table)) \
- (for-each1 (lambda (pair) \
-             (hash-table-set! h (car pair) (cdr pair))) alist) \
- h) \
-\
-(define (vector-copy v) (subvector v 0 (vector-length v)))\
-(define (vector-head v end) (subvector v 0 end)) \
-(define (vector-tail v start) (subvector v start (vector-length v))) \
-\
-(define (make-initialized-vector l fn) \
-  (let ((v (make-vector l '()))) \
-	(do ((i 0 (+ i 1))) \
-     ((>= i l) v) \
-	  (vector-set! v i (fn i))))) \
-\
-(define (vector-map fn v) \
- (make-initialized-vector \
-  (vector-length v) \
-  (lambda (i) (fn (vector-ref v i))))) \
-\
-(define (vector-binary-search v key< unwrap-key key) \
-  (define (helper low high mid) \
-    (if (<= (- high low) 1) \
-        (if (key< (unwrap-key (vector-ref v low)) key) #f (vector-ref v low)) \
-        (begin \
-          (set! mid (+ low (quotient (- high low) 2))) \
-          (if (key< key (unwrap-key (vector-ref v mid))) \
-              (helper low mid 0) \
-              (helper mid high 0))))) \
-  (helper 0 (vector-length v) 0)) \
-\
-(define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) \
-\
-(define (quicksort-partition v lo hi op) \
-  (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot) \
-       (i (- lo 1) i) \
-       (j (+ hi 1) j)) \
-    ((>= i j) j) \
-    (begin \
-      (do ((x (set! i (+ i 1)) x)) \
-          ((not (op (vector-ref v i) pivot)) '()) \
-          (set! i (+ i 1))) \
-      (do ((x (set! j (- j 1)) x)) \
-          ((not (op pivot (vector-ref v j))) '()) \
-          (set! j (- j 1))) \
-      (if (< i j) (vector-swap! v i j))))) \
-\
-(define (quicksort-vector v lo hi op) \
-  (if (and (>= lo 0) (>= hi 0) (< lo hi)) \
-    (let ((p (quicksort-partition v lo hi op))) \
-      (quicksort-vector v lo p op) \
-      (quicksort-vector v (+ p 1) hi op)))) \
-\
-(define (sort! v op) \
-  (quicksort-vector v 0 (- (vector-length v) 1) op) v) \
-\
-(define (sort list cmp) (vector->list (sort! (list->vector list) cmp))) \
-\
-(define-macro assert (lambda (body) \
-  `(if ,body '() \
-      (begin \
-       (display (quote ,body)) \
-       (error \" assert failed\"))))) \
-\
-(define-macro ==>  \
- (lambda (test expected) \
-  `(assert (equal? ,test (quote ,expected))) )) \
-";
-
-static const char* lib_code_streams = " \
-(define-macro delay (lambda (expr) \
-  `(make-promise ,(cons 'LAMBDA \
-                    (cons '() \
-                      (cons expr '())))))) \
-\
-(define (force promise) \
-    (if (not (promise-forced? promise)) \
-        (_promise-store! promise ((_promise-procedure promise)))) \
-    (promise-value promise)) \
-\
-(define-macro cons-stream (lambda (x expr) `(cons ,x (delay ,expr)))) \
-\
-(define (stream-car stream) (car stream)) \
-(define (stream-cdr stream) (force (cdr stream))) \
-\
-(define (stream-pair? x) \
- (and (pair? x) (promise? (cdr x)))) \
-\
-(define (stream-null? stream) (null? stream)) \
-\
-(define (stream->list-helper stream result) \
- (if (stream-null? stream) \
-  (reverse! result) \
-  (stream->list-helper \
-   (force (cdr stream)) \
-   (cons (car stream) result)))) \
-\
-(define (stream->list stream) \
- (stream->list-helper stream '())) \
-\
-(define (list->stream list) \
- (if (null? list) \
-  '() \
-  (cons-stream (car list) (list->stream (cdr list))))) \
-\
-(define (stream . args) (list->stream args)) \
-\
-(define (stream-head-helper stream k result) \
- (if (= k 0) \
-  (reverse! result) \
-  (stream-head-helper (force (cdr stream)) (- k 1) (cons (car stream) result)))) \
-\
-  (define (stream-head stream k) \
-     (stream-head-helper stream k '())) \
-\
-(define (stream-tail stream k) \
- (if (= k 0) \
-  stream \
-  (stream-tail (stream-cdr stream) (- k 1)))) \
-\
-(define (stream-filter pred stream) \
- (cond ((stream-null? stream) the-empty-stream) \
-  ((pred (stream-car stream)) \
-   (cons-stream (stream-car stream) \
-    (stream-filter pred \
-     (stream-cdr stream)))) \
-  (else (stream-filter pred (stream-cdr stream))))) \
-";
-
-void lisp_load_lib(LispContext ctx)
-{
-    Lisp table = lisp_make_table(ctx);
-    lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
-    Lisp system_env = lisp_env_extend(lisp_make_null(), table, ctx);
-    ctx.p->env = lisp_env_extend(system_env, lisp_make_table(ctx), ctx);
-
-    LispError error;
-
-    const char* to_load[] =
-    {
-        lib_code_lang0, lib_code_lang1,
-        lib_code_lists, lib_code_math,
-        lib_code_sequence, lib_code_streams
-    };
-
-    for (int i = 0; i < 6; ++i)
-    {
-        lisp_eval2(lisp_read(to_load[i], NULL, ctx), system_env, &error, ctx);
-
-        if (error != LISP_ERROR_NONE)
-        {
-            fprintf(ctx.p->err_port, "failed to init system library %d: %s\n", i, lisp_error_string(error));
-            lisp_shutdown(ctx);
-            break;
-        }
-    }
-
-    if (error == LISP_ERROR_NONE)
-    {
-        lisp_collect(lisp_make_null(), ctx);
-#ifdef LISP_DEBUG
-        lisp_print_collect_stats(ctx);
-#endif
-    }
+void lisp_shutdown(LispContext ctx)
+{
+    heap_shutdown(&ctx.p->heap);
+    free(ctx.p->stack);
+    free(ctx.p);
 }
 
 #endif
-#endif
+
+/*
+Copyright (c) 2021 Justin Meiners
+
+Permission to use, copy, modify, and distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+*/
