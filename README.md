@@ -12,9 +12,9 @@ and to make an implementation that allows me to easily add scripting to my own p
 
 ### Philosophy
 
-- **Simple**: Languages can become very complicated and have too many fancy features.
-    This project doesn't aim to be an optimal, fully featured, or compliant Scheme implementation.
+- **Simple**: This project doesn't aim to be optimal, or fully standards compliant.
     It is just a robust foundation for scripting. 
+    It is implemented as a recursive AST walker on the C stack.
 
     If you need more try [s7](https://ccrma.stanford.edu/software/snd/snd/s7.html) or [chicken](https://www.call-cc.org)
 
@@ -29,7 +29,7 @@ and to make an implementation that allows me to easily add scripting to my own p
 
 ### Features
 
-- C99 no dependencies. Single header.
+- C99, no dependencies, two files.
 - Core lisp language `if`, `let`, `do`, `lambda`, `cons`, `eval`, etc.
 - Subset of scheme R5RS library: lists, vectors, hash tables, integers, real numbers, characters, strings, and integers.
 - Common lisp goodies: unhygenic macros (`define-macro`), `push`, `dotimes`.
@@ -40,11 +40,11 @@ and to make an implementation that allows me to easily add scripting to my own p
 
 ### Non-Features
 
-- Compiler
-- Full numeric tower: complex and rational numbers.
+- Compiler or VM.
+- Full numeric tower.
 - Full call/cc. This only supports simple stack jumps.
 - syntax rules.
-- extensive IO or UNIX system libraries.
+- UNIX system interface/IO library.
 
 ### Examples
 
