@@ -3066,13 +3066,11 @@ void lisp_print_collect_stats(LispContext ctx)
     fprintf(ctx.p->out_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbols));
 }
 
-Lisp lisp_env_global(LispContext ctx)
-{
-    return ctx.p->env;
-}
+Lisp lisp_env_global(LispContext ctx) { return ctx.p->env; }
 
 void lisp_env_set_global(Lisp env, LispContext ctx)
 {
+    assert(lisp_type(env) == LISP_PAIR || lisp_type(env) == LISP_NULL);
     ctx.p->env = env;
 }
 
