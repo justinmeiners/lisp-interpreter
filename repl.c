@@ -6,6 +6,7 @@
 // #define NDEBUG
 
 //#define LISP_DEBUG
+
 #define LISP_IMPLEMENTATION
 #include "lisp.h"
 #include "lisp_lib.h"
@@ -42,10 +43,9 @@ int main(int argc, const char* argv[])
         }
     }
     
-    LispContext ctx = lisp_init();
-    lisp_lib_load(ctx);
+    LispContext ctx = lisp_init_with_lib();
     lisp_env_define(
-        lisp_cdr(lisp_env_global(ctx)),
+        lisp_cdr(lisp_env(ctx)),
         lisp_make_symbol("LOAD", ctx), 
         lisp_make_func(sch_load),
         ctx

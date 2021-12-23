@@ -1,6 +1,7 @@
 /*
- Copyright 2021 Justin Meiners (https://justinmeiners.github.io)
- License: MIT
+ Created by: Justin Meiners 
+ Repo; https://github.com/justinmeiners/lisp-interpreter
+ License: MIT (See end if file)
 
  Do this:
      #define LISP_IMPLEMENTATION
@@ -108,7 +109,7 @@ typedef struct
 typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 
 // -----------------------------------------
-// SETUP AND CONTEXT
+// CONTEXT
 // -----------------------------------------
 
 LispContext lisp_init(void);
@@ -120,17 +121,22 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 void lisp_print_collect_stats(LispContext ctx);
 const char* lisp_error_string(LispError error);
 
-void lisp_port_set_in(FILE* file, LispContext ctx);
-void lisp_port_set_err(FILE* file, LispContext ctx);
+void lisp_set_env(Lisp env, LispContext ctx);
+Lisp lisp_env(LispContext ctx);
 
-Lisp lisp_env_global(LispContext ctx);
-void lisp_env_set_global(Lisp env, LispContext ctx);
+void lisp_set_stdin(FILE* file, LispContext ctx);
+void lisp_set_stderr(FILE* file, LispContext ctx);
+void lisp_set_stdout(FILE* file, LispContext ctx);
+
+FILE *lisp_stdin(LispContext ctx);
+FILE *lisp_stderr(LispContext ctx);
+FILE *lisp_stdout(LispContext ctx);
 
 // Macros
 Lisp lisp_macro_table(LispContext ctx);
 // the macro table keeps strong references to its members. 
 // So if you want to delete them you need to make a new table.
-void lisp_macro_table_set(Lisp table, LispContext ctx);
+void lisp_set_macro_table(Lisp table, LispContext ctx);
 
 // -----------------------------------------
 // REPL
@@ -302,6 +308,21 @@ Lisp lisp_promise_val(Lisp p);
 Lisp lisp_promise_proc(Lisp p);
 void lisp_promise_store(Lisp p, Lisp x);
 
+#ifndef LISP_FILE_CHUNK_SIZE
+#define LISP_FILE_CHUNK_SIZE 8192
+#endif
+
+#ifndef LISP_PAGE_SIZE
+#define LISP_PAGE_SIZE 512 * 1024
+#endif
+
+#ifndef LISP_STACK_DEPTH
+#define LISP_STACK_DEPTH 1024
+#endif
+
+#ifndef LISP_IDENTIFIER_MAX
+#define LISP_IDENTIFIER_MAX 1024
+#endif
 
 #ifdef __cplusplus
 }
@@ -320,22 +341,6 @@ void lisp_promise_store(Lisp p, Lisp x);
 #include <stdint.h>
 #include <time.h>
 #include <assert.h>
-
-#ifndef LISP_FILE_CHUNK_SIZE
-#define LISP_FILE_CHUNK_SIZE 8192
-#endif
-
-#ifndef LISP_PAGE_SIZE
-#define LISP_PAGE_SIZE 512 * 1024
-#endif
-
-#ifndef LISP_STACK_DEPTH
-#define LISP_STACK_DEPTH 1024
-#endif
-
-#ifndef LISP_IDENTIFIER_MAX
-#define LISP_IDENTIFIER_MAX 1024
-#endif
 
 #define IS_POW2(x) (((x) != 0) && ((x) & ((x)-1)) == 0)
 
@@ -2354,9 +2359,13 @@ void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
 
 void lisp_displayf(FILE* file, Lisp l) { lisp_print_r(file, l, 1, 0); }
 
-void lisp_port_set_out(FILE* file, LispContext ctx) { ctx.p->out_port = file; }
-void lisp_port_set_in(FILE* file, LispContext ctx) { ctx.p->in_port = file; }
-void lisp_port_set_err(FILE* file, LispContext ctx) { ctx.p->err_port = file; }
+void lisp_set_stdout(FILE* file, LispContext ctx) { ctx.p->out_port = file; }
+void lisp_set_stdin(FILE* file, LispContext ctx) { ctx.p->in_port = file; }
+void lisp_set_stderr(FILE* file, LispContext ctx) { ctx.p->err_port = file; }
+
+FILE *lisp_stdin(LispContext ctx) { return ctx.p->in_port; }
+FILE *lisp_stderr(LispContext ctx) { return ctx.p->err_port; }
+FILE *lisp_stdout(LispContext ctx) { return ctx.p->out_port; }
 
 static void lisp_stack_push(Lisp x, LispContext ctx)
 {
@@ -2856,7 +2865,7 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx)
 {
-    return lisp_eval2(expr, lisp_env_global(ctx), out_error, ctx);
+    return lisp_eval2(expr, lisp_env(ctx), out_error, ctx);
 }
 
 Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx)
@@ -3116,20 +3125,17 @@ void lisp_print_collect_stats(LispContext ctx)
     fprintf(ctx.p->out_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbols));
 }
 
-Lisp lisp_env_global(LispContext ctx) { return ctx.p->env; }
+Lisp lisp_env(LispContext ctx) { return ctx.p->env; }
 
-void lisp_env_set_global(Lisp env, LispContext ctx)
+void lisp_set_env(Lisp env, LispContext ctx)
 {
     assert(lisp_is_env(env));
     ctx.p->env = env;
 }
 
-Lisp lisp_macro_table(LispContext ctx)
-{
-    return ctx.p->macros;
-}
+Lisp lisp_macro_table(LispContext ctx) { return ctx.p->macros; }
 
-void lisp_macro_table_set(Lisp table, LispContext ctx)
+void lisp_set_macro_table(Lisp table, LispContext ctx)
 {
     assert(lisp_type(table) == LISP_TABLE);
     ctx.p->macros = table;
@@ -3212,3 +3218,11 @@ void lisp_shutdown(LispContext ctx)
 }
 
 #endif
+
+/*
+Copyright (c) 2021 Justin Meiners
+
+Permission to use, copy, modify, and distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+*/

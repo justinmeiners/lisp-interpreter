@@ -38,7 +38,7 @@ int main(int argc, const char* argv[])
     Lisp func = lisp_make_func(integer_range);
 
     // add to enviornment with symbol INTEGER-RANGE
-    Lisp env = lisp_env_global(ctx);
+    Lisp env = lisp_env(ctx);
     lisp_env_define(env, lisp_make_symbol("INTEGER-RANGE", ctx), func, ctx);
     Lisp pi = lisp_make_real(3.141592);
     lisp_env_define(env, lisp_make_symbol("PI", ctx), pi, ctx);

@@ -93,32 +93,32 @@ static Lisp sch_is_pair(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_write(Lisp args, LispError* e, LispContext ctx)
 {
-    lisp_printf(ctx.p->out_port, lisp_car(args));
+    lisp_printf(lisp_stdout(ctx), lisp_car(args));
     return lisp_null();
 }
 
 static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
 {
     Lisp x = lisp_car(args);
-    lisp_displayf(ctx.p->out_port, x);
+    lisp_displayf(lisp_stdout(ctx), x);
     return x;
 }
 
 static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
-    fputc(lisp_char(lisp_car(args)), ctx.p->out_port);
-    return lisp_null();
+    fputc(lisp_char(lisp_car(args)), lisp_stdout(ctx));
+    return lisp_false();
 }
 
 static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
 {
-    fflush(ctx.p->out_port); return lisp_null();
+    fflush(lisp_stdout(ctx)); return lisp_false();
 }
 
 static Lisp sch_read(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_read_file(ctx.p->in_port, e, ctx);
+    return lisp_read_file(lisp_stdin(ctx), e, ctx);
 }
 
 static Lisp sch_is_eof(Lisp args, LispError* e, LispContext ctx)
@@ -131,13 +131,13 @@ static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
    if (lisp_is_pair(args))
    {
        Lisp l = lisp_car(args);
-       fputs(lisp_string(l), ctx.p->err_port);
+       fputs(lisp_string(l), lisp_stderr(ctx));
        args = lisp_cdr(args);
    }
    while (lisp_is_pair(args))
    {
-       fputs(" ", ctx.p->err_port);
-       lisp_printf(ctx.p->err_port, lisp_car(args));
+       fputs(" ", lisp_stderr(ctx));
+       lisp_printf(lisp_stderr(ctx), lisp_car(args));
        args = lisp_cdr(args);
    }
 
@@ -147,13 +147,13 @@ static Lisp sch_error(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_syntax_error(Lisp args, LispError* e, LispContext ctx)
 {
-    fprintf(ctx.p->err_port, "expand error: %s ", lisp_string(lisp_car(args)));
+    fprintf(lisp_stderr(ctx), "expand error: %s ", lisp_string(lisp_car(args)));
     args = lisp_cdr(args);
     if (!lisp_is_null(args))
     {
-        lisp_printf(stderr, lisp_car(args));
+        lisp_printf(lisp_stderr(ctx), lisp_car(args));
     }
-    fprintf(ctx.p->err_port, "\n");
+    fprintf(lisp_stderr(ctx), "\n");
 
     *e = LISP_ERROR_FORM_SYNTAX;
     return lisp_null();
@@ -1256,12 +1256,12 @@ static Lisp sch_eval(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_system_env(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_cdr(lisp_env_global(ctx));
+    return lisp_cdr(lisp_env(ctx));
 }
 
 static Lisp sch_user_env(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_env_global(ctx);
+    return lisp_env(ctx);
 }
 
 static Lisp sch_gc_flip(Lisp args, LispError* e, LispContext ctx)
@@ -1470,9 +1470,9 @@ void lisp_lib_load(LispContext ctx)
 {
     Lisp table = lisp_make_table(ctx);
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
-    Lisp system_env = lisp_env_extend(lisp_env_global(ctx), table, ctx);
+    Lisp system_env = lisp_env_extend(lisp_env(ctx), table, ctx);
     Lisp user_env = lisp_env_extend(system_env, lisp_make_table(ctx), ctx);
-    lisp_env_set_global(user_env, ctx);
+    lisp_set_env(user_env, ctx);
 
     const char* to_load[] = {
         lib_0_sequences_src_, lib_1_forms_src_,
@@ -1490,7 +1490,7 @@ void lisp_lib_load(LispContext ctx)
 
         if (error != LISP_ERROR_NONE)
         {
-            fprintf(ctx.p->err_port, "failed to parse system library %d: %s\n", i, lisp_error_string(error));
+            fprintf(lisp_stderr(ctx), "failed to parse system library %d: %s\n", i, lisp_error_string(error));
             return;
         }
  
@@ -1498,7 +1498,7 @@ void lisp_lib_load(LispContext ctx)
 
         if (error != LISP_ERROR_NONE)
         {
-            fprintf(ctx.p->err_port, "failed to eval system library %d: %s\n", i, lisp_error_string(error));
+            fprintf(lisp_stderr(ctx), "failed to eval system library %d: %s\n", i, lisp_error_string(error));
             return;
         }
     }
@@ -1508,3 +1508,18 @@ void lisp_lib_load(LispContext ctx)
         lisp_print_collect_stats(ctx);
 #endif
 }
+
+LispContext lisp_init_with_lib(void)
+{
+    LispContext ctx = lisp_init();
+    lisp_lib_load(ctx);
+    return ctx;
+}
+
+/*
+Copyright (c) 2021 Justin Meiners
+
+Permission to use, copy, modify, and distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+*/
