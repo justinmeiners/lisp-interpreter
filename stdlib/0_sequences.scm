@@ -64,13 +64,13 @@
 (define (_expand-shorthand-body path) 
   (if (null? path) (cons 'pair '()) 
       (list (if (char=? (car path) #\A) 
-            (cons 'CAR (_expand-mnemonic-body (cdr path))))))) 
+            (cons 'CAR (_expand-shorthand-body (cdr path))))))) 
 
 (define (_expand-shorthand text) 
   (cons 'DEFINE  (cons (list (string->symbol (string-append "C" text "R")) 'pair) 
-        (_expand-mnemonic-body (string->list text))))) 
+        (_expand-shorthand-body (string->list text))))) 
 
-(define-macro _shorthand-accessors (lambda args (cons 'BEGIN (map1 _expand-shortand args)))) 
+(define-macro _shorthand-accessors (lambda args (cons 'BEGIN (map1 _expand-shorthand args)))) 
 
 (define (vector . args) (list->vector args))
 

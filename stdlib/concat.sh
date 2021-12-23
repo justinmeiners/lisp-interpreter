@@ -5,6 +5,7 @@ SRC=*.scm
 cat lib.h
 
 echo "#ifdef LISP_IMPLEMENTATION"
+echo "// Generated from source."
 
 for FILE in $SRC
 do

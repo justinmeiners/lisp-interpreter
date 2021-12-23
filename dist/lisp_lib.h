@@ -18,6 +18,7 @@ void lisp_lib_load(LispContext ctx);
 
 
 #ifdef LISP_IMPLEMENTATION
+// Generated from source.
 static const char* lib_0_sequences_src_ = 
 "(define-macro lambda (/\\_ args \n\
            (if (pair? args) \n\
@@ -82,16 +83,16 @@ static const char* lib_0_sequences_src_ =
     (if (null? lst) acc  \n\
         (reduce op (op acc (car lst)) (cdr lst))))  \n\
  \n\
-(define (_expand-mnemonic-body path)  \n\
+(define (_expand-shorthand-body path)  \n\
   (if (null? path) (cons 'pair '())  \n\
       (list (if (char=? (car path) #\\A)  \n\
-            (cons 'CAR (_expand-mnemonic-body (cdr path)))))))  \n\
+            (cons 'CAR (_expand-shorthand-body (cdr path)))))))  \n\
  \n\
-(define (_expand-mnemonic text)  \n\
+(define (_expand-shorthand text)  \n\
   (cons 'DEFINE  (cons (list (string->symbol (string-append \"C\" text \"R\")) 'pair)  \n\
-        (_expand-mnemonic-body (string->list text)))))  \n\
+        (_expand-shorthand-body (string->list text)))))  \n\
  \n\
-(define-macro _mnemonic-accessors (lambda args (cons 'BEGIN (map1 _expand-mnemonic args))))  \n\
+(define-macro _shorthand-accessors (lambda args (cons 'BEGIN (map1 _expand-shorthand args))))  \n\
  \n\
 (define (vector . args) (list->vector args)) \n\
  \n\
@@ -191,7 +192,7 @@ static const char* lib_1_forms_src_ =
                        (_cond-helper clauses))))";
 
 static const char* lib_2_forms_src_ = 
-"(_mnemonic-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\")  \n\
+"(_shorthand-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\")  \n\
  \n\
 (define (_and-helper preds)  \n\
   (cond ((null? preds) #t)  \n\
@@ -1888,6 +1889,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "MODULO", sch_modulo },
     { "ABS", sch_abs },
     { "MAGNITUDE", sch_abs },
+
     
     { "EXACT?", sch_is_int },
     { "EXACT->INEXACT", sch_to_inexact },
@@ -1938,6 +1940,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
    
     // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
     { "GC-FLIP", sch_gc_flip },
+    
     { NULL, NULL }
     
 };

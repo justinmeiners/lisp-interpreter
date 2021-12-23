@@ -1216,14 +1216,7 @@ static Lisp sch_apply(Lisp args, LispError* e, LispContext ctx)
     Lisp operator = lisp_car(args);
     args = lisp_cdr(args);
     Lisp op_args = lisp_car(args);
-
-    // TODO: argument passing is a little more sophisitaed
-    // No environment required. procedures always bring their own enviornment
-    // to the call.
-    Lisp x;
-    Lisp env;
-    int needs_to_eval = apply(operator, op_args, &x, &env, e, ctx);
-    return needs_to_eval ? lisp_eval2(x, env, e, ctx) : x;
+    return lisp_apply(operator, op_args, e, ctx);
 }
 
 static Lisp sch_is_lambda(Lisp args, LispError* e, LispContext ctx)
@@ -1275,69 +1268,25 @@ static Lisp sch_gc_flip(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(0, 0);
     lisp_collect(lisp_null(), ctx);
-    return lisp_null();
+    return lisp_false();
 }
 
 static Lisp sch_print_gc_stats(Lisp args, LispError* e, LispContext ctx)
 {
     lisp_print_collect_stats(ctx);
-    return lisp_null();
-}
-
-typedef struct
-{
-    Block block;
-    jmp_buf jmp;
-    int stack_ptr;
-} Continue;
-
-static Lisp lisp_make_continue(LispContext ctx)
-{
-    Continue* c = gc_alloc(sizeof(Continue), LISP_CONTINUE, ctx);
-    return (Lisp) { .val = { .ptr_val = c }, .type = LISP_CONTINUE };
-}
-
-static Continue* continue_get_(Lisp x) { return x.val.ptr_val; }
-
-static Lisp sch_go_continue(Lisp args, LispError* e, LispContext ctx)
-{
-    Lisp cont = lisp_car(args);
-    args = lisp_cdr(args);
-    Lisp result = lisp_car(args);
-
-    Continue* c = continue_get_(cont);
-    ctx.p->stack_ptr = c->stack_ptr;
-    ctx.p->stack[c->stack_ptr - 1] = result;
-    longjmp(c->jmp, 1);
+    return lisp_false();
 }
 
 static Lisp sch_call_cc(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp cont = lisp_make_continue(ctx);
-    Continue* c = continue_get_(cont);
+    ARITY_CHECK(1, 1);
+    return lisp_call_cc(lisp_car(args), e, ctx);
+}
 
-    lisp_stack_push(cont, ctx);
-    c->stack_ptr = ctx.p->stack_ptr;
-
-    int has_result = setjmp(c->jmp);
-    if (has_result == 0)
-    {
-        Lisp lambda = lisp_car(args);
-        Lisp var = lisp_make_symbol("RESULT", ctx);
-
-        Lisp body_terms[] = { lisp_make_symbol("_GO-CONTINUE", ctx), cont, var };
-        Lisp body = lisp_make_list2(body_terms, 3, ctx);
-        Lisp callback = lisp_make_lambda(lisp_cons(var, lisp_null(), ctx), body, ctx.p->env, ctx);
-
-        Lisp terms[] = { lambda, lisp_cons(callback, lisp_null(), ctx) };
-        Lisp result = sch_apply(lisp_make_list2(terms, 2, ctx), e, ctx);
-        lisp_stack_pop(ctx);
-        return result;
-    }
-    else
-    {
-        return lisp_stack_pop(ctx);
-    }
+static Lisp sch_is_cont(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_JUMP);
 }
 
 #undef ARITY_CHECK
@@ -1504,7 +1453,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // TOOD: Almost standard
     { "PROCEDURE-BODY", sch_lambda_body },
     { "CALL/CC", sch_call_cc },
-    { "_GO-CONTINUE", sch_go_continue },
+    { "CONTINUATION?", sch_is_cont },
 
     // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
     { "RANDOM", sch_pseudo_rand },

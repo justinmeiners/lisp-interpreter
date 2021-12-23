@@ -91,7 +91,7 @@ typedef enum
     LISP_ERROR_FILE_OPEN,
     LISP_ERROR_READ_SYNTAX,
     LISP_ERROR_FORM_SYNTAX,
-    LISP_ERROR_UNKNOWN_VAR,
+    LISP_ERROR_UNDEFINED_VAR,
     LISP_ERROR_BAD_OP,
     LISP_ERROR_OUT_OF_BOUNDS,
     LISP_ERROR_ARG_TYPE,
@@ -154,7 +154,7 @@ void lisp_printf(FILE* file, Lisp l);
 
 void lisp_displayf(FILE* file, Lisp l);
 
-// Jumps 
+// Calls proc with an argument containing the current continuation.
 Lisp lisp_call_cc(Lisp proc, LispError* out_error, LispContext ctx);
 
 // -----------------------------------------
@@ -2497,7 +2497,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 if (!present)
                 {
                     fprintf(ctx.p->err_port, "%s is not defined.\n", lisp_symbol_string(*x));
-                    longjmp(error_jmp, LISP_ERROR_UNKNOWN_VAR); 
+                    longjmp(error_jmp, LISP_ERROR_UNDEFINED_VAR); 
                     return lisp_null();
                 }
                 return val;
@@ -3147,8 +3147,8 @@ const char* lisp_error_string(LispError error)
             return "read/syntax error.";
         case LISP_ERROR_FORM_SYNTAX:
             return "expand error: bad special form";
-        case LISP_ERROR_UNKNOWN_VAR:
-            return "eval error: unknown variable";
+        case LISP_ERROR_UNDEFINED_VAR:
+            return "eval error: undefined variable";
         case LISP_ERROR_BAD_OP:
             return "eval error: attempt to apply something which was not an operator";
         case LISP_ERROR_ARG_TYPE:

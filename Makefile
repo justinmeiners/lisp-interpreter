@@ -1,4 +1,4 @@
-CFLAGS = -Wall -pedantic -Wstrict-prototypes -O3
+CFLAGS = -Idist/ -Wall -pedantic -Wstrict-prototypes -O3
 LDLIBS = -lm
 CC=cc
 
@@ -8,19 +8,19 @@ clean:
 	rm -f lisp
 	rm -f printer
 	rm -f sample
-	rm -f lisp_lib.h
+	rm -f dist/lisp_lib.h
 
-lisp: repl.c lisp.h lisp_lib.h
+lisp: repl.c dist/lisp.h dist/lisp_lib.h
 	${CC} repl.c -o $@ ${CFLAGS} ${LDLIBS}
 
-printer: printer.c lisp.h
+printer: printer.c dist/lisp.h
 	${CC} printer.c -o $@ ${CFLAGS} ${LDLIBS}
 
-sample: sample.c lisp.h lisp_lib.h
+sample: sample.c dist/lisp.h dist/lisp_lib.h
 	${CC} sample.c -o $@ ${CFLAGS} ${LDLIBS}
 
-lisp_lib.h: stdlib/lib.h stdlib/lib.c
-	cd stdlib; ./build.sh > ../$@;
+dist/lisp_lib.h: stdlib/lib.h stdlib/lib.c
+	cd stdlib; ./concat.sh > ../$@;
 
 
 .PHONY: all clean

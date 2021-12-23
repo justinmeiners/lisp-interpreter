@@ -132,7 +132,7 @@ int main(int argc, const char* argv[])
         {
             printf("> ");
             char line[LISP_FILE_CHUNK_SIZE];
-            fgets(line, LISP_FILE_CHUNK_SIZE, stdin);
+            if (!fgets(line, LISP_FILE_CHUNK_SIZE, stdin)) break;
 
             clock_t start_time = clock();
             LispError error;
