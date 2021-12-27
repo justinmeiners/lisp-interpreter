@@ -65,7 +65,8 @@ typedef enum
     LISP_BOOL,    // t/f
     LISP_VECTOR,  // heterogenous array but contiguous allocation
     LISP_PROMISE, // lazy value
-    LISP_JUMP     // jump point/non-escaping continuation
+    LISP_JUMP,    // jump point/non-escaping continuation
+    LISP_PTR,     // pointer to arbitary C object.
 } LispType;
 
 typedef double LispReal;
@@ -119,14 +120,14 @@ void lisp_shutdown(LispContext ctx);
 // this will free all objects which are not reachable from root_to_save or the global env
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 void lisp_print_collect_stats(LispContext ctx);
-const char* lisp_error_string(LispError error);
+const char *lisp_error_string(LispError error);
 
 void lisp_set_env(Lisp env, LispContext ctx);
 Lisp lisp_env(LispContext ctx);
 
-void lisp_set_stdin(FILE* file, LispContext ctx);
-void lisp_set_stderr(FILE* file, LispContext ctx);
-void lisp_set_stdout(FILE* file, LispContext ctx);
+void lisp_set_stdin(FILE *file, LispContext ctx);
+void lisp_set_stderr(FILE *file, LispContext ctx);
+void lisp_set_stdout(FILE *file, LispContext ctx);
 
 FILE *lisp_stdin(LispContext ctx);
 FILE *lisp_stderr(LispContext ctx);
@@ -143,8 +144,8 @@ void lisp_set_macro_table(Lisp table, LispContext ctx);
 // -----------------------------------------
 
 // Reads text into raw s-expressions. 
-Lisp lisp_read(const char* text, LispError* out_error, LispContext ctx);
-Lisp lisp_read_file(FILE* file, LispError* out_error, LispContext ctx);
+Lisp lisp_read(const char *text, LispError* out_error, LispContext ctx);
+Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx);
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
 // evaluate a lisp expression
@@ -156,9 +157,9 @@ Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
 
 // print out a lisp structure in 
 void lisp_print(Lisp l);
-void lisp_printf(FILE* file, Lisp l);
+void lisp_printf(FILE *file, Lisp l);
 
-void lisp_displayf(FILE* file, Lisp l);
+void lisp_displayf(FILE *file, Lisp l);
 
 // Calls proc with an argument containing the current continuation.
 Lisp lisp_call_cc(Lisp proc, LispError* out_error, LispContext ctx);
@@ -225,9 +226,13 @@ char *lisp_buffer(Lisp s);
 int lisp_buffer_capacity(Lisp s);
 
 // Symbols (interned strings)
-Lisp lisp_make_symbol(const char* string, LispContext ctx);
+Lisp lisp_make_symbol(const char *string, LispContext ctx);
 Lisp lisp_gen_symbol(LispContext ctx); // uninterned
 const char *lisp_symbol_string(Lisp x);
+
+// Arbitrary C objects.
+Lisp lisp_make_ptr(void *ptr);
+void *lisp_ptr(Lisp l);
 
 // -----------------------------------------
 // DATA STRUCTURES
@@ -1320,6 +1325,17 @@ Lisp lisp_gen_symbol(LispContext ctx)
     return symbol_make_(text, bytes, ctx);
 }
 
+Lisp lisp_make_ptr(void *ptr)
+{
+    return (Lisp) { .val = { .ptr_val = ptr }, .type = LISP_PTR };
+}
+
+void *lisp_ptr(Lisp l)
+{
+    assert(lisp_type(l) == LISP_PTR);
+    return l.val.ptr_val;
+}
+
 Lisp lisp_make_func(LispCFunc func)
 {
     Lisp l;
@@ -2286,6 +2302,7 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
         case LISP_JUMP: fputs("<jump>", file); break;
         case LISP_LAMBDA: fputs("<lambda>", file); break;
         case LISP_PROMISE: fputs("<promise>", file); break;
+        case LISP_PTR: fputs("<ptr-%p>", l.val.ptr_val); break;
         case LISP_FUNC: fprintf(file, "<c-func-%p>", l.val.ptr_val); break;
         case LISP_TABLE:
         {
