@@ -391,7 +391,7 @@ static const char* lib_4_sequences_src_ =
               (helper mid high 0)))))  \n\
   (helper 0 (vector-length v) 0))  \n\
  \n\
-(define (quicksort-partition v lo hi op)  \n\
+(define (_quicksort-partition v lo hi op)  \n\
   (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot)  \n\
        (i (- lo 1) i)  \n\
        (j (+ hi 1) j))  \n\
@@ -405,14 +405,14 @@ static const char* lib_4_sequences_src_ =
         (set! j (- j 1)))  \n\
       (if (< i j) (vector-swap! v i j)))))  \n\
  \n\
-(define (quicksort-vector v lo hi op)  \n\
+(define (_quicksort-vector v lo hi op)  \n\
   (if (and (>= lo 0) (>= hi 0) (< lo hi))  \n\
-      (let ((p (quicksort-partition v lo hi op)))  \n\
-        (quicksort-vector v lo p op)  \n\
-        (quicksort-vector v (+ p 1) hi op))))  \n\
+      (let ((p (_quicksort-partition v lo hi op)))  \n\
+        (_quicksort-vector v lo p op)  \n\
+        (_quicksort-vector v (+ p 1) hi op))))  \n\
  \n\
 (define (sort! v op)  \n\
-  (quicksort-vector v 0 (- (vector-length v) 1) op) v)  \n\
+  (_quicksort-vector v 0 (- (vector-length v) 1) op) v)  \n\
  \n\
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp)))";
 

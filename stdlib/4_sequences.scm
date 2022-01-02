@@ -73,7 +73,7 @@
               (helper mid high 0))))) 
   (helper 0 (vector-length v) 0)) 
 
-(define (quicksort-partition v lo hi op) 
+(define (_quicksort-partition v lo hi op) 
   (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot) 
        (i (- lo 1) i) 
        (j (+ hi 1) j)) 
@@ -87,14 +87,14 @@
         (set! j (- j 1))) 
       (if (< i j) (vector-swap! v i j))))) 
 
-(define (quicksort-vector v lo hi op) 
+(define (_quicksort-vector v lo hi op) 
   (if (and (>= lo 0) (>= hi 0) (< lo hi)) 
-      (let ((p (quicksort-partition v lo hi op))) 
-        (quicksort-vector v lo p op) 
-        (quicksort-vector v (+ p 1) hi op)))) 
+      (let ((p (_quicksort-partition v lo hi op))) 
+        (_quicksort-vector v lo p op) 
+        (_quicksort-vector v (+ p 1) hi op)))) 
 
 (define (sort! v op) 
-  (quicksort-vector v 0 (- (vector-length v) 1) op) v) 
+  (_quicksort-vector v 0 (- (vector-length v) 1) op) v) 
 
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp))) 
 
