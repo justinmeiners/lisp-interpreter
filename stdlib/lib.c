@@ -1249,13 +1249,25 @@ static Lisp sch_macroexpand(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_eval(Lisp args, LispError* e, LispContext ctx)
 {
-    ARITY_CHECK(2, 2);
-    return lisp_eval2(lisp_car(args), lisp_car(lisp_cdr(args)), e, ctx);
+    ARITY_CHECK(1, 2);
+    Lisp expr = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp env = lisp_is_null(args) ? lisp_env(ctx) : lisp_car(args);
+    return lisp_eval2(expr, env, e, ctx);
 }
 
 static Lisp sch_system_env(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_cdr(lisp_env(ctx));
+    ARITY_CHECK(1, 1);
+    if (lisp_int(lisp_car(args)) == 5)
+    {
+        return lisp_cdr(lisp_env(ctx));
+    }
+    else
+    {
+        *e = LISP_ERROR_RUNTIME;
+        return lisp_null();
+    }
 }
 
 static Lisp sch_user_env(Lisp args, LispError* e, LispContext ctx)
@@ -1425,8 +1437,8 @@ static const LispFuncDef lib_cfunc_defs[] = {
 
     // Environments https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_14.html
     { "EVAL", sch_eval },
-    { "SYSTEM-GLOBAL-ENVIRONMENT", sch_system_env },
-    { "USER-INITIAL-ENVIRONMENT", sch_user_env },
+    { "SCHEME-REPORT-ENVIRONMENT", sch_system_env },
+    { "INTERACTION-ENVIRONMENT", sch_user_env },
     // { "THE-ENVIRONMENT", sch_current_env },
     
     // Hash Tables https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Basic-Hash-Table-Operations.html#Basic-Hash-Table-Operations

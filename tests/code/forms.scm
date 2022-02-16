@@ -45,8 +45,10 @@
   (assert (>= i 0))
   (display i))
 
-(==> (eval '(+ 2 2) (user-initial-environment)) 4)
+(==> (eval '(+ 2 2)) 4)
+(==> (eval '(+ 2 2) (interaction-environment)) 4)
 
+(assert (scheme-report-environment 5))
 
 (assert (case (+ 2 3)
           ((2) #f)
