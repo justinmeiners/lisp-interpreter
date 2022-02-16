@@ -10,16 +10,16 @@
 (define (<= a b) (not (< b a))) 
 
 (define (max . ls) 
-  (reduce (lambda (m x) 
-            (if (> x m) 
-                x 
-                m)) (car ls) (cdr ls))) 
+  (fold-left (lambda (m x) 
+               (if (> x m) 
+                   x 
+                   m)) (car ls) (cdr ls))) 
 
 (define (min . ls) 
-  (reduce (lambda (m x) 
-            (if (< x m) 
-                x 
-                m)) (car ls) (cdr ls))) 
+  (fold-left (lambda (m x) 
+               (if (< x m) 
+                   x 
+                   m)) (car ls) (cdr ls))) 
 
 (define (_gcd-helper a b) 
   (if (= b 0) a (_gcd-helper b (modulo a b)))) 

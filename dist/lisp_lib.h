@@ -79,7 +79,7 @@ static const char* lib_0_sequences_src_ =
 (define (for-each1 proc l)  \n\
   (if (null? l) '()  \n\
       (begin (proc (car l)) (for-each1 proc (cdr l )))))  \n\
-  \n\
+ \n\
 (define (reverse! l) (append-reverse! l '())) \n\
 (define (reverse l) (reverse! (list-copy l)))  \n\
  \n\
@@ -90,10 +90,10 @@ static const char* lib_0_sequences_src_ =
 (define (list-tail x k)  \n\
  (if (zero? k) x  \n\
   (list-tail (cdr x) (- k 1))))  \n\
-  \n\
-(define (reduce op acc lst)  \n\
-    (if (null? lst) acc  \n\
-        (reduce op (op acc (car lst)) (cdr lst))))  \n\
+ \n\
+(define (fold-left op acc lst) \n\
+  (if (null? lst) acc  \n\
+      (fold-left op (op acc (car lst)) (cdr lst)))) \n\
  \n\
 (define (_expand-shorthand-body path)  \n\
   (if (null? path) (cons 'pair '())  \n\
@@ -292,16 +292,16 @@ static const char* lib_3_math_src_ =
 (define (<= a b) (not (< b a)))  \n\
  \n\
 (define (max . ls)  \n\
-  (reduce (lambda (m x)  \n\
-            (if (> x m)  \n\
-                x  \n\
-                m)) (car ls) (cdr ls)))  \n\
+  (fold-left (lambda (m x)  \n\
+               (if (> x m)  \n\
+                   x  \n\
+                   m)) (car ls) (cdr ls)))  \n\
  \n\
 (define (min . ls)  \n\
-  (reduce (lambda (m x)  \n\
-            (if (< x m)  \n\
-                x  \n\
-                m)) (car ls) (cdr ls)))  \n\
+  (fold-left (lambda (m x)  \n\
+               (if (< x m)  \n\
+                   x  \n\
+                   m)) (car ls) (cdr ls)))  \n\
  \n\
 (define (_gcd-helper a b)  \n\
   (if (= b 0) a (_gcd-helper b (modulo a b))))  \n\
@@ -342,6 +342,10 @@ static const char* lib_4_sequences_src_ =
     (helper (cdr l) result))))  \n\
  (reverse! (helper l '())))  \n\
  \n\
+(define (reduce op default lst)  \n\
+  (if (null? lst) \n\
+      default \n\
+      (fold-left op (car lst) (cdr lst))))  \n\
  \n\
 (define (alist->hash-table alist)  \n\
   (define h (make-hash-table))  \n\

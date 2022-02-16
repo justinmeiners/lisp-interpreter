@@ -35,9 +35,7 @@
 
 (==> (string->number (number->string 279)) 279)
 (==> (number->string (string->number "279")) "279")
-
 (==> (string->number (number->string 0.5)) 0.5)
-
 
 (assert (symbol<? 'A 'B))
 (assert (not (symbol<? 'WALK 'DOG)))
@@ -46,6 +44,5 @@
 
 (==> (string-ref "abc" 0) #\a)
 (==> (string-ref "abc" 2) #\c)
-
 (==> (string #\a #\b) "ab")
 (==> (string) "")

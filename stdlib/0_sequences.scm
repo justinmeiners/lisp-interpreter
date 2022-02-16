@@ -45,7 +45,7 @@
 (define (for-each1 proc l) 
   (if (null? l) '() 
       (begin (proc (car l)) (for-each1 proc (cdr l ))))) 
- 
+
 (define (reverse! l) (append-reverse! l '()))
 (define (reverse l) (reverse! (list-copy l))) 
 
@@ -56,10 +56,10 @@
 (define (list-tail x k) 
  (if (zero? k) x 
   (list-tail (cdr x) (- k 1)))) 
- 
-(define (reduce op acc lst) 
-    (if (null? lst) acc 
-        (reduce op (op acc (car lst)) (cdr lst)))) 
+
+(define (fold-left op acc lst)
+  (if (null? lst) acc 
+      (fold-left op (op acc (car lst)) (cdr lst))))
 
 (define (_expand-shorthand-body path) 
   (if (null? path) (cons 'pair '()) 

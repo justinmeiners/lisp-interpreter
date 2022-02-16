@@ -37,10 +37,7 @@
 (assert (= (largest-squares 3 4 5) (+ 25 16)))
 (assert (= (largest-squares 3 5 4) (+ 25 16)))
 
-
-
 ; 1.14 change counter
-
 (define (count-change amount) (cc amount 5))
 
 (define (cc amount kinds-of-coins)
@@ -64,7 +61,6 @@
 (newline)
 
 ; 1.16 - fast powers
-
 (define (exp-fast b n) (exp-iter b n 1))
 
 (define (exp-iter b n product)
@@ -119,8 +115,6 @@
 (assert (= (fib 7) 13))
 (assert (= (fib 8) 21))
 
-
-
 ; 2.21 - square list
 
 (define (square-list items)
@@ -161,5 +155,4 @@
   (if (or (= a 1) (garbage here))
     'pass
     (assert 0)))
-
 

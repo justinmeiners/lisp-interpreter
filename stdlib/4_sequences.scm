@@ -24,6 +24,10 @@
     (helper (cdr l) result)))) 
  (reverse! (helper l '()))) 
 
+(define (reduce op default lst) 
+  (if (null? lst)
+      default
+      (fold-left op (car lst) (cdr lst)))) 
 
 (define (alist->hash-table alist) 
   (define h (make-hash-table)) 

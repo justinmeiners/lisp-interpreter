@@ -57,3 +57,13 @@
 (assert (list? '(1 2)))
 (assert (not (list? (cons 1 2))))
  
+
+(==> (reduce + 0 '(1 2 3 4)) 10)
+(==> (reduce + 0 '(1 2)) 3)
+(==> (reduce + 0 '()) 0)
+(==> (reduce list '() '(1 2 3 4)) (((1 2) 3) 4))
+
+
+(==> (fold-left + 0 '(1 2 3 4)) 10)
+(==> (fold-left list '() '(1 2 3 4)) ((((() 1) 2) 3) 4))
+

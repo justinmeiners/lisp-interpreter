@@ -21,7 +21,6 @@
 (assert (not (vec-sorted? #(1 2 3 4 4 3) <)))
 (assert (not (vec-sorted? #(1 2 3 2 4 5) <)))
 
-
 ; Now test the sort function
 (assert (vec-sorted? (sort! #(1) <) <))
 (assert (vec-sorted? (sort! #(2 1) <) <))
@@ -52,7 +51,6 @@
 (==> v #(3 3 3))
 
 (==> (make-initialized-vector 5 (lambda (x) (* x x))) #(0 1 4 9 16))
- 
 (==> (vector-head #(1 2 3) 2) #(1 2))
 
 ; Issues parsing large vector
@@ -71,5 +69,3 @@
 (assert (= (cdr (vector-assq 'john avector)) 2))
 (assert (= (cdr (vector-assq 'alice avector)) 4))
 (assert (not (vector-assq 'bad-key avector)))
-
-
