@@ -1,7 +1,7 @@
 /*
  Created by: Justin Meiners 
  Repo; https://github.com/justinmeiners/lisp-interpreter
- License: MIT (See end if file)
+ License: MIT (See end of file)
 
  Do this:
      #define LISP_IMPLEMENTATION
@@ -195,7 +195,7 @@ Lisp lisp_parse_real(const char *string);
 LispReal lisp_number_to_real(Lisp x);
 LispInt lisp_number_to_int(Lisp x);
 
-// Bools
+// Booleans
 Lisp lisp_make_bool(int t);
 int lisp_bool(Lisp x);
 #define lisp_true() (lisp_make_bool(1))
@@ -207,7 +207,7 @@ Lisp lisp_make_char(int c);
 int lisp_char(Lisp l);
 Lisp lisp_eof(void);
 
-// Null terminated byte (ASCII) strings
+// Null terminated byte strings (ASCII)
 Lisp lisp_make_string(int n, LispContext ctx);
 Lisp lisp_make_string2(const char *c_string, LispContext ctx);
 Lisp lisp_substring(Lisp s, int start, int end, LispContext ctx);
@@ -256,13 +256,13 @@ int lisp_is_list(Lisp l); // O(n)
 // returns the value with tgiven key.
 Lisp lisp_alist_ref(Lisp l, Lisp key); // O(n)
 
-// Vectors (like C arrays, but heterogeneous).
+// Heterogeneous arrays.
 Lisp lisp_make_vector(int n, LispContext ctx); // Contents are uninitialized. Be careful.
 Lisp lisp_make_vector2(Lisp *x, int n, LispContext ctx);
 
 int lisp_vector_length(Lisp v);
-Lisp lisp_vector_ref(Lisp v, int i);
-void lisp_vector_set(Lisp v, int i, Lisp x); // inplace.
+Lisp lisp_vector_ref(Lisp v, int i); // O(1)
+void lisp_vector_set(Lisp v, int i, Lisp x); // O(1). inplace.
 Lisp lisp_vector_swap(Lisp v, int i, int j); // inplace.
 void lisp_vector_fill(Lisp v, Lisp x); // inplace.
 Lisp lisp_vector_grow(Lisp v, int n, LispContext ctx);
