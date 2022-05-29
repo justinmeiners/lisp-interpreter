@@ -77,28 +77,55 @@
               (helper mid high 0))))) 
   (helper 0 (vector-length v) 0)) 
 
+
+(define (_insertsort v lo hi op)
+  (if (= (- hi lo) 0)
+      v
+      (do ((i (+ lo 1) (+ i 1)))
+        ((= i hi) v)
+
+        (define x (vector-ref v i))
+
+        (do ((j i (- j 1)))
+          ((or
+             (= j lo)
+             (not (op x (vector-ref v (- j 1)))))
+             (vector-set! v j x))
+
+          (vector-set! v j (vector-ref v (- j 1))))) ))
+
 (define (_quicksort-partition v lo hi op) 
-  (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot) 
-       (i (- lo 1) i) 
-       (j (+ hi 1) j)) 
-    ((>= i j) j) 
-    (begin 
-      (do ((x (set! i (+ i 1)) x)) 
+  (let ((pivot (vector-ref v (+ lo (/ (- hi lo) 2))))
+        (i (- lo 1))
+        (j (+ hi 1)))
+    (do () 
+      ((>= i j) j) 
+
+      (set! i (+ i 1))
+      (do () 
         ((not (op (vector-ref v i) pivot)) '()) 
         (set! i (+ i 1))) 
-      (do ((x (set! j (- j 1)) x)) 
+
+      (set! j (- j 1))
+      (do () 
         ((not (op pivot (vector-ref v j))) '()) 
         (set! j (- j 1))) 
-      (if (< i j) (vector-swap! v i j))))) 
 
-(define (_quicksort-vector v lo hi op) 
-  (if (and (>= lo 0) (>= hi 0) (< lo hi)) 
+      (if (< i j) (vector-swap! v i j))
+      ))) 
+
+(define (_quicksort-vector v lo hi threshold op) 
+  (if (and (>= lo 0) (>= hi 0) (< lo hi) (> (- hi lo) threshold)) 
       (let ((p (_quicksort-partition v lo hi op))) 
-        (_quicksort-vector v lo p op) 
-        (_quicksort-vector v (+ p 1) hi op)))) 
+        (_quicksort-vector v lo p threshold op) 
+        (_quicksort-vector v (+ p 1) hi threshold op)))) 
 
 (define (sort! v op) 
-  (_quicksort-vector v 0 (- (vector-length v) 1) op) v) 
+  ; quicksort down to a certain level of recursion and
+  ; then use insertion sort to finalize. 
+  (_quicksort-vector v 0 (- (vector-length v) 1) 16 op)
+  (_insertsort v 0 (vector-length v) op)
+  v) 
 
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp))) 
 

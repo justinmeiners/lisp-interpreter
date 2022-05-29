@@ -395,28 +395,55 @@ static const char* lib_4_sequences_src_ =
               (helper mid high 0)))))  \n\
   (helper 0 (vector-length v) 0))  \n\
  \n\
+ \n\
+(define (_insertsort v lo hi op) \n\
+  (if (= (- hi lo) 0) \n\
+      v \n\
+      (do ((i (+ lo 1) (+ i 1))) \n\
+        ((= i hi) v) \n\
+ \n\
+        (define x (vector-ref v i)) \n\
+ \n\
+        (do ((j i (- j 1))) \n\
+          ((or \n\
+             (= j lo) \n\
+             (not (op x (vector-ref v (- j 1))))) \n\
+             (vector-set! v j x)) \n\
+ \n\
+          (vector-set! v j (vector-ref v (- j 1))))) )) \n\
+ \n\
 (define (_quicksort-partition v lo hi op)  \n\
-  (do ((pivot (vector-ref v (/ (+ lo hi) 2)) pivot)  \n\
-       (i (- lo 1) i)  \n\
-       (j (+ hi 1) j))  \n\
-    ((>= i j) j)  \n\
-    (begin  \n\
-      (do ((x (set! i (+ i 1)) x))  \n\
+  (let ((pivot (vector-ref v (+ lo (/ (- hi lo) 2)))) \n\
+        (i (- lo 1)) \n\
+        (j (+ hi 1))) \n\
+    (do ()  \n\
+      ((>= i j) j)  \n\
+ \n\
+      (set! i (+ i 1)) \n\
+      (do ()  \n\
         ((not (op (vector-ref v i) pivot)) '())  \n\
         (set! i (+ i 1)))  \n\
-      (do ((x (set! j (- j 1)) x))  \n\
+ \n\
+      (set! j (- j 1)) \n\
+      (do ()  \n\
         ((not (op pivot (vector-ref v j))) '())  \n\
         (set! j (- j 1)))  \n\
-      (if (< i j) (vector-swap! v i j)))))  \n\
  \n\
-(define (_quicksort-vector v lo hi op)  \n\
-  (if (and (>= lo 0) (>= hi 0) (< lo hi))  \n\
+      (if (< i j) (vector-swap! v i j)) \n\
+      )))  \n\
+ \n\
+(define (_quicksort-vector v lo hi threshold op)  \n\
+  (if (and (>= lo 0) (>= hi 0) (< lo hi) (> (- hi lo) threshold))  \n\
       (let ((p (_quicksort-partition v lo hi op)))  \n\
-        (_quicksort-vector v lo p op)  \n\
-        (_quicksort-vector v (+ p 1) hi op))))  \n\
+        (_quicksort-vector v lo p threshold op)  \n\
+        (_quicksort-vector v (+ p 1) hi threshold op))))  \n\
  \n\
 (define (sort! v op)  \n\
-  (_quicksort-vector v 0 (- (vector-length v) 1) op) v)  \n\
+  ; quicksort down to a certain level of recursion and \n\
+  ; then use insertion sort to finalize.  \n\
+  (_quicksort-vector v 0 (- (vector-length v) 1) 16 op) \n\
+  (_insertsort v 0 (vector-length v) op) \n\
+  v)  \n\
  \n\
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp)))";
 

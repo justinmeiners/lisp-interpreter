@@ -42,7 +42,7 @@
 (==> (list->vector '(dididit dah)) #(dididit dah))
 
 
-; Binary serach
+; Binary search
 (assert (= (vector-binary-search #(1 2 3 4 5) < (lambda (x) x) 3) 3))
 (assert (not (vector-binary-search #(1 2 2 4 5) < (lambda (x) x) 3)))
 
@@ -69,3 +69,7 @@
 (assert (= (cdr (vector-assq 'john avector)) 2))
 (assert (= (cdr (vector-assq 'alice avector)) 4))
 (assert (not (vector-assq 'bad-key avector)))
+
+
+(sort! (make-initialized-vector 10000 (lambda (x) (random 1000000))) <)
+
