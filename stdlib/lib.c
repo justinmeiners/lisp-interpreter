@@ -1386,6 +1386,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "CHAR?", sch_is_char },
     { "CHAR=?", sch_equals },
     { "CHAR<?", sch_char_less },
+
     { "CHAR-UPCASE", sch_char_upcase },
     { "CHAR-DOWNCASE", sch_char_downcase },
     { "CHAR-WHITESPACE?", sch_char_is_white },

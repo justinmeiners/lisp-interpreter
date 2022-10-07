@@ -78,10 +78,6 @@
 (define (vector-head v end) (subvector v 0 end)) 
 (define (vector-tail v start) (subvector v start (vector-length v))) 
  
-(define (char>=? a b) (not (char<? a b))) 
-(define (char>? a b) (char<? b a)) 
-(define (char<=? a b) (not (char<? b a))) 
-
 (define (string . chars) (list->string chars)) 
 
 (define (string>=? a b) (not (string<? a b))) 

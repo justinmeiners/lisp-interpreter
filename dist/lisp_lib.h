@@ -112,10 +112,6 @@ static const char* lib_0_sequences_src_ =
 (define (vector-head v end) (subvector v 0 end))  \n\
 (define (vector-tail v start) (subvector v start (vector-length v)))  \n\
   \n\
-(define (char>=? a b) (not (char<? a b)))  \n\
-(define (char>? a b) (char<? b a))  \n\
-(define (char<=? a b) (not (char<? b a)))  \n\
- \n\
 (define (string . chars) (list->string chars))  \n\
  \n\
 (define (string>=? a b) (not (string<? a b)))  \n\
@@ -507,7 +503,26 @@ static const char* lib_5_streams_src_ =
         (else (stream-filter pred (stream-cdr stream)))))";
 
 static const char* lib_6_other_src_ = 
-"(define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p)))  \n\
+"(define (char>=? a b) (not (char<? a b)))  \n\
+(define (char>? a b) (char<? b a))  \n\
+(define (char<=? a b) (not (char<? b a)))  \n\
+ \n\
+(define (char-ci=? a b) (char=? (char-downcase a) (char-downcase b))) \n\
+(define (char-ci<? a b) (char<? (char-downcase a) (char-downcase b))) \n\
+ \n\
+(define (char-ci>=? a b) (not (char-ci<? a b)))  \n\
+(define (char-ci>? a b) (char-ci<? b a))  \n\
+(define (char-ci<=? a b) (not (char-ci<? b a)))  \n\
+ \n\
+(define (char-lower-case? c) \n\
+    (and (>= (char->integer c) (char->integer #\\a)) \n\
+         (<= (char->integer c) (char->integer #\\z)))) \n\
+ \n\
+(define (char-upper-case? c) \n\
+    (and (>= (char->integer c) (char->integer #\\A)) \n\
+         (<= (char->integer c) (char->integer #\\Z)))) \n\
+ \n\
+(define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p)))  \n\
   \n\
 (define (newline) (write-char #\\newline))  \n\
  \n\
@@ -1908,6 +1923,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "CHAR?", sch_is_char },
     { "CHAR=?", sch_equals },
     { "CHAR<?", sch_char_less },
+
     { "CHAR-UPCASE", sch_char_upcase },
     { "CHAR-DOWNCASE", sch_char_downcase },
     { "CHAR-WHITESPACE?", sch_char_is_white },
