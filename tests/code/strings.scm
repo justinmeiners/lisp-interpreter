@@ -46,3 +46,15 @@
 (==> (string-ref "abc" 2) #\c)
 (==> (string #\a #\b) "ab")
 (==> (string) "")
+
+(assert (char<? #\a #\b))
+(assert (char<=? #\a #\a))
+
+(assert (char-lower-case? #\a))
+(assert (not (char-lower-case? #\A)))
+
+(assert (not (char-upper-case? #\c)))
+(assert (char-upper-case? #\C))
+
+(assert (char-ci=? #\a #\A))
+(assert (char-ci<? #\A #\b))
