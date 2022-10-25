@@ -11,6 +11,7 @@
 #include "lisp.h"
 #include "lisp_lib.h"
 
+#define LINE_MAX 4096
 
 static Lisp sch_load(Lisp args, LispError* e, LispContext ctx)
 {
@@ -44,6 +45,7 @@ int main(int argc, const char* argv[])
         }
     }
     
+    //LispContext ctx = lisp_init();
     LispContext ctx = lisp_init_with_lib();
     lisp_env_define(
         lisp_cdr(lisp_env(ctx)),
@@ -123,8 +125,8 @@ int main(int argc, const char* argv[])
         while (!feof(stdin))
         {
             printf("> ");
-            char line[LISP_FILE_CHUNK_SIZE];
-            if (!fgets(line, LISP_FILE_CHUNK_SIZE, stdin)) break;
+            char line[LINE_MAX];
+            if (!fgets(line, LINE_MAX, stdin)) break;
 
             clock_t start_time = clock();
             LispError error;

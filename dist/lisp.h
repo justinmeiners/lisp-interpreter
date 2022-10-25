@@ -145,12 +145,19 @@ void lisp_set_macro_table(Lisp table, LispContext ctx);
 // -----------------------------------------
 
 // Reads text into raw s-expressions. 
-Lisp lisp_read(const char *text, LispError* out_error, LispContext ctx);
-Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx);
-Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 
-// evaluate a lisp expression
+// Null terminated.
+Lisp lisp_read(const char *text, LispError* out_error, LispContext ctx);
+// Range restricted (not necessarily null-teriminated). 
+Lisp lisp_read2(const char* start, const char* end, LispError* out_error, LispContext ctx);
+// Read from contents of file path. 
+Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
+// This is intended for unseekable files (like stdin) and may be less efficient.
+Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx);
+
+// Evaluate a lisp expression.
 Lisp lisp_eval(Lisp expr, LispError* out_error, LispContext ctx);
+// Provide an environment parameter.
 Lisp lisp_eval2(Lisp expr, Lisp env, LispError* out_error, LispContext ctx);
 Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx);
 // Expands special Lisp forms and checks syntax (called by eval).
@@ -314,10 +321,6 @@ Lisp lisp_promise_val(Lisp p);
 Lisp lisp_promise_proc(Lisp p);
 void lisp_promise_store(Lisp p, Lisp x);
 
-#ifndef LISP_FILE_CHUNK_SIZE
-#define LISP_FILE_CHUNK_SIZE 8192
-#endif
-
 #ifndef LISP_PAGE_SIZE
 #define LISP_PAGE_SIZE 512 * 1024
 #endif
@@ -353,7 +356,6 @@ void lisp_promise_store(Lisp p, Lisp x);
 #endif
 
 #ifndef LISP_NO_MMAP 
-#include <sys/stat.h>
 #include <sys/mman.h> 
 #include <fcntl.h>
 #include <unistd.h>
@@ -1519,375 +1521,243 @@ static const char* token_type_name[] = {
 
 typedef struct
 {
-    FILE* file;
+    const char* start;
+    const char* end;
 
     const char* sc; // start of token
     const char* c;  // scanner
-    size_t scan_length;
     TokenType token;
-
-    int sc_buff_index;
-    int c_buff_index; 
-
-    char* buffs[2];
-    int buff_number[2];
-    size_t buff_size;
-
-    size_t position;
 } Lexer;
 
-static void lexer_shutdown(Lexer* lex)
+static
+void lexer_init(Lexer* lex, const char* start, const char* end)
 {
-    if (lex->file)
-    {
-        free(lex->buffs[0]);
-        free(lex->buffs[1]);
-    }
+    lex->start = start;
+    lex->end = end;
+    lex->c = start;
+    lex->sc = start;
+    lex->token = TOKEN_NONE;
 }
 
-static void lexer_init(Lexer* lex, const char* program)
+static
+const char* lex_skip_empty_(const char* f, const char* l)
 {
-    lex->file = NULL;
-    lex->sc_buff_index = 0;
-    lex->c_buff_index = 0; 
-    lex->buffs[0] = (char*)program;
-    lex->buffs[1] = NULL;
-    lex->buff_number[0] = 0;
-    lex->buff_number[1] = -1;
-    lex->sc = lex->c = lex->buffs[0];
-    lex->scan_length = 0;
-    lex->position = 0;
-}
-
-static void lexer_init_file(Lexer* lex, FILE* file)
-{
-    lex->file = file;
-
-    lex->buff_size = LISP_FILE_CHUNK_SIZE;
-
-     // double input buffering
-    lex->sc_buff_index = 0;
-    lex->c_buff_index = 0;
-
-    lex->buffs[0] = malloc(lex->buff_size + 1);
-    lex->buffs[1] = malloc(lex->buff_size + 1);
-    lex->buffs[0][lex->buff_size] = '\0';
-    lex->buffs[1][lex->buff_size] = '\0';
-
-    // sc the pointers out
-    lex->sc = lex->c = lex->buffs[0];
-    lex->scan_length = 0;
-
-    // read a new block
-    size_t read = fread(lex->buffs[0], 1, lex->buff_size, lex->file);
-    lex->buffs[0][read] = '\0';
-
-    lex->buff_number[0] = 0;
-    lex->buff_number[1] = -1;
-    lex->position = 0;
-}
-
-static void lexer_advance_start(Lexer* lex)
-{
-    lex->sc = lex->c;
-    lex->sc_buff_index = lex->c_buff_index;
-    lex->scan_length = 0;
-}
-
-static void lexer_restart_scan(Lexer* lex)
-{
-    lex->c = lex->sc;
-    lex->c_buff_index = lex->sc_buff_index;
-    lex->scan_length = 0;
-}
-
-static int lexer_step(Lexer* lex)
-{
-    ++lex->c;
-    ++lex->scan_length;
-    ++lex->position;
-
-    if (*lex->c == '\0')
-    { 
-        if (lex->file)
-        {
-            // flip the buffer
-            int previous_index = lex->c_buff_index;
-            int new_index = !previous_index;
-
-            if (new_index == lex->sc_buff_index)
-            {
-                fprintf(stderr, "token too long\n");
-                return 0;
-            }
- 
-            // next block is older. so read a new one
-            if (lex->buff_number[new_index] < lex->buff_number[previous_index])
-            {
-                if (!feof(lex->file))
-                {
-                    size_t read = fread(lex->buffs[new_index], 1, lex->buff_size, lex->file);
-                    lex->buff_number[new_index] = lex->buff_number[previous_index] + 1;
-                    lex->buffs[new_index][read] = '\0';
-                }
-                else
-                {
-                    return 0;
-                }
-            }
-
-            lex->c_buff_index = new_index;
-            lex->c = lex->buffs[new_index];
-        }  
-        else
-        {
-            return 0;
-        }
-    }
-
-    return 1;
-}
-
-static void lexer_skip_empty(Lexer* lex)
-{
-    while (lex->c)
-    {
-        // skip whitespace
-        while (isspace(*lex->c)) lexer_step(lex);
-        // skip comments to end of line
-        if (*lex->c == ';')
-        {
-            while (*lex->c && *lex->c != '\n') lexer_step(lex);
-        }
-        else
-        {
-            break;
-        }
-    }
-}
-
-static int lexer_match_char(Lexer* lex)
-{
-    lexer_restart_scan(lex);
-    if (*lex->c != '#') return 0;
-    lexer_step(lex);
-    if (*lex->c != '\\') return 0;
-    lexer_step(lex);
-
-    if (isalnum(*lex->c))
-    {
-        lexer_step(lex);
-        while (isalnum(*lex->c)) lexer_step(lex);
-    }
-    else if (isprint(*lex->c))
-    {
-        lexer_step(lex);
-    }
-    return 1;
-}
-
-static int lexer_match_bool(Lexer* lex)
-{
-    lexer_restart_scan(lex);
-    if (*lex->c != '#') return 0;
-    lexer_step(lex);
-    if (*lex->c != 't' && *lex->c != 'f') return 0;
-    lexer_step(lex);
-    return 1;
-}
-
-static int lexer_match_hash_paren(Lexer* lex)
-{
-    lexer_restart_scan(lex);
-    if (*lex->c != '#') return 0;
-    lexer_step(lex);
-    if (*lex->c != '(') return 0;
-    lexer_step(lex);
-    return 1;
-}
-
-static int lexer_match_int(Lexer* lex)
-{
-    lexer_restart_scan(lex);
-    
-    // need at least one digit or -
-    if (!isdigit(*lex->c))
-    {
-        if (*lex->c == '-' || *lex->c == '+')
-        {
-            lexer_step(lex);
-            if (!isdigit(*lex->c)) return 0;
-        }
-        else
-        {
-            return 0;
-        }
-    }
-
-    lexer_step(lex);
-    // + any other digits
-    while (isdigit(*lex->c)) lexer_step(lex);
-    return 1;
-}
-
-static int lexer_match_float(Lexer* lex)
-{
-    lexer_restart_scan(lex);
-    
-    // need at least one digit or -
-    if (!isdigit(*lex->c))
-    {
-        if (*lex->c == '-' || *lex->c == '+')
-        {
-            lexer_step(lex);
-            if (!isdigit(*lex->c)) return 0;
-        }
-        else
-        {
-            return 0;
-        }
-    }
-    lexer_step(lex);
-
-    int found_decimal = 0;
-    while (isdigit(*lex->c) || *lex->c == '.')
-    {
-        if (*lex->c == '.') found_decimal = 1;
-        lexer_step(lex);
-    }
-
-    // must have a decimal to be a float
-    return found_decimal;
-}
-
-static int is_symbol(char c)
-{
-    if (c < '!' || c > 'z') return 0;
-    const char* illegal= "()#;";
-    do
-    {
-        if (c == *illegal) return 0;
-        ++illegal;
-    } while (*illegal);
-    return 1;
-}
-
-static int lexer_match_symbol(Lexer* lex)
-{   
-    lexer_restart_scan(lex);
-    // need at least one valid symbol character
-    if (!is_symbol(*lex->c)) return 0;
-    lexer_step(lex);
-    while (is_symbol(*lex->c)) lexer_step(lex);
-    return 1;
-}
-
-static int lexer_match_string(Lexer* lex)
-{
-    lexer_restart_scan(lex);
-    // start with quote
-    if (*lex->c != '"') return 0;
-    lexer_step(lex);
-
     while (1)
     {
-        switch (*lex->c)
+        // skip whitespace
+        while (f != l && isspace(*f)) ++f;
+        // skip comments to end of line
+        if (f != l && *f == ';')
+        {
+            ++f;
+            while (f != l && *f != '\n') ++f;
+        }
+        else
+        {
+            return f;
+        }
+    }
+}
+
+static
+const char* match_char_(const char* f, const char* l)
+{
+    if (f == l) return NULL;
+    if (isalnum(*f)) {
+        ++f;
+        while (f != l && isalnum(*f)) ++f;
+        return f;
+    } else if (isprint(*f)) {
+        ++f;
+        return f;
+    } else {
+        return NULL;
+    }
+}
+
+static
+const char* match_number_(const char* f, const char* l, int* out_has_decimal)
+{
+    if (f == l) return NULL;
+    if (*f == '-' || *f == '+') ++f;
+    if (f == l || !isdigit(*f)) return NULL;
+    ++f;
+    while (f != l && isdigit(*f)) ++f;
+    if (f == l || *f != '.') {
+        *out_has_decimal = 0;
+        return f;
+    }
+
+    ++f;
+    *out_has_decimal = 1;
+    while (f != l && isdigit(*f)) ++f;
+    return f;
+}
+
+static
+int is_symbol_(char c)
+{
+    if (c < '!' || c > 'z') return 0;
+    switch (c) {
+        case '(':
+        case ')':
+        case '#':
+        case ';':
+            return 0;
+        default:
+            return 1;
+    }
+}
+
+const char* match_symbol_(const char* f, const char* l)
+{   
+    // need at least one valid symbol character
+    if (f == l || !is_symbol_(*f)) return NULL;
+    ++f;
+    while (f != l && is_symbol_(*f)) ++f; 
+    return f;
+}
+
+static
+const char* match_string_(const char* f, const char* l)
+{
+    while (f != l)
+    {
+        switch (*f)
         {
             case '"':
-                lexer_step(lex);
-                return 1;
+                ++f;
+                return f;
             case '\\':
-                lexer_step(lex);
-                lexer_step(lex);
+                ++f;
+                if (f == l) return NULL;
+                ++f;
                 break;
             case '\0':
             case '\n':
-                return 0;
+                return NULL;
             default:
-                lexer_step(lex);
+                ++f;
         }
     }
+    return NULL;
 }
 
-static size_t lexer_copy_token(Lexer* lex, size_t start_index, size_t max_length, char* dest)
-{
-    size_t length;
-    if (start_index + max_length > lex->scan_length)
-        length = lex->scan_length - start_index;
-    else
-        length = max_length;
-
-    if (lex->c_buff_index == lex->sc_buff_index)
-    {
-        // both pointers are in the same buffer
-        memcpy(dest, lex->sc + start_index, length);
-    }
-    else
-    {
-        // the pointers are split across buffers. So do two copies.
-        const char* sc_end = lex->buffs[lex->sc_buff_index] + lex->buff_size;
-        const char* sc = (lex->sc + start_index);
-        
-        ptrdiff_t first_part_length = sc_end - sc;  
-        if (first_part_length < 0) first_part_length = 0;
-        if (first_part_length > length) first_part_length = length;
-        
-        if (first_part_length > 0)
-        {
-            // copy from sc to the end of its buffer (or to length)
-            memcpy(dest, sc, first_part_length);
-        }
-        
-        ptrdiff_t last_part = length - first_part_length;        
-        if (last_part > 0)
-        {
-            // copy from the start of c's buffer
-            memcpy(dest + first_part_length, lex->buffs[lex->c_buff_index], length - first_part_length);
-        }
-    }
-    return length;
+static
+size_t lexer_position_(Lexer* lex) {
+    return lex->c - lex->start;
 }
 
-static TokenType token_from_char(char c)
+static
+size_t lexer_copy_token(Lexer* lex, size_t start_index, size_t max_length, char* dest)
 {
-    switch (c)
-    {
-        case '\0': return TOKEN_NONE;
-        case '(':  return TOKEN_L_PAREN;
-        case ')':  return TOKEN_R_PAREN;
-        case '.':  return TOKEN_DOT;
-        case '\'': return TOKEN_QUOTE;
-        case '`':  return TOKEN_BQUOTE;
-        case ',':  return TOKEN_COMMA;
-        case '@':  return TOKEN_AT;
-        default:   return TOKEN_NONE;
-    }
+    size_t size = lex->c - lex->sc;
+    assert(size >= start_index);
+    size -= start_index;
+    if (size > max_length) size = max_length;
+    memcpy(dest, lex->sc + start_index, size);
+    return size;
 }
 
-static void lexer_next_token(Lexer* lex)
-{
-    lexer_skip_empty(lex);
-    lexer_advance_start(lex);
+static void lexer_next_token(Lexer* lex) {
+    const char* l = lex->end;
+    const char* f = lex_skip_empty_(lex->c, l);
+    lex->c = f;
+    lex->sc = f;
+    lex->token = TOKEN_NONE;
 
-    lex->token = token_from_char(*lex->c);
-    if (lex->token != TOKEN_NONE)
+    int has_decimal;
+
+    switch (*f)
     {
-        lexer_step(lex);
-    }
-    else
-    {
-        if (lexer_match_string(lex)) lex->token = TOKEN_STRING;
-        else if (lexer_match_float(lex)) lex->token = TOKEN_FLOAT;
-        else if (lexer_match_int(lex)) lex->token = TOKEN_INT;
-        else if (lexer_match_symbol(lex)) lex->token = TOKEN_SYMBOL;
-        else if (lexer_match_char(lex)) lex->token = TOKEN_CHAR;
-        else if (lexer_match_bool(lex)) lex->token = TOKEN_BOOL;
-        else if (lexer_match_hash_paren(lex)) lex->token = TOKEN_HASH_L_PAREN;
+        case '\0': break;
+        case '(':
+            lex->token = TOKEN_L_PAREN;
+            lex->c = f + 1;
+            break;
+        case ')':
+            lex->token = TOKEN_R_PAREN;
+            lex->c = f + 1;
+            break;
+        case '.':
+            lex->token = TOKEN_DOT;
+            lex->c = f + 1;
+            break;
+        case '\'':
+            lex->token = TOKEN_QUOTE;
+            lex->c = f + 1;
+            break;
+        case '`':
+            lex->token = TOKEN_BQUOTE;
+            lex->c = f + 1;
+            break;
+        case ',':
+            lex->token = TOKEN_COMMA;
+            lex->c = f + 1;
+            break;
+        case '@':
+            lex->token = TOKEN_AT;
+            lex->c = f + 1;
+            break;
+        case '#':
+            // skip #
+            ++f;
+            if (f == l) break;
+
+            switch (*f) {
+                case '(':
+                    // #(
+                    lex->token = TOKEN_HASH_L_PAREN;
+                    lex->c = f + 1;
+                    break;
+                case '\\':
+                    ++f;
+                    // #_char
+                    f = match_char_(f, l);
+                    if (f) {
+                        lex->token = TOKEN_CHAR;
+                        lex->c = f;
+                    }
+                    break;
+                case 't':
+                case 'f':
+                    // #t or #f
+                    lex->token = TOKEN_BOOL;
+                    lex->c = f + 1;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        case '"':
+            ++f;
+            f = match_string_(f, l);
+            if (f) {
+                lex->token = TOKEN_STRING;
+                lex->c = f;
+            }
+            break;
+        default:
+            f = match_number_(f, l, &has_decimal);
+            if (f) {
+                lex->token = has_decimal ? TOKEN_FLOAT : TOKEN_INT;
+                lex->c = f;
+            } else {
+                f = lex->c;
+                f = match_symbol_(f, l);
+
+                if (f) {
+                    lex->token = TOKEN_SYMBOL;
+                    lex->c = f;
+                }
+            }
+            break;
     }
 }
 
 // requires: length(out) >= (last - first)
-static char* string_unescape_(const char* first, const char* last, char* out)
+static
+char* string_unescape_(const char* first, const char* last, char* out)
 {
     // becase first >= out we can use this in place
     while (first != last)
@@ -1962,7 +1832,7 @@ static Lisp parse_number_(Lexer* lex, LispContext ctx)
 static Lisp parse_string_(Lexer* lex, LispContext ctx)
 { 
     // -2 length to skip quotes
-    size_t size = lex->scan_length - 2;
+    size_t size = (lex->c - lex->sc) - 2;
     Lisp l = lisp_make_buffer(size + 1, ctx);
     char* str = lisp_buffer(l);
     lexer_copy_token(lex, 1, size, str);
@@ -2025,10 +1895,10 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
     switch (lex->token)
     {
         case TOKEN_NONE:
-            fprintf(ctx.p->err_port, "%lu. expected closing )\n", lex->position);
+            fprintf(ctx.p->err_port, "%lu. expected closing )\n", lexer_position_(lex));
             longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_DOT:
-            fprintf(ctx.p->err_port, "%lu. unexpected .\n", lex->position);
+            fprintf(ctx.p->err_port, "%lu. unexpected .\n", lexer_position_(lex));
             longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
         case TOKEN_L_PAREN:
         {
@@ -2047,7 +1917,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             {
                 if (lisp_is_null(tail))
                 {
-                    fprintf(ctx.p->err_port, "%lu. unexpected .\n", lex->position);
+                    fprintf(ctx.p->err_port, "%lu. unexpected .\n", lexer_position_(lex));
                     longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
                 }
 
@@ -2066,7 +1936,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
 
             if (lex->token != TOKEN_R_PAREN)
             {
-                fprintf(ctx.p->err_port, "%lu. expected closing )\n", lex->position);
+                fprintf(ctx.p->err_port, "%lu. expected closing )\n", lexer_position_(lex));
                 longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
             }
             // )
@@ -2122,7 +1992,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
             int c = parse_char_(lex);
             if (c <= 0)
             {
-                fprintf(ctx.p->err_port, "%lu. unknown character\n", lex->position);
+                fprintf(ctx.p->err_port, "%lu. unknown character\n", lexer_position_(lex));
                 longjmp(error_jmp, LISP_ERROR_READ_SYNTAX);
             }
             return lisp_make_char(c);
@@ -2197,40 +2067,94 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
 Lisp lisp_read(const char *program, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
-    lexer_init(&lex, program);
+    lexer_init(&lex, program, NULL);
     Lisp l = parse(&lex, out_error, ctx);
-    lexer_shutdown(&lex);
     return l;
+}
+
+Lisp lisp_read2(const char* start, const char* end, LispError* out_error, LispContext ctx) {
+    Lexer lex;
+    lexer_init(&lex, start, end);
+    Lisp l = parse(&lex, out_error, ctx);
+    return l;
+}
+
+static
+void* fread_all_(FILE* file, size_t* out_size) {
+    const size_t BLOCK_SIZE = 32 * 1024;
+    const size_t MEDIUM_SIZE = 10 * 1024 * 1024;
+
+    *out_size = 0;
+
+    size_t cap = 0;
+    char* data = NULL;
+
+    while (1) {
+        if (*out_size + BLOCK_SIZE > cap) {
+            if (cap > MEDIUM_SIZE) {
+                cap = (cap * 3) / 2;
+            } else if (cap < BLOCK_SIZE) {
+                cap = BLOCK_SIZE;
+            } else {
+                cap *= 2;
+
+            }
+
+            void* new_data = realloc(data, cap);
+            if (!new_data) {
+                *out_size = 0;
+                free(data);
+                return NULL;
+            }
+            data = new_data;
+        }
+
+        size_t read = fread(data + *out_size, 1, BLOCK_SIZE, file);
+        *out_size += read;
+        if (read < BLOCK_SIZE) {
+            if (ferror(file)) {
+                *out_size = 0;
+                free(data);
+                return NULL;
+            } else {
+                return data;
+            }
+        }
+    }
 }
 
 Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx)
 {
-    Lexer lex;
-
-    lexer_init_file(&lex, file);
-    Lisp l = parse(&lex, out_error, ctx);
-    lexer_shutdown(&lex);
-    return l;
+    size_t size;
+    char* start = fread_all_(file, &size);
+    if (!start) {
+        *out_error = LISP_ERROR_FILE_OPEN;
+        return lisp_eof();
+    }
+    Lisp l = lisp_read2(start, start + size, out_error, ctx);
+    free(start);
+    return l; 
 }
 
 Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
 {
 #ifndef LISP_NO_MMAP
-    struct stat s;
     int fd = open(path, O_RDONLY);
-    if (fd < 0 || fstat(fd, &s) < 0) {
+    if (fd < 0) {
         *out_error = LISP_ERROR_FILE_OPEN;
         return lisp_eof();
     }
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    off_t size = lseek(fd, 0, SEEK_END);
+    lseek(fd, pos, SEEK_SET);
 
-    size_t size = s.st_size;
     const char* program = mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (program == MAP_FAILED) {
         *out_error = LISP_ERROR_FILE_OPEN;
         return lisp_eof();
     }
 
-    Lisp l = lisp_read(program, out_error, ctx); 
+    Lisp l = lisp_read2(program, program + size, out_error, ctx); 
     munmap((void*)program, size);
     close(fd);
 
