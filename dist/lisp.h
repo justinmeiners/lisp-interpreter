@@ -22,7 +22,7 @@
     Lisp result = lisp_eval(program, &error, ctx);
 
     if (error != LISP_ERROR_NONE)
-        lisp_print(result);
+        lisp_printf(stderr, result);
 
     lisp_shutdown(ctx);
 
@@ -66,6 +66,8 @@ typedef enum
     LISP_VECTOR,  // heterogenous array but contiguous allocation
     LISP_PROMISE, // lazy value
     LISP_JUMP,    // jump point/non-escaping continuation
+    LISP_PORT_IN,
+    LISP_PORT_OUT,
     LISP_PTR,     // pointer to arbitary C object.
 } LispType;
 
@@ -126,13 +128,8 @@ const char *lisp_error_string(LispError error);
 void lisp_set_env(Lisp env, LispContext ctx);
 Lisp lisp_env(LispContext ctx);
 
-void lisp_set_stdin(FILE *file, LispContext ctx);
 void lisp_set_stderr(FILE *file, LispContext ctx);
-void lisp_set_stdout(FILE *file, LispContext ctx);
-
-FILE *lisp_stdin(LispContext ctx);
 FILE *lisp_stderr(LispContext ctx);
-FILE *lisp_stdout(LispContext ctx);
 
 // Macros
 Lisp lisp_macro_table(LispContext ctx);
@@ -164,7 +161,6 @@ Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx)
 Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
 
 // print out a lisp structure in 
-void lisp_print(Lisp l);
 void lisp_printf(FILE *file, Lisp l);
 
 void lisp_displayf(FILE *file, Lisp l);
@@ -241,6 +237,11 @@ const char *lisp_symbol_string(Lisp x);
 // Arbitrary C objects.
 Lisp lisp_make_ptr(void *ptr);
 void *lisp_ptr(Lisp l);
+
+// Ports
+Lisp lisp_make_port(FILE* file, int input);
+FILE *lisp_port(Lisp l);
+
 
 // -----------------------------------------
 // DATA STRUCTURES
@@ -547,9 +548,7 @@ struct LispImpl
     size_t stack_ptr;
     size_t stack_depth;
 
-    FILE* out_port;
     FILE* err_port;
-    FILE* in_port;
 
     Lisp symbols;
     Lisp env;
@@ -1346,9 +1345,23 @@ Lisp lisp_make_ptr(void *ptr)
     return (Lisp) { .val = { .ptr_val = ptr }, .type = LISP_PTR };
 }
 
+
 void *lisp_ptr(Lisp l)
 {
     assert(lisp_type(l) == LISP_PTR);
+    return l.val.ptr_val;
+}
+
+Lisp lisp_make_port(FILE *file, int input) {
+    return (Lisp) {
+        .val = { .ptr_val = file },
+        .type = (input == 1) ? LISP_PORT_IN : LISP_PORT_OUT
+    };
+}
+
+FILE *lisp_port(Lisp l)
+{
+    assert(lisp_type(l) == LISP_PORT_IN || lisp_type(l) == LISP_PORT_OUT);
     return l.val.ptr_val;
 }
 
@@ -2258,7 +2271,9 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
         case LISP_JUMP: fputs("<jump>", file); break;
         case LISP_LAMBDA: fputs("<lambda>", file); break;
         case LISP_PROMISE: fputs("<promise>", file); break;
-        case LISP_PTR: fputs("<ptr-%p>", l.val.ptr_val); break;
+        case LISP_PTR: fprintf(file, "<ptr-%p>", l.val.ptr_val); break;
+        case LISP_PORT_IN: fprintf(file, "<input port-%d>", fileno((FILE*)l.val.ptr_val)); break;
+        case LISP_PORT_OUT: fprintf(file, "<output port-%d>", fileno((FILE*)l.val.ptr_val)); break;
         case LISP_FUNC: fprintf(file, "<c-func-%p>", l.val.ptr_val); break;
         case LISP_TABLE:
         {
@@ -2328,17 +2343,10 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
 }
 
 void lisp_printf(FILE* file, Lisp l) { lisp_print_r(file, l, 0, 0);  }
-void lisp_print(Lisp l) {  lisp_printf(stdout, l); }
-
 void lisp_displayf(FILE* file, Lisp l) { lisp_print_r(file, l, 1, 0); }
 
-void lisp_set_stdout(FILE* file, LispContext ctx) { ctx.p->out_port = file; }
-void lisp_set_stdin(FILE* file, LispContext ctx) { ctx.p->in_port = file; }
 void lisp_set_stderr(FILE* file, LispContext ctx) { ctx.p->err_port = file; }
-
-FILE *lisp_stdin(LispContext ctx) { return ctx.p->in_port; }
 FILE *lisp_stderr(LispContext ctx) { return ctx.p->err_port; }
-FILE *lisp_stdout(LispContext ctx) { return ctx.p->out_port; }
 
 static void lisp_stack_push(Lisp x, LispContext ctx)
 {
@@ -2474,7 +2482,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
         {
             case LISP_SYMBOL: // variable reference
             {
-                int present;
+                int present = 0;
                 Lisp val = lisp_env_lookup(*env, *x, &present);
                 if (!present)
                 {
@@ -2754,7 +2762,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
                 if (error != LISP_ERROR_NONE)
                 {
-                    fprintf(ctx.p->out_port, "macroexpand failed: %s\n", lisp_symbol_string(op));
+                    fprintf(ctx.p->err_port, "macroexpand failed: %s\n", lisp_symbol_string(op));
                     longjmp(error_jmp, error);
                 }
                 return expand_r(result, error_jmp, ctx);
@@ -2942,7 +2950,9 @@ static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
 
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
 {
+#ifdef LISP_DEBUG
     time_t start_time = clock();
+#endif
 
     // copy of old heap
     Heap from = ctx.p->heap;
@@ -3079,9 +3089,13 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     // swap the heaps
     heap_shutdown(&from);
     
-    time_t end_time = clock();
     ctx.p->gc_stat_freed = diff;
+#ifdef LISP_DEBUG
+    time_t end_time = clock();
     ctx.p->gc_stat_time = 1000000 * (end_time - start_time) / CLOCKS_PER_SEC;
+#else
+    ctx.p->gc_stat_time = 0;
+#endif
     return result;
 }
 
@@ -3093,9 +3107,9 @@ void lisp_print_collect_stats(LispContext ctx)
         printf("%lu/%lu ", page->size, page->capacity);
         page = page->next;
     }
-    fprintf(ctx.p->out_port, "\ngc collected: %lu\t time: %lu us\n", ctx.p->gc_stat_freed, ctx.p->gc_stat_time);
-    fprintf(ctx.p->out_port, "heap size: %lu\t pages: %lu\n", ctx.p->heap.size, ctx.p->heap.page_count);
-    fprintf(ctx.p->out_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbols));
+    fprintf(ctx.p->err_port, "\ngc collected: %lu\t time: %lu us\n", ctx.p->gc_stat_freed, ctx.p->gc_stat_time);
+    fprintf(ctx.p->err_port, "heap size: %lu\t pages: %lu\n", ctx.p->heap.size, ctx.p->heap.page_count);
+    fprintf(ctx.p->err_port, "symbols: %lu \n", (size_t)lisp_table_size(ctx.p->symbols));
 }
 
 Lisp lisp_env(LispContext ctx) { return ctx.p->env; }
@@ -3153,8 +3167,6 @@ LispContext lisp_init(void)
     ctx.p = malloc(sizeof(struct LispImpl));
     if (!ctx.p) return ctx;
 
-    ctx.p->out_port = stdout;
-    ctx.p->in_port = stdin;
     ctx.p->err_port = stderr;
 
     ctx.p->symbol_counter = 0;
