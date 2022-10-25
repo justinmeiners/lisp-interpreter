@@ -1312,7 +1312,9 @@ static Lisp symbol_intern_(Lisp table, const char* string, size_t length, LispCo
         while (it.val.ptr_val != NULL)
         {
             if (lisp_symbol_length(it) == length &&
-                strncmp(lisp_symbol_string(it), string, length) == 0) return it;
+                strncmp(lisp_symbol_string(it), string, length) == 0) {
+                return it;
+            }
             it.val = symbol_get_(it)->next;
         }
     }
