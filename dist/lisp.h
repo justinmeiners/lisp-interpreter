@@ -91,6 +91,7 @@ typedef enum
 {
     LISP_ERROR_NONE = 0,
     LISP_ERROR_FILE_OPEN,
+    LISP_ERROR_MMAP,
     LISP_ERROR_READ_SYNTAX,
     LISP_ERROR_FORM_SYNTAX,
     LISP_ERROR_UNDEFINED_VAR,
@@ -346,6 +347,17 @@ void lisp_promise_store(Lisp p, Lisp x);
 #include <stdint.h>
 #include <time.h>
 #include <assert.h>
+
+#ifdef _WIN32
+#define LISP_NO_MMAP
+#endif
+
+#ifndef LISP_NO_MMAP 
+#include <sys/stat.h>
+#include <sys/mman.h> 
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #define IS_POW2(x) (((x) != 0) && ((x) & ((x)-1)) == 0)
 
@@ -2194,6 +2206,7 @@ Lisp lisp_read(const char *program, LispError* out_error, LispContext ctx)
 Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx)
 {
     Lexer lex;
+
     lexer_init_file(&lex, file);
     Lisp l = parse(&lex, out_error, ctx);
     lexer_shutdown(&lex);
@@ -2202,15 +2215,32 @@ Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx)
 
 Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
 {
-    FILE *file = fopen(path, "r");
-    if (!file)
-    {
+#ifndef LISP_NO_MMAP
+    struct stat s;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0 || fstat(fd, &s) < 0) {
         *out_error = LISP_ERROR_FILE_OPEN;
         return lisp_eof();
     }
-    Lisp l = lisp_read_file(file, out_error, ctx);
-    fclose(file);
+
+    size_t size = s.st_size;
+    const char* program = mmap(0, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (program == MAP_FAILED) {
+        *out_error = LISP_ERROR_FILE_OPEN;
+        return lisp_eof();
+    }
+
+    Lisp l = lisp_read(program, out_error, ctx); 
+    munmap((void*)program, size);
+    close(fd);
+
     return l;
+#else
+    FILE* file = fopen(path);
+    lisp_read_file(file, out_error, ctx);
+    fclose(path);
+#endif
+    return lisp_eof();
 }
 
 Lisp lisp_env_extend(Lisp l, Lisp table, LispContext ctx) { return lisp_cons(table, l, ctx); }
@@ -3166,6 +3196,8 @@ const char* lisp_error_string(LispError error)
             return "none";
         case LISP_ERROR_FILE_OPEN:
             return "file error: could not open file";
+        case LISP_ERROR_MMAP:
+            return "mmap error.";
         case LISP_ERROR_READ_SYNTAX:
             return "read/syntax error.";
         case LISP_ERROR_FORM_SYNTAX:

@@ -70,24 +70,15 @@ int main(int argc, const char* argv[])
         }
 
         start_time = clock();        
-        FILE* file = fopen(file_path, "r");
-        
-        if (!file)
-        {
-            fprintf(stderr, "failed to open: %s", file_path);
-            return 2;
-        }
      
         LispError error;
-        Lisp l = lisp_read_file(file, &error, ctx);
+        Lisp l = lisp_read_path(file_path, &error, ctx);
 
         if (error != LISP_ERROR_NONE)
         {
-            fprintf(stderr, "%s\n", lisp_error_string(error));
+            fprintf(stderr, "%s. %s\n", file_path, lisp_error_string(error));
         }
 
-
-        fclose(file);
         end_time = clock();
 
         if (verbose)
