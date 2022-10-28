@@ -148,7 +148,7 @@ void lisp_set_macro_table(Lisp table, LispContext ctx);
 
 // Null terminated.
 Lisp lisp_read(const char *text, LispError* out_error, LispContext ctx);
-// Range restricted (not necessarily null-teriminated). 
+// Range restricted (not necessarily null-terminated). 
 Lisp lisp_read2(const char* start, const char* end, LispError* out_error, LispContext ctx);
 // Read from contents of file path. 
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
