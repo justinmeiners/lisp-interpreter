@@ -92,32 +92,82 @@ static Lisp sch_is_pair(Lisp args, LispError* e, LispContext ctx)
 
 static Lisp sch_write(Lisp args, LispError* e, LispContext ctx)
 {
-    lisp_printf(lisp_stdout(ctx), lisp_car(args));
+    ARITY_CHECK(2, 2);
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    lisp_printf(lisp_port(b), a);
     return lisp_null();
 }
 
 static Lisp sch_display(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp x = lisp_car(args);
-    lisp_displayf(lisp_stdout(ctx), x);
-    return x;
+    ARITY_CHECK(2, 2);
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+    lisp_displayf(lisp_port(b), a);
+    return a;
 }
 
 static Lisp sch_write_char(Lisp args, LispError* e, LispContext ctx)
 {
-    ARITY_CHECK(1, 1);
-    fputc(lisp_char(lisp_car(args)), lisp_stdout(ctx));
+    ARITY_CHECK(2, 2);
+    Lisp a = lisp_car(args);
+    args = lisp_cdr(args);
+    Lisp b = lisp_car(args);
+
+    fputc(lisp_char(a), lisp_port(b));
     return lisp_false();
 }
 
 static Lisp sch_flush(Lisp args, LispError* e, LispContext ctx)
 {
-    fflush(lisp_stdout(ctx)); return lisp_false();
+    ARITY_CHECK(1, 1);
+    Lisp a = lisp_car(args);
+    fflush(lisp_port(a));
+    return lisp_false();
 }
 
 static Lisp sch_read(Lisp args, LispError* e, LispContext ctx)
 {
-    return lisp_read_file(lisp_stdin(ctx), e, ctx);
+    ARITY_CHECK(1, 1);
+    Lisp a = lisp_car(args);
+    return lisp_read_file(lisp_port(a), e, ctx);
+}
+
+static Lisp sch_is_port_in(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_PORT_IN);
+}
+
+static Lisp sch_is_port_out(Lisp args, LispError* e, LispContext ctx)
+{
+    return lisp_make_bool(lisp_type(lisp_car(args)) == LISP_PORT_OUT);
+}
+
+static Lisp sch_open_input(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    Lisp a = lisp_car(args);
+    FILE* f = fopen(lisp_string(a), "r");
+    return lisp_make_port(f, 1);
+}
+
+static Lisp sch_open_output(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    Lisp a = lisp_car(args);
+    FILE* f = fopen(lisp_string(a), "w");
+    return lisp_make_port(f, 0);
+}
+
+static Lisp sch_port_close(Lisp args, LispError* e, LispContext ctx)
+{
+    ARITY_CHECK(1, 1);
+    Lisp a = lisp_car(args);
+    fclose(lisp_port(a)); 
+    return lisp_null(); 
 }
 
 static Lisp sch_is_eof(Lisp args, LispError* e, LispContext ctx)
@@ -1308,11 +1358,17 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SYNTAX-ERROR", sch_syntax_error },
 
     // Output Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Output-Procedures.html
-    { "WRITE", sch_write },
-    { "DISPLAY", sch_display },
-    { "WRITE-CHAR", sch_write_char },
-    { "FLUSH-OUTPUT-PORT", sch_flush },
-    { "READ", sch_read },
+    { "_WRITE", sch_write },
+    { "_DISPLAY", sch_display },
+    { "_WRITE-CHAR", sch_write_char },
+    { "_FLUSH-OUTPUT-PORT", sch_flush },
+    { "_READ", sch_read },
+    { "INPUT-PORT?", sch_is_port_in },
+    { "OUTPUT-PORT?", sch_is_port_out },
+    { "OPEN-INPUT-FILE", sch_open_input },
+    { "OPEN-OUTPUT-FILE", sch_open_output },
+    { "CLOSE-INPUT-PORT", sch_port_close },
+    { "CLOSE-OUTPUT-PORT", sch_port_close },
     { "EOF-OBJECT?", sch_is_eof },
     
     // Universal Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
@@ -1422,8 +1478,6 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "MODULO", sch_modulo },
     { "ABS", sch_abs },
     { "MAGNITUDE", sch_abs },
-
-    
     { "EXACT?", sch_is_int },
     { "EXACT->INEXACT", sch_to_inexact },
     { "INEXACT->EXACT", sch_to_exact },
@@ -1482,6 +1536,21 @@ void lisp_lib_load(LispContext ctx)
 {
     Lisp table = lisp_make_table(ctx);
     lisp_table_define_funcs(table, lib_cfunc_defs, ctx);
+
+    lisp_table_set(
+            table,
+            lisp_make_symbol("_CURRENT-OUTPUT-PORT", ctx),
+            lisp_make_port(stdout, 0),
+            ctx
+            );
+
+    lisp_table_set(
+            table,
+            lisp_make_symbol("_CURRENT-INPUT-PORT", ctx),
+            lisp_make_port(stdin, 1),
+            ctx
+            );
+
     Lisp system_env = lisp_env_extend(lisp_env(ctx), table, ctx);
     Lisp user_env = lisp_env_extend(system_env, lisp_make_table(ctx), ctx);
     lisp_set_env(user_env, ctx);
@@ -1514,6 +1583,7 @@ void lisp_lib_load(LispContext ctx)
             return;
         }
     }
+
     lisp_collect(lisp_null(), ctx);
 
 #ifdef LISP_DEBUG

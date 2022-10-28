@@ -45,7 +45,7 @@ int main(int argc, const char* argv[])
 
     LispError e;
     Lisp result = lisp_eval(lisp_read("(INTEGER-RANGE 5 15)", &e, ctx), &e, ctx);
-    lisp_print(result);
+    lisp_printf(stdout, result);
 
     if (e != LISP_ERROR_NONE) fprintf(stderr, "error: %s\n", lisp_error_string(e));
 

@@ -146,7 +146,7 @@ int main(int argc, const char* argv[])
                 fprintf(stderr, "%s\n", lisp_error_string(error));
             }
 
-            lisp_print(l);
+            lisp_printf(stdout, l);
             printf("\n");
             
             lisp_collect(lisp_null(), ctx);

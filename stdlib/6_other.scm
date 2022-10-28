@@ -18,7 +18,37 @@
          (<= (char->integer c) (char->integer #\Z))))
 
 (define (procedure? p) (or (compiled-procedure? p) (compound-procedure? p))) 
- 
+
+(define (current-input-port) _current-input-port)
+(define (current-output-port) _current-output-port)
+
+(define (read . args) 
+  (_read (if (null? args)
+           (current-input-port)
+           (car args))))
+
+(define (write obj . args) 
+  (_write obj (if (null? args)
+                (current-output-port)
+                (car args))))
+
+(define (display obj . args) 
+  (_display obj (if (null? args)
+                  (current-output-port)
+                  (car args))))
+
+
+(define (write-char obj . args) 
+  (_write-char obj (if (null? args)
+                     (current-output-port)
+                     (car args))))
+
+(define (flush-output-port . args) 
+  (_flush-output-port (if (null? args)
+                        (current-output-port)
+                        (car args))))
+
+
 (define (newline) (write-char #\newline)) 
 
 (define-macro assert (lambda (body) 
