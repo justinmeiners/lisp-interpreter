@@ -1539,8 +1539,8 @@ typedef struct
     const char* start;
     const char* end;
 
-    const char* sc; // start of token
-    const char* c;  // scanner
+    const char* token_start;
+    const char* token_end;
     TokenType token;
 } Lexer;
 
@@ -1549,8 +1549,8 @@ void lexer_init(Lexer* lex, const char* start, const char* end)
 {
     lex->start = start;
     lex->end = end;
-    lex->c = start;
-    lex->sc = start;
+    lex->token_start = start;
+    lex->token_end = start;
     lex->token = TOKEN_NONE;
 }
 
@@ -1660,25 +1660,25 @@ const char* match_string_(const char* f, const char* l)
 
 static
 size_t lexer_position_(Lexer* lex) {
-    return lex->c - lex->start;
+    return lex->token_end - lex->start;
 }
 
 static
 size_t lexer_copy_token(Lexer* lex, size_t start_index, size_t max_length, char* dest)
 {
-    size_t size = lex->c - lex->sc;
+    size_t size = lex->token_end - lex->token_start;
     assert(size >= start_index);
     size -= start_index;
     if (size > max_length) size = max_length;
-    memcpy(dest, lex->sc + start_index, size);
+    memcpy(dest, lex->token_start + start_index, size);
     return size;
 }
 
 static void lexer_next_token(Lexer* lex) {
     const char* l = lex->end;
-    const char* f = lex_skip_empty_(lex->c, l);
-    lex->c = f;
-    lex->sc = f;
+    const char* f = lex_skip_empty_(lex->token_end, l);
+    lex->token_end = f;
+    lex->token_start = f;
     lex->token = TOKEN_NONE;
 
     int has_decimal;
@@ -1688,31 +1688,31 @@ static void lexer_next_token(Lexer* lex) {
         case '\0': break;
         case '(':
             lex->token = TOKEN_L_PAREN;
-            lex->c = f + 1;
+            lex->token_end = f + 1;
             break;
         case ')':
             lex->token = TOKEN_R_PAREN;
-            lex->c = f + 1;
+            lex->token_end = f + 1;
             break;
         case '.':
             lex->token = TOKEN_DOT;
-            lex->c = f + 1;
+            lex->token_end = f + 1;
             break;
         case '\'':
             lex->token = TOKEN_QUOTE;
-            lex->c = f + 1;
+            lex->token_end = f + 1;
             break;
         case '`':
             lex->token = TOKEN_BQUOTE;
-            lex->c = f + 1;
+            lex->token_end = f + 1;
             break;
         case ',':
             lex->token = TOKEN_COMMA;
-            lex->c = f + 1;
+            lex->token_end = f + 1;
             break;
         case '@':
             lex->token = TOKEN_AT;
-            lex->c = f + 1;
+            lex->token_end = f + 1;
             break;
         case '#':
             // skip #
@@ -1723,7 +1723,7 @@ static void lexer_next_token(Lexer* lex) {
                 case '(':
                     // #(
                     lex->token = TOKEN_HASH_L_PAREN;
-                    lex->c = f + 1;
+                    lex->token_end = f + 1;
                     break;
                 case '\\':
                     ++f;
@@ -1731,14 +1731,14 @@ static void lexer_next_token(Lexer* lex) {
                     f = match_char_(f, l);
                     if (f) {
                         lex->token = TOKEN_CHAR;
-                        lex->c = f;
+                        lex->token_end = f;
                     }
                     break;
                 case 't':
                 case 'f':
                     // #t or #f
                     lex->token = TOKEN_BOOL;
-                    lex->c = f + 1;
+                    lex->token_end = f + 1;
                     break;
                 default:
                     break;
@@ -1749,21 +1749,21 @@ static void lexer_next_token(Lexer* lex) {
             f = match_string_(f, l);
             if (f) {
                 lex->token = TOKEN_STRING;
-                lex->c = f;
+                lex->token_end = f;
             }
             break;
         default:
             f = match_number_(f, l, &has_decimal);
             if (f) {
                 lex->token = has_decimal ? TOKEN_FLOAT : TOKEN_INT;
-                lex->c = f;
+                lex->token_end = f;
             } else {
-                f = lex->c;
+                f = lex->token_end;
                 f = match_symbol_(f, l);
 
                 if (f) {
                     lex->token = TOKEN_SYMBOL;
-                    lex->c = f;
+                    lex->token_end = f;
                 }
             }
             break;
@@ -1847,7 +1847,7 @@ static Lisp parse_number_(Lexer* lex, LispContext ctx)
 static Lisp parse_string_(Lexer* lex, LispContext ctx)
 { 
     // -2 length to skip quotes
-    size_t size = (lex->c - lex->sc) - 2;
+    size_t size = (lex->token_end - lex->token_start) - 2;
     Lisp l = lisp_make_buffer(size + 1, ctx);
     char* str = lisp_buffer(l);
     lexer_copy_token(lex, 1, size, str);
