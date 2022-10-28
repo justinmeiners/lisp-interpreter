@@ -718,6 +718,11 @@ static Lisp sch_open_input(Lisp args, LispError* e, LispContext ctx)
     ARITY_CHECK(1, 1);
     Lisp a = lisp_car(args);
     FILE* f = fopen(lisp_string(a), "r");
+    if (!f) {
+        *e = LISP_ERROR_FILE_OPEN;
+        return lisp_null();
+    }
+
     return lisp_make_port(f, 1);
 }
 
