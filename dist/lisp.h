@@ -146,7 +146,7 @@ void lisp_set_macro_table(Lisp table, LispContext ctx);
 // Null terminated.
 Lisp lisp_read(const char *text, LispError* out_error, LispContext ctx);
 // Range restricted (not necessarily null-terminated). 
-Lisp lisp_read2(const char* start, const char* end, LispError* out_error, LispContext ctx);
+Lisp lisp_read_range(const char* start, const char* end, LispError* out_error, LispContext ctx);
 // Read from contents of file path. 
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 // This is intended for unseekable files (like stdin) and may be less efficient.
@@ -2087,7 +2087,7 @@ Lisp lisp_read(const char *program, LispError* out_error, LispContext ctx)
     return l;
 }
 
-Lisp lisp_read2(const char* start, const char* end, LispError* out_error, LispContext ctx) {
+Lisp lisp_read_range(const char* start, const char* end, LispError* out_error, LispContext ctx) {
     Lexer lex;
     lexer_init(&lex, start, end);
     Lisp l = parse(&lex, out_error, ctx);
@@ -2146,7 +2146,7 @@ Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx)
         *out_error = LISP_ERROR_FILE_OPEN;
         return lisp_eof();
     }
-    Lisp l = lisp_read2(start, start + size, out_error, ctx);
+    Lisp l = lisp_read_range(start, start + size, out_error, ctx);
     free(start);
     return l; 
 }
@@ -2169,7 +2169,7 @@ Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
         return lisp_eof();
     }
 
-    Lisp l = lisp_read2(program, program + size, out_error, ctx); 
+    Lisp l = lisp_read_range(program, program + size, out_error, ctx); 
     munmap((void*)program, size);
     close(fd);
 
