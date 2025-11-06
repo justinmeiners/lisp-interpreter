@@ -2175,9 +2175,10 @@ Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
 
     return l;
 #else
-    FILE* file = fopen(path);
-    lisp_read_file(file, out_error, ctx);
-    fclose(path);
+    FILE* file = fopen(path, "r");
+    Lisp l = lisp_read_file(file, out_error, ctx);
+    fclose(file);
+    return l;
 #endif
     return lisp_eof();
 }
