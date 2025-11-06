@@ -1,5 +1,5 @@
 /*
- Created by: Justin Meiners 
+ Created by: Justin Meiners
  Repo; https://github.com/justinmeiners/lisp-interpreter
  License: MIT (See end of file)
 
@@ -7,7 +7,7 @@
      #define LISP_IMPLEMENTATION
      #include "lisp.h"
      #include "lisp_lib.h"
-     
+
  in at least one C or C++ file in order to generate the implementation.
 
  ----------------------
@@ -78,7 +78,7 @@ typedef union
 {
     int char_val;
     LispReal real_val;
-    LispInt int_val;  
+    LispInt int_val;
     void* ptr_val;
     void(*func_val)(void);
 } LispVal;
@@ -87,7 +87,7 @@ typedef struct
 {
     LispVal val;
     LispType type;
-} Lisp; 
+} Lisp;
 
 typedef enum
 {
@@ -119,7 +119,7 @@ typedef Lisp(*LispCFunc)(Lisp, LispError*, LispContext);
 LispContext lisp_init(void);
 void lisp_shutdown(LispContext ctx);
 
-// garbage collection. 
+// garbage collection.
 // this will free all objects which are not reachable from root_to_save or the global env
 Lisp lisp_collect(Lisp root_to_save, LispContext ctx);
 void lisp_print_collect_stats(LispContext ctx);
@@ -133,7 +133,7 @@ FILE *lisp_stderr(LispContext ctx);
 
 // Macros
 Lisp lisp_macro_table(LispContext ctx);
-// the macro table keeps strong references to its members. 
+// the macro table keeps strong references to its members.
 // So if you want to delete them you need to make a new table.
 void lisp_set_macro_table(Lisp table, LispContext ctx);
 
@@ -141,13 +141,13 @@ void lisp_set_macro_table(Lisp table, LispContext ctx);
 // REPL
 // -----------------------------------------
 
-// Reads text into raw s-expressions. 
+// Reads text into raw s-expressions.
 
 // Null terminated.
 Lisp lisp_read(const char *text, LispError* out_error, LispContext ctx);
-// Range restricted (not necessarily null-terminated). 
+// Range restricted (not necessarily null-terminated).
 Lisp lisp_read_range(const char* start, const char* end, LispError* out_error, LispContext ctx);
-// Read from contents of file path. 
+// Read from contents of file path.
 Lisp lisp_read_path(const char* path, LispError* out_error, LispContext ctx);
 // This is intended for unseekable files (like stdin) and may be less efficient.
 Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx);
@@ -160,7 +160,7 @@ Lisp lisp_apply(Lisp operator, Lisp args, LispError* out_error, LispContext ctx)
 // Expands special Lisp forms and checks syntax (called by eval).
 Lisp lisp_macroexpand(Lisp lisp, LispError* out_error, LispContext ctx);
 
-// print out a lisp structure in 
+// print out a lisp structure in
 void lisp_printf(FILE *file, Lisp l);
 
 void lisp_displayf(FILE *file, Lisp l);
@@ -300,7 +300,7 @@ Lisp lisp_lambda_env(Lisp l);
 Lisp lisp_make_func(LispCFunc func_ptr);
 LispCFunc lisp_func(Lisp l);
 
-// Convenience for defining many C functions at a time. 
+// Convenience for defining many C functions at a time.
 typedef struct
 {
     const char* name;
@@ -356,8 +356,8 @@ void lisp_promise_store(Lisp p, Lisp x);
 #define LISP_NO_MMAP
 #endif
 
-#ifndef LISP_NO_MMAP 
-#include <sys/mman.h> 
+#ifndef LISP_NO_MMAP
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -367,8 +367,8 @@ void lisp_promise_store(Lisp p, Lisp x);
 enum
 {
     GC_CLEAR = 0,
-    GC_GONE = 1, 
-    GC_NEED_VISIT = 2, 
+    GC_GONE = 1,
+    GC_NEED_VISIT = 2,
 };
 
 typedef struct Page
@@ -399,7 +399,7 @@ typedef struct
 } Heap;
 
 typedef struct Block
-{   
+{
     // Be careful with alignment and padding!
     // 32 or 64
     union
@@ -407,7 +407,7 @@ typedef struct Block
         struct Block* forward;
         size_t size;
     } info;
-    
+
     // 32
     union
     {
@@ -454,7 +454,7 @@ static void heap_init(Heap* heap)
 {
     heap->bottom = page_create(LISP_PAGE_SIZE);
     heap->top = heap->bottom;
-    
+
     heap->size = 0;
     heap->page_count = 1;
 }
@@ -482,7 +482,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
 {
     assert(alloc_size > 0);
 
-    // allocations should be aligned so that pointers to blocks are aligned. 
+    // allocations should be aligned so that pointers to blocks are aligned.
     // This will add a little bit of extra padding to strings and symbols.
     alloc_size = align_to_bytes(alloc_size, sizeof(LispVal));
     assert(alloc_size % sizeof(LispVal) == 0);
@@ -505,7 +505,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
          need a new page because ours is full */
         to_use = page_create(LISP_PAGE_SIZE);
         heap->top->next = to_use;
-        heap->top = to_use; 
+        heap->top = to_use;
         ++heap->page_count;
     }
     else
@@ -513,7 +513,7 @@ static void* heap_alloc(size_t alloc_size, LispType type, Heap* heap)
         /* use the current page on top */
         to_use = heap->top;
     }
-    
+
     void* address = to_use->buffer + to_use->size;
     to_use->size += alloc_size;
     heap->size += alloc_size;
@@ -625,13 +625,13 @@ int lisp_equal_r(Lisp a, Lisp b)
             int n = lisp_vector_length(a);
             int m = lisp_vector_length(b);
             if (n != m) return 0;
-            
+
             for (int i = 0; i < n; ++i)
             {
                 if (!lisp_equal_r(lisp_vector_ref(a, i), lisp_vector_ref(b, i)))
                     return 0;
             }
-            
+
             return 1;
         }
         case LISP_PAIR:
@@ -643,7 +643,7 @@ int lisp_equal_r(Lisp a, Lisp b)
                 a = lisp_cdr(a);
                 b = lisp_cdr(b);
             }
-            
+
             return lisp_equal_r(a, b);
         }
         case LISP_STRING:
@@ -681,7 +681,7 @@ int lisp_bool(Lisp x) { return x.val.char_val; }
 
 int lisp_is_true(Lisp x)
 {
-     // In scheme everything which is not #f is true. 
+     // In scheme everything which is not #f is true.
      return (lisp_type(x) == LISP_BOOL && !lisp_bool(x)) ? 0 : 1;
 }
 
@@ -715,26 +715,26 @@ static Pair* pair_get_(Lisp p)
 
 Lisp lisp_car(Lisp p)
 {
-    const Pair* pair = pair_get_(p); 
+    const Pair* pair = pair_get_(p);
     return (Lisp) { pair->car, (LispType)pair->block.d.pair.car_type };
 }
 
 Lisp lisp_cdr(Lisp p)
 {
-    const Pair* pair = pair_get_(p); 
+    const Pair* pair = pair_get_(p);
     return (Lisp) { pair->cdr, (LispType)pair->block.d.pair.cdr_type };
 }
 
 void lisp_set_car(Lisp p, Lisp x)
 {
-    Pair* pair = pair_get_(p); 
+    Pair* pair = pair_get_(p);
     pair->car = x.val;
     pair->block.d.pair.car_type = x.type;
 }
 
 void lisp_set_cdr(Lisp p, Lisp x)
 {
-    Pair* pair = pair_get_(p); 
+    Pair* pair = pair_get_(p);
     pair->cdr = x.val;
     pair->block.d.pair.cdr_type = x.type;
 }
@@ -786,7 +786,7 @@ Lisp lisp_list_reverse2(Lisp l, Lisp tail)
         Lisp next = lisp_cdr(l);
         lisp_set_cdr(l, tail);
         tail = l;
-        l = next;        
+        l = next;
     }
     return tail;
 }
@@ -937,7 +937,7 @@ Lisp lisp_subvector(Lisp old, int start, int end, LispContext ctx)
 
     int m = vector_len_(src);
     if (end > m) end = m;
-    
+
     int n = end - start;
     Lisp new_v = lisp_make_vector(n, ctx);
     Vector* dst = vector_get_(new_v);
@@ -1048,7 +1048,7 @@ static void table_grow_(Lisp t, size_t new_capacity, LispContext ctx)
 }
 
 void lisp_table_set(Lisp t, Lisp key, Lisp x, LispContext ctx)
-{ 
+{
     Table *table = table_get_(t);
     if (2 * table->size >= table->capacity)
     {
@@ -1122,7 +1122,7 @@ Lisp lisp_table_to_alist(Lisp t, LispContext ctx)
 
     Lisp keys = { table->keys, LISP_VECTOR };
     Lisp vals = { table->vals, LISP_VECTOR };
-    
+
     for (int i = 0; i < table->capacity; ++i)
     {
         Lisp key = lisp_vector_ref(keys, i);
@@ -1156,7 +1156,7 @@ Lisp lisp_make_buffer(int cap, LispContext ctx)
     assert(cap >= 0);
     String* string = gc_alloc(sizeof(String) + cap, LISP_STRING, ctx);
     string->block.d.string.capacity = cap;
-    
+
     LispVal val;
     val.ptr_val = string;
     return (Lisp){ val, string->block.type };
@@ -1198,7 +1198,7 @@ Lisp lisp_make_string2(const char* c_string, LispContext ctx)
     size_t length = strlen(c_string);
     Lisp s = lisp_make_string(length, ctx);
     memcpy(lisp_buffer(s), c_string, length);
-    return s; 
+    return s;
 }
 
 int lisp_string_length(Lisp s) { return strlen(lisp_string(s)); }
@@ -1206,7 +1206,7 @@ int lisp_string_length(Lisp s) { return strlen(lisp_string(s)); }
 int lisp_string_ref(Lisp s, int i) {
     const String* str = string_get_(s);
     assert(i >= 0 && i < lisp_buffer_capacity(s));
-    return (int)str->string[i]; 
+    return (int)str->string[i];
 }
 
 void lisp_string_set(Lisp s, int i, int c)
@@ -1283,7 +1283,7 @@ static Lisp symbol_make_(const char* string, int length, LispContext ctx)
     Symbol* symbol = gc_alloc(sizeof(Symbol) + (length + 1), LISP_SYMBOL, ctx);
     memcpy(symbol->text, string, length);
     symbol->text[length] = '\0';
-    symbol->next.ptr_val = NULL; 
+    symbol->next.ptr_val = NULL;
     symbol->block.d.symbol.length = length;
 
     LispVal x;
@@ -1398,7 +1398,7 @@ Lisp lisp_make_lambda(Lisp args, Lisp body, Lisp env, LispContext ctx)
     lambda->args = args.val;
     lambda->body = body.val;
     lambda->env = env.val;
-    
+
     LispVal val;
     val.ptr_val = lambda;
     return (Lisp) { val, LISP_LAMBDA };
@@ -1455,7 +1455,7 @@ static Promise* promise_get_(Lisp p)
 
 void lisp_promise_store(Lisp p, Lisp x)
 {
-    Promise* promise = promise_get_(p); 
+    Promise* promise = promise_get_(p);
     assert(!promise->block.d.promise.cached);
     promise->block.d.promise.cached = 1;
     promise->block.d.promise.type = lisp_type(x);
@@ -1464,27 +1464,27 @@ void lisp_promise_store(Lisp p, Lisp x)
 
 int lisp_promise_forced(Lisp p)
 {
-    const Promise* promise = promise_get_(p); 
+    const Promise* promise = promise_get_(p);
     return (int)promise->block.d.promise.cached;
 }
 
 static Lisp promise_body_or_val_(Lisp p)
 {
-    const Promise* promise = promise_get_(p); 
+    const Promise* promise = promise_get_(p);
     LispType type = (LispType)promise->block.d.promise.type;
-    return (Lisp) { promise->val_or_proc, type }; 
+    return (Lisp) { promise->val_or_proc, type };
 }
 
 Lisp lisp_promise_proc(Lisp p)
 {
-    const Promise* promise = promise_get_(p); 
+    const Promise* promise = promise_get_(p);
     assert(!promise->block.d.promise.cached);
     return promise_body_or_val_(p);
 }
 
 Lisp lisp_promise_val(Lisp p)
 {
-    const Promise* promise = promise_get_(p); 
+    const Promise* promise = promise_get_(p);
     assert(promise->block.d.promise.cached);
     return promise_body_or_val_(p);
 }
@@ -1625,11 +1625,11 @@ int is_symbol_(char c)
 }
 
 const char* match_symbol_(const char* f, const char* l)
-{   
+{
     // need at least one valid symbol character
     if (f == l || !is_symbol_(*f)) return NULL;
     ++f;
-    while (f != l && is_symbol_(*f)) ++f; 
+    while (f != l && is_symbol_(*f)) ++f;
     return f;
 }
 
@@ -1845,7 +1845,7 @@ static Lisp parse_number_(Lexer* lex, LispContext ctx)
 }
 
 static Lisp parse_string_(Lexer* lex, LispContext ctx)
-{ 
+{
     // -2 length to skip quotes
     size_t size = (lex->token_end - lex->token_start) - 2;
     Lisp l = lisp_make_buffer(size + 1, ctx);
@@ -1881,7 +1881,7 @@ static const char* ascii_char_name_table_[] =
 static int parse_char_(Lexer* lex)
 {
     char scratch[64];
-    size_t length = lexer_copy_token(lex, 2, 64, scratch);  
+    size_t length = lexer_copy_token(lex, 2, 64, scratch);
     scratch[length] = '\0';
 
     if (length == 1)
@@ -1891,7 +1891,7 @@ static int parse_char_(Lexer* lex)
     else
     {
         const char** name_it = ascii_char_name_table_;
-        
+
         int i = 0;
         while (*name_it)
         {
@@ -1905,7 +1905,7 @@ static int parse_char_(Lexer* lex)
 
 // read tokens and construct S-expresions
 static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
-{  
+{
     int quote_type = SYM_QUOTE;
     switch (lex->token)
     {
@@ -1990,7 +1990,7 @@ static Lisp parse_list_r(Lexer* lex, jmp_buf error_jmp, LispContext ctx)
                 ++n;
             }
             // )
-            
+
             Lisp v =  lisp_make_vector2(buffer, n, ctx);
             if (buffer) free(buffer);
             return v;
@@ -2060,17 +2060,17 @@ static Lisp parse(Lexer* lex, LispError* out_error, LispContext ctx)
 
     Lisp result = parse_list_r(lex, error_jmp, ctx);
     lexer_next_token(lex);
-    
+
     if (lex->token != TOKEN_NONE)
     {
         // MULTIPLE FORMS
         result = lisp_cons(result, lisp_null(), ctx);
-        
+
         while (lex->token != TOKEN_NONE)
         {
             result = lisp_cons(parse_list_r(lex, error_jmp, ctx), result, ctx);
             lexer_next_token(lex);
-        } 
+        }
 
         result = lisp_cons(get_sym(SYM_BEGIN, ctx), lisp_list_reverse(result), ctx);
     }
@@ -2148,7 +2148,7 @@ Lisp lisp_read_file(FILE *file, LispError* out_error, LispContext ctx)
     }
     Lisp l = lisp_read_range(start, start + size, out_error, ctx);
     free(start);
-    return l; 
+    return l;
 }
 
 Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
@@ -2169,7 +2169,7 @@ Lisp lisp_read_path(const char *path, LispError* out_error, LispContext ctx)
         return lisp_eof();
     }
 
-    Lisp l = lisp_read_range(program, program + size, out_error, ctx); 
+    Lisp l = lisp_read_range(program, program + size, out_error, ctx);
     munmap((void*)program, size);
     close(fd);
 
@@ -2192,7 +2192,7 @@ Lisp lisp_env_lookup(Lisp l, Lisp key, int *present)
         if (*present) return x;
         l = lisp_cdr(l);
     }
-    
+
     return lisp_null();
 }
 
@@ -2211,11 +2211,11 @@ int lisp_env_set(Lisp l, Lisp key, Lisp x, LispContext ctx)
         {
             lisp_table_set(lisp_car(l), key, x, ctx);
             return 1;
-        }  
+        }
         l = lisp_cdr(l);
     }
 
-    return 0; 
+    return 0;
 }
 
 int lisp_is_env(Lisp l) { return lisp_is_list(l); }
@@ -2321,7 +2321,7 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             if (lisp_type(lisp_cdr(l)) != LISP_PAIR)
             {
                 if (!lisp_is_null(lisp_cdr(l)))
-                { 
+                {
                     fprintf(file, " . ");
                     lisp_print_r(file, lisp_cdr(l), human_readable, 0);
                 }
@@ -2332,7 +2332,7 @@ static void lisp_print_r(FILE* file, Lisp l, int human_readable, int is_cdr)
             {
                 fprintf(file, " ");
                 lisp_print_r(file, lisp_cdr(l), human_readable, 1);
-            } 
+            }
             break;
         }
         default:
@@ -2355,7 +2355,7 @@ static void lisp_stack_push(Lisp x, LispContext ctx)
     {
         fprintf(ctx.p->err_port, "stack overflow\n");
     }
-#endif 
+#endif
 
     ctx.p->stack[ctx.p->stack_ptr] = x;
     ++ctx.p->stack_ptr;
@@ -2364,7 +2364,7 @@ static void lisp_stack_push(Lisp x, LispContext ctx)
 static Lisp lisp_stack_pop(LispContext ctx)
 {
     ctx.p->stack_ptr--;
-    
+
 #ifdef LISP_DEBUG
     if (ctx.p->stack_ptr < 0)
     {
@@ -2411,7 +2411,7 @@ static int apply(Lisp operator, Lisp args, Lisp* out_result, Lisp* out_env, Lisp
 
             // make a new environment
             Lisp new_table = lisp_make_table(ctx);
-            
+
             // bind parameters to arguments
             // to pass into function call
             while (lisp_is_pair(slot_names) && lisp_is_pair(args))
@@ -2475,7 +2475,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
 {
     Lisp* env = lisp_stack_peek(2, ctx);
     Lisp* x = lisp_stack_peek(1, ctx);
-    
+
     while (1)
     {
         switch (lisp_type(*x))
@@ -2487,7 +2487,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 if (!present)
                 {
                     fprintf(ctx.p->err_port, "%s is not defined.\n", lisp_symbol_string(*x));
-                    longjmp(error_jmp, LISP_ERROR_UNDEFINED_VAR); 
+                    longjmp(error_jmp, LISP_ERROR_UNDEFINED_VAR);
                     return lisp_null();
                 }
                 return val;
@@ -2497,14 +2497,14 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 Lisp op_sym = lisp_car(*x);
                 int op_valid = lisp_type(op_sym) == LISP_SYMBOL;
 
-                if (lisp_eq(op_sym, get_sym(SYM_IF, ctx)) && op_valid) 
+                if (lisp_eq(op_sym, get_sym(SYM_IF, ctx)) && op_valid)
                 {
                     // if conditional statemetns
                     Lisp predicate = lisp_list_ref(*x, 1);
-                    
+
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(predicate, ctx);
- 
+
                     if (lisp_is_true(eval_r(error_jmp, ctx)))
                     {
                         // consequence
@@ -2517,7 +2517,7 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                         *x = lisp_list_ref(*x, 3);
                         // while will eval
                     }
-                    
+
                     lisp_stack_pop(ctx);
                     lisp_stack_pop(ctx);
                 }
@@ -2525,25 +2525,25 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 {
                     Lisp it = lisp_cdr(*x);
                     if (lisp_is_null(it)) return it;
-                    
+
                     // eval all but last
                     while (lisp_is_pair(lisp_cdr(it)))
                     {
                         // save next thing
                         lisp_stack_push(lisp_cdr(it), ctx);
-                        
+
                         lisp_stack_push(*env, ctx);
                         lisp_stack_push(lisp_car(it), ctx);
-                        
+
                         eval_r(error_jmp, ctx);
-        
+
                         lisp_stack_pop(ctx);
                         lisp_stack_pop(ctx);
-                        
+
                         it = lisp_stack_pop(ctx);
                         //it = lisp_cdr(it);
                     }
-                    
+
                     *x = lisp_car(it);
                     // while will eval last
                 }
@@ -2551,17 +2551,17 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                 {
                     return lisp_list_ref(*x, 1);
                 }
-                else if (lisp_eq(op_sym, get_sym(SYM_DEFINE, ctx))) 
+                else if (lisp_eq(op_sym, get_sym(SYM_DEFINE, ctx)))
                 {
                     // variable definitions
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_list_ref(*x, 2), ctx);
-                    
+
                     Lisp value = eval_r(error_jmp, ctx);
-                    
+
                     lisp_stack_pop(ctx);
                     lisp_stack_pop(ctx);
-                    
+
                     Lisp symbol = lisp_list_ref(*x, 1);
                     lisp_env_define(*env, symbol, value, ctx);
                     return lisp_null();
@@ -2572,47 +2572,47 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                     // mutablity
                     // like def, but requires existence
                     // and will search up the environment chain
-                    
+
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_list_ref(*x, 2), ctx);
-                    
+
                     Lisp value = eval_r(error_jmp, ctx);
-                    
+
                     lisp_stack_pop(ctx);
                     lisp_stack_pop(ctx);
-                    
+
                     Lisp symbol = lisp_list_ref(*x, 1);
                     if (!lisp_env_set(*env, symbol, value, ctx))
-                    { 
+                    {
                         fprintf(ctx.p->err_port, "error: unknown variable: %s\n", lisp_symbol_string(symbol));
                     }
                     return lisp_null();
                 }
-                else if (lisp_eq(op_sym, get_sym(SYM_LAMBDA, ctx)) && op_valid) 
+                else if (lisp_eq(op_sym, get_sym(SYM_LAMBDA, ctx)) && op_valid)
                 {
                     // lambda defintions (compound procedures)
                     Lisp args = lisp_list_ref(*x, 1);
                     Lisp body = lisp_list_ref(*x, 2);
                     return lisp_make_lambda(args, body, *env, ctx);
                 }
-                else 
+                else
                 {
                     // operator application
                     lisp_stack_push(*env, ctx);
                     lisp_stack_push(lisp_car(*x), ctx);
-                    
+
                     Lisp operator = eval_r(error_jmp, ctx);
-                    
+
                     Lisp operator_expr = lisp_stack_pop(ctx);
                     lisp_stack_pop(ctx);
-                    
+
                     lisp_stack_push(operator, ctx);
                     lisp_stack_push(operator_expr, ctx);
-                    
+
                     Lisp arg_expr = lisp_cdr(*x);
-                    
+
                     Lisp args = lisp_null();
-                    
+
                     while (lisp_is_pair(arg_expr))
                     {
                         // save next
@@ -2628,10 +2628,10 @@ static Lisp eval_r(jmp_buf error_jmp, LispContext ctx)
                         args = lisp_cons(new_arg, lisp_stack_pop(ctx), ctx);
                         arg_expr = lisp_stack_pop(ctx);
                     }
-                    
+
                     operator_expr = lisp_stack_pop(ctx);
                     operator = lisp_stack_pop(ctx);
-                    
+
                     LispError error = LISP_ERROR_NONE;
                     int needs_to_eval = apply(operator, lisp_list_reverse(args), x, env, &error, ctx);
                     if (error != LISP_ERROR_NONE)
@@ -2695,7 +2695,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
 
     // 1. expand extended syntax into primitive syntax
     // 2. perform optimizations
-    // 3. check syntax    
+    // 3. check syntax
 
     Lisp op = lisp_car(l);
     if (lisp_type(op) == LISP_SYMBOL)
@@ -2720,7 +2720,7 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             {
                 fprintf(ctx.p->err_port, "(define-macro name proc)\n");
                 longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-            } 
+            }
 
             Lisp symbol = lisp_list_ref(l, 1);
             Lisp body = lisp_list_ref(l, 2);
@@ -2736,12 +2736,12 @@ static Lisp expand_r(Lisp l, jmp_buf error_jmp, LispContext ctx)
             {
                 fprintf(ctx.p->err_port, "(define-macro name proc) not a procedure\n");
                 longjmp(error_jmp, LISP_ERROR_FORM_SYNTAX);
-            } 
+            }
 
             lisp_table_set(ctx.p->macros, symbol, lambda, ctx);
             return lisp_null();
         }
-        else 
+        else
         {
             int present;
             Lisp proc = lisp_table_get(ctx.p->macros, op, &present);
@@ -2803,15 +2803,15 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
 {
     LispError error;
     Lisp expanded = lisp_macroexpand(l, &error, ctx);
-    
+
     if (error != LISP_ERROR_NONE)
     {
         if (out_error) *out_error = error;
         return lisp_null();
     }
-    
+
     size_t save_stack = ctx.p->stack_ptr;
-    
+
     jmp_buf error_jmp;
     error = setjmp(error_jmp);
 
@@ -2819,9 +2819,9 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
     {
         lisp_stack_push(env, ctx);
         lisp_stack_push(expanded, ctx);
-        
+
         Lisp result = eval_r(error_jmp, ctx);
-        
+
         lisp_stack_pop(ctx);
         lisp_stack_pop(ctx);
 
@@ -2830,7 +2830,7 @@ Lisp lisp_eval2(Lisp l, Lisp env, LispError* out_error, LispContext ctx)
             *out_error = error;
         }
 
-        return result; 
+        return result;
     }
     else
     {
@@ -2880,14 +2880,14 @@ static Lisp gc_move(Lisp x, LispContext ctx)
                 Block* dest = heap_alloc(block->info.size, block->type, &ctx.p->heap);
                 memcpy(dest, block, block->info.size);
                 dest->gc_state = GC_NEED_VISIT;
-                
+
                 // save forwarding address (offset in to)
                 block->info.forward = dest;
                 block->gc_state = GC_GONE;
             }
 
             assert(block->gc_state == GC_GONE);
-            
+
             // return the moved block address
             x.val.ptr_val = block->info.forward;
             return x;
@@ -2921,7 +2921,7 @@ static Lisp gc_move_weak_symbols(Lisp old_table, LispContext ctx)
 
     for (int i = 0; i < cap; ++i)
     {
-        Lisp hash = lisp_vector_ref(hashes, i); 
+        Lisp hash = lisp_vector_ref(hashes, i);
         if (!lisp_is_null(hash))
         {
             Lisp old_symbol = lisp_vector_ref(symbols, i);
@@ -3039,7 +3039,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
                         for (int i = 0; i < n; ++i)
                         {
                             // move all the values, but borrow the old table for now.
-                            Lisp key = lisp_vector_ref(keys, i); 
+                            Lisp key = lisp_vector_ref(keys, i);
                             if (!lisp_is_null(key))
                             {
                                 lisp_vector_set(keys, i, gc_move(key, ctx));
@@ -3062,7 +3062,7 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
     // check that we visited all the pages
     assert(page_counter == ctx.p->heap.page_count);
     ctx.p->symbols = gc_move_weak_symbols(ctx.p->symbols, ctx);
-    
+
 #ifdef LISP_DEBUG
      {
           // DEBUG, check offsets
@@ -3083,12 +3083,12 @@ Lisp lisp_collect(Lisp root_to_save, LispContext ctx)
           }
     }
 #endif
-    
+
     size_t diff = from.size - ctx.p->heap.size;
 
     // swap the heaps
     heap_shutdown(&from);
-    
+
     ctx.p->gc_stat_freed = diff;
 #ifdef LISP_DEBUG
     time_t end_time = clock();
@@ -3175,7 +3175,7 @@ LispContext lisp_init(void)
     ctx.p->stack = malloc(sizeof(Lisp) * LISP_STACK_DEPTH);
     ctx.p->gc_stat_freed = 0;
     ctx.p->gc_stat_time = 0;
-    
+
     heap_init(&ctx.p->heap);
 
     ctx.p->symbols = lisp_make_table(ctx);

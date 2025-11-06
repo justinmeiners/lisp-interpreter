@@ -1,5 +1,5 @@
 /*
- Created by: Justin Meiners 
+ Created by: Justin Meiners
  Repo; https://github.com/justinmeiners/lisp-interpreter
  License: MIT (See end if file)
 

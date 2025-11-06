@@ -171,8 +171,8 @@ static Lisp sch_port_close(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
     Lisp a = lisp_car(args);
-    fclose(lisp_port(a)); 
-    return lisp_null(); 
+    fclose(lisp_port(a));
+    return lisp_null();
 }
 
 static Lisp sch_is_eof(Lisp args, LispError* e, LispContext ctx)
@@ -263,7 +263,7 @@ static Lisp sch_list_copy(Lisp args, LispError* e, LispContext ctx) {
 
 static Lisp sch_append(Lisp args, LispError* e, LispContext ctx)
 {
-    Lisp l = lisp_null();  
+    Lisp l = lisp_null();
 
     while (lisp_is_pair(args))
     {
@@ -311,7 +311,7 @@ static Lisp sch_list_advance(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
 {
     LispInt exact = 0;
-    LispReal inexact = 0; 
+    LispReal inexact = 0;
 
     while (lisp_is_pair(args))
     {
@@ -330,7 +330,7 @@ static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
                 return lisp_null();
         }
     }
-    
+
     return inexact == 0
         ? lisp_make_int(exact)
         : lisp_make_real(inexact + (LispReal)exact);
@@ -339,7 +339,7 @@ static Lisp sch_add(Lisp args, LispError* e, LispContext ctx)
 static Lisp sch_mult(Lisp args, LispError* e, LispContext ctx)
 {
     LispInt exact = 1;
-    LispReal inexact = 1; 
+    LispReal inexact = 1;
 
     while (lisp_is_pair(args))
     {
@@ -358,7 +358,7 @@ static Lisp sch_mult(Lisp args, LispError* e, LispContext ctx)
                 return lisp_null();
         }
     }
-    
+
     return inexact == 1
         ? lisp_make_int(exact)
         : lisp_make_real(inexact * (LispReal)exact);
@@ -604,7 +604,7 @@ static Lisp sch_string_set(Lisp args, LispError* e, LispContext ctx)
     args = lisp_cdr(args);
     Lisp index = lisp_car(args);
     args = lisp_cdr(args);
-    Lisp val = lisp_car(args); 
+    Lisp val = lisp_car(args);
     if (lisp_type(str) != LISP_STRING || lisp_type(index) != LISP_INT)
     {
         *e = LISP_ERROR_ARG_TYPE;
@@ -619,7 +619,7 @@ static Lisp sch_string_upcase(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
     Lisp r = lisp_buffer_copy(lisp_car(args), ctx);
-    
+
     char* c = lisp_buffer(r);
     while (*c) { *c = toupper(*c); ++c; }
     return r;
@@ -629,7 +629,7 @@ static Lisp sch_string_downcase(Lisp args, LispError* e, LispContext ctx)
 {
     ARITY_CHECK(1, 1);
     Lisp r = lisp_buffer_copy(lisp_car(args), ctx);
-    
+
     char* c = lisp_buffer(r);
     while (*c) { *c = tolower(*c); ++c; }
     return r;
@@ -678,7 +678,7 @@ static Lisp sch_list_to_string(Lisp args, LispError* e, LispContext ctx)
     Lisp l = lisp_car(args);
     Lisp result = lisp_make_string(lisp_list_length(l), ctx);
     char* s = lisp_buffer(result);
-    
+
     while (lisp_is_pair(l))
     {
         *s = (char)lisp_char(lisp_car(l));
@@ -1115,7 +1115,7 @@ static Lisp sch_vector_assq(Lisp args, LispError* e, LispContext ctx)
     Lisp k = lisp_car(args);
     args = lisp_cdr(args);
     Lisp v = lisp_car(args);
-    return lisp_avector_ref(v, k); 
+    return lisp_avector_ref(v, k);
 }
 
 static Lisp sch_subvector(Lisp args, LispError* e, LispContext ctx)
@@ -1358,7 +1358,7 @@ static Lisp sch_is_cont(Lisp args, LispError* e, LispContext ctx)
 #undef ARITY_CHECK
 
 static const LispFuncDef lib_cfunc_defs[] = {
-    
+
     { "ERROR", sch_error },
     { "SYNTAX-ERROR", sch_syntax_error },
 
@@ -1375,18 +1375,18 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "CLOSE-INPUT-PORT", sch_port_close },
     { "CLOSE-OUTPUT-PORT", sch_port_close },
     { "EOF-OBJECT?", sch_is_eof },
-    
+
     // Universal Time https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Universal-Time.html
     { "GET-UNIVERSAL-TIME", sch_univeral_time },
     { "PRINT-GC-STATISTICS", sch_print_gc_stats },
-    
+
     { "MACROEXPAND", sch_macroexpand },
-    
+
     // Equivalence Predicates https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Equivalence-Predicates.html
     { "EQ?", sch_exact_eq },
     { "EQV?", sch_equal },
     { "EQUAL?", sch_equal_r },
-    
+
     // Booleans https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Booleans.html
     { "BOOLEAN?", sch_is_boolean },
     { "NOT", sch_not },
@@ -1486,7 +1486,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "EXACT?", sch_is_int },
     { "EXACT->INEXACT", sch_to_inexact },
     { "INEXACT->EXACT", sch_to_exact },
-    
+
     // Symbols https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Symbols.html
     { "SYMBOL?", sch_is_symbol },
     { "SYMBOL<?", sch_symbol_less },
@@ -1500,7 +1500,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "SCHEME-REPORT-ENVIRONMENT", sch_system_env },
     { "INTERACTION-ENVIRONMENT", sch_user_env },
     // { "THE-ENVIRONMENT", sch_current_env },
-    
+
     // Hash Tables https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Basic-Hash-Table-Operations.html#Basic-Hash-Table-Operations
     { "HASH-TABLE?", sch_is_table },
     { "MAKE-HASH-TABLE", sch_table_make },
@@ -1515,7 +1515,7 @@ static const LispFuncDef lib_cfunc_defs[] = {
     { "_PROMISE-STORE!", sch_promise_store },
     { "PROMISE-VALUE", sch_promise_val },
     { "PROMISE-FORCED?", sch_promise_forced },
-    
+
     // Procedures https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Procedure-Operations.html#Procedure-Operations
     { "APPLY", sch_apply },
     { "COMPILED-PROCEDURE?", sch_is_func },
@@ -1529,12 +1529,12 @@ static const LispFuncDef lib_cfunc_defs[] = {
     // Random Numbers https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-ref/Random-Numbers.html
     { "RANDOM", sch_pseudo_rand },
     { "RANDOM-SEED!", sch_pseudo_seed },
-   
+
     // Garbage Collection https://www.gnu.org/software/mit-scheme/documentation/mit-scheme-user/Garbage-Collection.html
     { "GC-FLIP", sch_gc_flip },
-    
+
     { NULL, NULL }
-    
+
 };
 
 void lisp_lib_load(LispContext ctx)
@@ -1564,7 +1564,7 @@ void lisp_lib_load(LispContext ctx)
         lib_0_sequences_src_, lib_1_forms_src_,
         lib_2_forms_src_, lib_3_math_src_,
         lib_4_sequences_src_, lib_5_streams_src_,
-        lib_6_other_src_, 
+        lib_6_other_src_,
     };
 
     int n = sizeof(to_load) / sizeof(const char*);
@@ -1579,7 +1579,7 @@ void lisp_lib_load(LispContext ctx)
             fprintf(lisp_stderr(ctx), "failed to parse system library %d: %s\n", i, lisp_error_string(error));
             return;
         }
- 
+
         lisp_eval2(src, system_env, &error, ctx);
 
         if (error != LISP_ERROR_NONE)

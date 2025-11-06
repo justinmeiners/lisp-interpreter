@@ -31,7 +31,7 @@ int main(int argc, const char* argv[])
 #else
     verbose = 0;
 #endif
-    
+
     for (int i = 1; i < argc; ++i)
     {
         if (strcmp(argv[i], "--load") == 0)
@@ -44,12 +44,12 @@ int main(int argc, const char* argv[])
             run_script = 1;
         }
     }
-    
+
     //LispContext ctx = lisp_init();
     LispContext ctx = lisp_init_with_lib();
     lisp_env_define(
         lisp_cdr(lisp_env(ctx)),
-        lisp_make_symbol("LOAD", ctx), 
+        lisp_make_symbol("LOAD", ctx),
         lisp_make_func(sch_load),
         ctx
     );
@@ -63,7 +63,7 @@ int main(int argc, const char* argv[])
     );
 
     clock_t start_time, end_time;
-        
+
     if (file_path)
     {
         if (verbose)
@@ -71,8 +71,8 @@ int main(int argc, const char* argv[])
             printf("loading: %s\n", file_path);
         }
 
-        start_time = clock();        
-     
+        start_time = clock();
+
         LispError error;
         Lisp l = lisp_read_path(file_path, &error, ctx);
 
@@ -103,8 +103,8 @@ int main(int argc, const char* argv[])
             printf("expand (us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
 
 
-        start_time = clock(); 
-        lisp_eval(code, &error, ctx);  
+        start_time = clock();
+        lisp_eval(code, &error, ctx);
         end_time = clock();
 
         if (error != LISP_ERROR_NONE)
@@ -131,7 +131,7 @@ int main(int argc, const char* argv[])
             clock_t start_time = clock();
             LispError error;
             Lisp code = lisp_read(line, &error, ctx);
-            
+
             if (error != LISP_ERROR_NONE)
             {
                 fprintf(stderr, "%s\n", lisp_error_string(error));
@@ -148,9 +148,9 @@ int main(int argc, const char* argv[])
 
             lisp_printf(stdout, l);
             printf("\n");
-            
+
             lisp_collect(lisp_null(), ctx);
-            
+
             if (verbose)
                 printf("(us): %lu\n", 1000000 * (end_time - start_time) / CLOCKS_PER_SEC);
        }
