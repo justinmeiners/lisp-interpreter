@@ -31,7 +31,7 @@ LispContext lisp_init_with_lib(void);
 
 // Generated from scheme source.
 #ifdef LISP_IMPLEMENTATION
-static const char* lib_0_sequences_src_ =
+static const char* lib_0_sequences_src_ = 
 "(define-macro lambda (/\\_ args \n\
            (if (pair? args) \n\
                (if (pair? (cdr args)) \n\
@@ -122,7 +122,7 @@ static const char* lib_0_sequences_src_ =
 (define (string-head s end) (subvector s 0 end))  \n\
 (define (string-tail s start) (subvector s start (string-length v)))";
 
-static const char* lib_1_forms_src_ =
+static const char* lib_1_forms_src_ = 
 "(define (_make-lambda args body)  \n\
   (list 'LAMBDA args (if (null? (cdr body)) (car body) (cons 'BEGIN body))))  \n\
   \n\
@@ -199,7 +199,7 @@ static const char* lib_1_forms_src_ =
                        (_cond-check-clauses clauses)  \n\
                        (_cond-helper clauses))))";
 
-static const char* lib_2_forms_src_ =
+static const char* lib_2_forms_src_ = 
 "(_shorthand-accessors \"AA\" \"DD\" \"AD\" \"DA\" \"AAA\" \"AAD\" \"ADA\" \"DAA\" \"ADD\" \"DAD\" \"DDA\" \"DDD\")  \n\
  \n\
 (define (_and-helper preds)  \n\
@@ -275,7 +275,7 @@ static const char* lib_2_forms_src_ =
               (lambda (x) \n\
                 `(SET! ,x (- ,x 1))))";
 
-static const char* lib_3_math_src_ =
+static const char* lib_3_math_src_ = 
 "(define (number? x) (real? x))  \n\
 (define (odd? x) (not (even? x)))  \n\
 (define (inexact? x) (not (exact? x)))  \n\
@@ -311,7 +311,7 @@ static const char* lib_3_math_src_ =
       (abs (* (/ (car args) (apply gcd args))  \n\
               (apply * (cdr args))))))";
 
-static const char* lib_4_sequences_src_ =
+static const char* lib_4_sequences_src_ = 
 "(define (map proc . rest)  \n\
  (define (helper lists result)  \n\
   (if (some? null? lists)  \n\
@@ -443,7 +443,7 @@ static const char* lib_4_sequences_src_ =
  \n\
 (define (sort list cmp) (vector->list (sort! (list->vector list) cmp)))";
 
-static const char* lib_5_streams_src_ =
+static const char* lib_5_streams_src_ = 
 "(define-macro delay (lambda (expr) \n\
                       `(make-promise ,(cons 'LAMBDA \n\
                                             (cons '() \n\
@@ -502,7 +502,7 @@ static const char* lib_5_streams_src_ =
                                      (stream-cdr stream))))  \n\
         (else (stream-filter pred (stream-cdr stream)))))";
 
-static const char* lib_6_other_src_ =
+static const char* lib_6_other_src_ = 
 "(define (char>=? a b) (not (char<? a b)))  \n\
 (define (char>? a b) (char<? b a))  \n\
 (define (char<=? a b) (not (char<? b a)))  \n\
